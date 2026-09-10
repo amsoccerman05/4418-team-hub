@@ -1,0 +1,48 @@
+/* Reproduced from Team 4418 Inventory src/style.css, including its final
+   readability overrides. See README.md for source attribution.
+   No operational state colors are needed by this launcher. */
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;450;500;550;600;650;700&family=Manrope:wght@400;500;600;650;700;750;800&display=swap");
+:root {
+  --font-body: "DM Sans", sans-serif;
+  --font-heading: "Manrope", sans-serif;
+  --color-text: #253c34;
+  --color-heading: #243c32;
+  --color-background: #f6f8f6;
+  --color-surface: #fff;
+  --color-brand: #224d3e;
+  --color-primary: #28583f;
+  --color-primary-hover: #193f2c;
+  --color-muted: #637368;
+  --color-eyebrow: #627463;
+  --color-border: #e1e7dd;
+  --color-shell-border: #e4e9e4;
+  --color-row-border: #edf0e8;
+  --color-row-hover: #fcfdfb;
+  --color-secondary-border: #dde5db;
+  --color-secondary-hover: #f1f5ee;
+  --color-input-border: #dee5d9;
+  --color-input-text: #3c5135;
+  --color-label: #53684f;
+  --color-nav-text: #738077;
+  --color-nav-active: #2a5740;
+  --color-nav-surface: #eaf0e7;
+  --color-nav-hover: #f0f3ef;
+  --color-focus: #77a58b;
+  --color-input-focus: #7aa68b;
+  --radius-input: 5px;
+  --radius-button: 6px;
+  --radius-card: 9px;
+  --radius-badge: 4px;
+  --radius-dialog: 13px;
+  --shadow-button: 0 2px 3px #173f2410;
+  --shadow-stat: 0 2px 2px #203f2202;
+  --shadow-dialog: 0 20px 90px #10251c40;
+  --color-backdrop: #172c2266;
+  --sidebar-width: 238px;
+  --header-height: 77px;
+  --page-gutter: 40px;
+  --page-max-width: 1570px;
+  --panel-padding: 20px;
+  --grid-gap: 20px;
+  --space-field: 17px;
+}
