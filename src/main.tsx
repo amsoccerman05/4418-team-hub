@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { systems, resources, type HubLink } from "./links";
 import "./style.css";
+import { AttendanceHub } from "./attendance/Attendance";
 const branding = `${import.meta.env.BASE_URL}branding/`;
 const icons: Record<string, LucideIcon> = {
   inventory: Boxes,
@@ -135,6 +136,7 @@ function App() {
             ))}
           </div>
         </section>
+        <AttendanceHub />
         <section className="resources" aria-labelledby="resources-heading">
           <div className="section-heading">
             <div>

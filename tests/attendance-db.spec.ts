@@ -1,0 +1,400 @@
+import { test, expect } from "@playwright/test";
+import { PGlite } from "@electric-sql/pglite";
+import { readFileSync } from "node:fs";
+let db: PGlite;
+const ids = {
+  student: "00000000-0000-0000-0000-000000000001",
+  other: "00000000-0000-0000-0000-000000000002",
+  lead: "00000000-0000-0000-0000-000000000003",
+  mentor: "00000000-0000-0000-0000-000000000004",
+  admin: "00000000-0000-0000-0000-000000000005",
+  readonly: "00000000-0000-0000-0000-000000000006",
+  inactive: "00000000-0000-0000-0000-000000000007",
+};
+async function as(role: keyof typeof ids) {
+  await db.exec(
+    `reset role; select set_config('test.uid','${ids[role]}',false); set role authenticated;`,
+  );
+}
+async function manage(action: string, p: Record<string, unknown>) {
+  const r = await db.query<{ result: any }>(
+    "select public.team_attendance_manage($1,$2::jsonb) result",
+    [action, JSON.stringify(p)],
+  );
+  return r.rows[0].result;
+}
+async function create(extra: Record<string, unknown> = {}) {
+  return (
+    await manage("create", {
+      title: "Preseason build",
+      meeting_type: "preseason",
+      starts_at: new Date(Date.now() - 5 * 60000).toISOString(),
+      ends_at: new Date(Date.now() + 60 * 60000).toISOString(),
+      requirement: "registered",
+      ...extra,
+    })
+  ).id as string;
+}
+async function row(mid: string, uid = ids.student) {
+  return (
+    await db.query<any>(
+      "select * from public.team_attendance where meeting_id=$1 and student_id=$2",
+      [mid, uid],
+    )
+  ).rows[0];
+}
+async function check(mid: string, code: string) {
+  return (
+    await db.query<any>(
+      "select public.team_attendance_check_in($1,$2) result",
+      [mid, code],
+    )
+  ).rows[0].result;
+}
+test.describe("Attendance database permissions and policy", () => {
+  test.beforeAll(async () => {
+    db = new PGlite();
+    await db.exec(`create role anon; create role authenticated; create schema auth; create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('test.uid',true),'')::uuid $$; grant usage on schema auth to authenticated; grant execute on function auth.uid() to authenticated;
+   create table public.profiles(id uuid primary key,display_name text,role text,active boolean);
+   insert into public.profiles values ${Object.entries(ids)
+     .map(
+       ([role, id]) =>
+         `('${id}','${role}','${["other", "inactive"].includes(role) ? "student" : role}',${role !== "inactive"})`,
+     )
+     .join(",")};`);
+    await db.exec(
+      readFileSync(
+        "supabase/migrations/202609100001_team_attendance.sql",
+        "utf8",
+      ),
+    );
+  });
+  test.afterAll(async () => {
+    await db.close();
+  });
+  test("RLS, column secrecy, authorization, and immutable writes", async () => {
+    await as("lead");
+    await manage("member", {
+      student_id: ids.student,
+      member_status: "registered",
+      team_area: "Build",
+    });
+    const mid = await create();
+    expect(
+      (
+        await db.query(
+          "select * from public.team_attendance where meeting_id=$1",
+          [mid],
+        )
+      ).rows.length,
+    ).toBe(3);
+    await as("student");
+    expect(
+      (
+        await db.query(
+          "select * from public.team_attendance where meeting_id=$1",
+          [mid],
+        )
+      ).rows.length,
+    ).toBe(1);
+    expect(
+      (
+        await db.query(
+          "select * from public.team_meeting_members where meeting_id=$1",
+          [mid],
+        )
+      ).rows.length,
+    ).toBe(1);
+    await expect(
+      db.query("select code_hash from public.team_meetings"),
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      db.query("update public.team_attendance set physical_status='present'"),
+    ).rejects.toThrow(/permission denied/);
+    await expect(manage("create", {})).rejects.toThrow(/Leadership/);
+    await expect(
+      db.query("select * from public.team_attendance_roster()"),
+    ).rejects.toThrow(/Leadership/);
+    expect(
+      (
+        await db.query("select * from public.team_attendance_history")
+      ).rows.every((r: any) => r.student_id === ids.student),
+    ).toBe(true);
+    for (const role of ["readonly", "inactive"] as const) {
+      await as(role);
+      expect(
+        (await db.query("select * from public.team_attendance")).rows.length,
+      ).toBe(0);
+      await expect(check(mid, "123456")).rejects.toThrow(/Student access/);
+      await expect(manage("create", {})).rejects.toThrow(/Leadership/);
+    }
+    await db.exec("reset role; set role anon;");
+    await expect(
+      db.query("select * from public.team_attendance"),
+    ).rejects.toThrow(/permission denied/);
+    await expect(check(mid, "123456")).rejects.toThrow(/permission denied/);
+    for (const role of ["admin", "mentor"] as const) {
+      await as(role);
+      expect(
+        (
+          await db.query(
+            "select * from public.team_attendance where meeting_id=$1",
+            [mid],
+          )
+        ).rows.length,
+      ).toBe(3);
+    }
+  });
+  test("snapshots survive member changes; explicit prospective inclusion and optional/area requirements", async () => {
+    await as("lead");
+    const mid = await create();
+    await manage("member", {
+      student_id: ids.student,
+      member_status: "inactive",
+      team_area: "Software",
+    });
+    expect(
+      (
+        await db.query<any>(
+          "select * from public.team_meeting_members where meeting_id=$1 and student_id=$2",
+          [mid, ids.student],
+        )
+      ).rows[0],
+    ).toMatchObject({
+      required: true,
+      member_status: "registered",
+      team_area: "Build",
+    });
+    const selected = await create({
+      requirement: "selected",
+      selected_students: [ids.other],
+    });
+    expect(
+      (
+        await db.query<any>(
+          "select required from public.team_meeting_members where meeting_id=$1 and student_id=$2",
+          [selected, ids.other],
+        )
+      ).rows[0].required,
+    ).toBe(true);
+    const optional = await create({ requirement: "optional" });
+    expect(
+      (
+        await db.query<any>(
+          "select required from public.team_meeting_members where meeting_id=$1",
+          [optional],
+        )
+      ).rows.every((r) => !r.required),
+    ).toBe(true);
+    await manage("member", {
+      student_id: ids.student,
+      member_status: "registered",
+      team_area: "Build",
+    });
+    const areas = await create({ requirement: "areas", areas: ["Software"] });
+    expect(
+      (
+        await db.query<any>(
+          "select required from public.team_meeting_members where meeting_id=$1",
+          [areas],
+        )
+      ).rows.every((r) => !r.required),
+    ).toBe(true);
+  });
+  test("check-in code rotation, rate limiting, own identity, grace, expiry, and idempotency", async () => {
+    await as("lead");
+    const mid = await create();
+    const first = await manage("open", { meeting_id: mid, version: 1 });
+    expect(first.code).toMatch(/^\d{6}$/);
+    const second = await manage("open", { meeting_id: mid, version: 2 });
+    await as("student");
+    if (first.code !== second.code)
+      expect((await check(mid, first.code)).error).toMatch(/Invalid/);
+    expect((await check(mid, second.code)).message).toBe("Checked in");
+    expect((await row(mid)).physical_status).toBe("present");
+    const version = (await row(mid)).version;
+    await check(mid, second.code);
+    expect((await row(mid)).version).toBe(version);
+    await as("other");
+    for (let i = 0; i < 5; i++)
+      expect((await check(mid, "invalid")).error).toMatch(/Invalid/);
+    expect((await check(mid, second.code)).error).toMatch(/Too many/);
+    expect((await row(mid, ids.other)).physical_status).toBe("pending");
+    await as("lead");
+    const late = await create({
+      starts_at: new Date(Date.now() - 11 * 60000).toISOString(),
+    });
+    const opened = await manage("open", { meeting_id: late, version: 1 });
+    await as("student");
+    await check(late, opened.code);
+    expect((await row(late)).physical_status).toBe("late");
+    await db.exec("reset role");
+    await db.query(
+      "update public.team_meetings set code_expires_at=now()-interval '1 second' where id=$1",
+      [late],
+    );
+    await as("other");
+    await expect(check(late, opened.code)).rejects.toThrow(/expired/);
+    await as("lead");
+    await manage("close", { meeting_id: mid, version: 3 });
+    await as("other");
+    await expect(check(mid, second.code)).rejects.toThrow(/closed/);
+  });
+  test("notice review, close/finalize, audited corrections and multiple rescindable strikes", async () => {
+    await as("lead");
+    const future = await create({
+      starts_at: new Date(Date.now() + 48 * 3600000).toISOString(),
+      ends_at: new Date(Date.now() + 49 * 3600000).toISOString(),
+    });
+    await as("student");
+    await db.query("select public.team_attendance_notice($1,$2)", [
+      future,
+      "Family commitment",
+    ]);
+    expect((await row(future)).review_status).toBe("pending");
+    await expect(
+      db.query("select public.team_attendance_notice($1,$2)", [
+        future,
+        "Change",
+      ]),
+    ).rejects.toThrow(/already/);
+    await as("lead");
+    const mid = await create();
+    await manage("open", { meeting_id: mid, version: 1 });
+    await expect(
+      manage("finalize", { meeting_id: mid, version: 2 }),
+    ).rejects.toThrow(/Close/);
+    await manage("close", { meeting_id: mid, version: 2 });
+    await expect(
+      manage("finalize", { meeting_id: mid, version: 3 }),
+    ).rejects.toThrow(/scheduled end/);
+    await db.exec("reset role");
+    await db.query(
+      "update public.team_meetings set starts_at=now()-interval '2 hours', ends_at=now()-interval '1 hour' where id=$1",
+      [mid],
+    );
+    await as("lead");
+    await manage("finalize", { meeting_id: mid, version: 3 });
+    let a = await row(mid);
+    expect(a.physical_status).toBe("absent");
+    await manage("attendance", {
+      meeting_id: mid,
+      attendance_id: a.id,
+      version: a.version,
+      physical_status: "absent",
+      review_status: "excused",
+      explanation: "Reviewed family commitment",
+    });
+    await expect(
+      manage("attendance", {
+        meeting_id: mid,
+        attendance_id: a.id,
+        version: a.version,
+        physical_status: "present",
+        explanation: "Stale edit",
+      }),
+    ).rejects.toThrow(/changed/);
+    for (const category of ["Unexcused Absence", "Insufficient Notice"])
+      await manage("strike", {
+        meeting_id: mid,
+        attendance_id: a.id,
+        category,
+        quantity: 1,
+        explanation: "Leadership decision",
+      });
+    const strikes = (
+      await db.query<any>(
+        "select * from public.team_attendance_strikes where attendance_id=$1",
+        [a.id],
+      )
+    ).rows;
+    expect(strikes.length).toBe(2);
+    await manage("rescind", {
+      meeting_id: mid,
+      attendance_id: a.id,
+      strike_id: strikes[0].id,
+      explanation: "Incorrect assignment",
+    });
+    expect(
+      (
+        await db.query<any>(
+          "select sum(quantity)::int total from public.team_attendance_strikes where attendance_id=$1 and rescinded_at is null",
+          [a.id],
+        )
+      ).rows[0].total,
+    ).toBe(1);
+    await expect(
+      manage("rescind", {
+        meeting_id: mid,
+        attendance_id: a.id,
+        strike_id: strikes[0].id,
+        explanation: "again",
+      }),
+    ).rejects.toThrow(/Active strike/);
+    const history = (
+      await db.query<any>(
+        "select * from public.team_attendance_history where meeting_id=$1 and entity='team_attendance_strikes'",
+        [mid],
+      )
+    ).rows;
+    expect(history.length).toBe(3);
+    expect(history[2].before_data.rescinded_at).toBe(null);
+    expect(history[2].after_data.rescind_reason).toBe("Incorrect assignment");
+    expect(
+      (
+        await db
+          .query<any>("select * from public.profiles where id=$1", [
+            ids.student,
+          ])
+          .catch(() => ({ rows: [] }))
+      ).rows,
+    ).toEqual([]); // no shared profile grants added
+    await as("student");
+    expect(
+      (
+        await db.query<any>("select * from public.team_attendance_strikes")
+      ).rows.every((r) => r.student_id === ids.student),
+    ).toBe(true);
+    await expect(
+      db.query("delete from public.team_attendance_history"),
+    ).rejects.toThrow(/permission denied/);
+  });
+  test("never-opened meetings finalize and early departure requires a valid time", async () => {
+    await as("mentor");
+    const mid = await create({
+      starts_at: new Date(Date.now() - 2 * 3600000).toISOString(),
+      ends_at: new Date(Date.now() - 3600000).toISOString(),
+    });
+    await manage("close", { meeting_id: mid, version: 1 });
+    await manage("finalize", { meeting_id: mid, version: 2 });
+    const a = await row(mid);
+    await expect(
+      manage("attendance", {
+        meeting_id: mid,
+        attendance_id: a.id,
+        version: a.version,
+        physical_status: "left_early",
+        explanation: "Left before end",
+      }),
+    ).rejects.toThrow(/Departure/);
+    await manage("attendance", {
+      meeting_id: mid,
+      attendance_id: a.id,
+      version: a.version,
+      physical_status: "left_early",
+      left_at: new Date(Date.now() - 90 * 60000).toISOString(),
+      explanation: "Left before end",
+    });
+    expect((await row(mid)).physical_status).toBe("left_early");
+    await as("student");
+    await expect(
+      db.query("select public.team_attendance_notice($1,$2)", [
+        mid,
+        "After finalization",
+      ]),
+    ).rejects.toThrow(/finalized/);
+    await expect(
+      db.query("select selected_students from public.team_meetings"),
+    ).rejects.toThrow(/permission denied/);
+  });
+});

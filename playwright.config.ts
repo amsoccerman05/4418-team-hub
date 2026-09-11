@@ -6,5 +6,9 @@ export default defineConfig({
     command: "npm run dev -- --host 127.0.0.1 --port 4422 --strictPort",
     url: "http://127.0.0.1:4422",
     reuseExistingServer: false,
+    env: {
+      VITE_SUPABASE_URL: "https://attendance-test.supabase.invalid",
+      VITE_SUPABASE_ANON_KEY: "test-public-key",
+    },
   },
 });
