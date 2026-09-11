@@ -98,7 +98,7 @@ function App() {
               4418<span>TEAM HUB</span>
             </div>
           </div>
-          <div className="breadcrumb">
+          <label className="suite-switch"><span className="sr-suite">Team 4418 apps</span><select aria-label="Team 4418 apps" value="https://team.frc4418.org/" onChange={e=>{window.location.href=e.target.value;}}><option value="https://team.frc4418.org/">Team Hub / Home</option><option value="https://inventory.frc4418.org/">Inventory</option><option value="https://pit.frc4418.org/">Pit Operations</option><option value="https://team.frc4418.org/#attendance">Attendance</option></select></label><div className="breadcrumb">
             Workspace
             <ChevronRight size={14} />
             <strong>Team Hub</strong>

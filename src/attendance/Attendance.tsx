@@ -61,12 +61,20 @@ function Stats({ data, id }: { data: Data; id: string }) {
 }
 export function AttendanceHub() {
   const [profile, setProfile] = useState<Profile | null>(null),
+    [signedIn, setSignedIn] = useState(false),
     [loading, setLoading] = useState(!!supabase),
     [data, setData] = useState<Data | null>(null),
-    [page, setPage] = useState(false),
+    [page, setPage] = useState(location.hash === "#attendance"),
     [error, setError] = useState(""),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false);
+  useEffect(() => {
+    const openAttendance = () => {
+      if (location.hash === "#attendance") setPage(true);
+    };
+    window.addEventListener("hashchange", openAttendance);
+    return () => window.removeEventListener("hashchange", openAttendance);
+  }, []);
   const generation = useRef(0);
   useEffect(() => {
     if (!supabase) return;
@@ -77,6 +85,7 @@ export function AttendanceHub() {
         setProfile(null);
         setData(null);
         setError("");
+        setSignedIn(!!session);
         setLoading(!!session);
         if (!session) return;
         // Fetch outside the synchronous auth callback to avoid auth lock contention.
@@ -136,6 +145,7 @@ export function AttendanceHub() {
   }
   return (
     <section
+      id="attendance"
       className="attendance-section"
       aria-labelledby="attendance-heading"
     >
@@ -144,7 +154,7 @@ export function AttendanceHub() {
           <h2 id="attendance-heading">Attendance</h2>
           <p>Show up. Stay connected. Keep your record clear.</p>
         </div>
-        {profile && (
+        {signedIn && (
           <button
             className="att-secondary"
             disabled={busy}
@@ -176,6 +186,11 @@ export function AttendanceHub() {
           {message && <p role="status">{message}</p>}
           {loading ? (
             <p role="status">Loading attendance…</p>
+          ) : !profile && signedIn ? (
+            <p>
+              You are signed into the Team 4418 suite. Attendance is unavailable
+              for this account; you can still open your permitted apps above.
+            </p>
           ) : !profile ? (
             <form
               className="att-panel att-form"

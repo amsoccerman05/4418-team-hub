@@ -457,3 +457,8 @@ footer {
     scroll-behavior: auto !important;
   }
 }
+
+/* Compact suite navigation; retained at phone widths. */
+.suite-switch select {max-width:155px;min-height:40px;border:1px solid #e1e7dd;border-radius:6px;background:#fff;color:#224d3e;padding:6px;font:inherit;}
+.sr-suite{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);}
+@media(max-width:600px){.suite-switch select{max-width:120px;font-size:12px}.header-inner{gap:12px}.header-inner .breadcrumb{display:none}}
