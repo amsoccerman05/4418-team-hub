@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { systems, resources, suiteApps, type HubLink } from "./links";
 import "./style.css";
+import { My4418 } from "./dashboard/Dashboard";
 import { TeamManagement } from "./team/TeamManagement";
 import { AttendanceHub } from "./attendance/Attendance";
 const branding = `${import.meta.env.BASE_URL}branding/`;
@@ -93,6 +94,7 @@ function App() {
     return () => window.removeEventListener("hashchange", update);
   }, []);
   const management = route === "#team-management";
+  const announcements = route === "#announcements";
   const workspace = route === "#attendance" || route.startsWith("#attendance/");
   return (
     <>
@@ -116,7 +118,7 @@ function App() {
           <div className="breadcrumb">
             Workspace
             <ChevronRight size={14} />
-            <strong>{management ? "Team Management" : workspace ? "Attendance" : "Team Hub"}</strong>
+            <strong>{management ? "Team Management" : announcements ? "Announcements" : workspace ? "Attendance" : "Team Hub"}</strong>
           </div>
           <span className="header-team">
             FRC Team 4418 <span>IMPULSE</span>
@@ -124,7 +126,7 @@ function App() {
         </div>
       </header>
       <main id="main">
-        {!workspace && !management && (
+        {!workspace && !management && !announcements && (
           <>
             <div className="page-heading">
               <div>
@@ -161,8 +163,9 @@ function App() {
           workspace={workspace}
           tab={route.split("/")[1] || "calendar"}
         />}
-        {!workspace && <TeamManagement workspace={management} />}
-        {!workspace && !management && (
+        {management && <TeamManagement workspace /> }
+        {!workspace && !management && <My4418 management={announcements} />}
+        {!workspace && !management && !announcements && (
           <>
             <section className="resources" aria-labelledby="resources-heading">
               <div className="section-heading">
@@ -189,6 +192,7 @@ function App() {
             </section>
           </>
         )}
+        {!workspace && !management && !announcements && <TeamManagement workspace={false} />}
         <footer>
           <span>
             4418 IMPULSE <span className="footer-divider">/</span> One team.

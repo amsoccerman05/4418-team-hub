@@ -96,6 +96,7 @@ async function mock(page: Page, role = "student") {
           role,
           active: true,
         };
+      else if (path.endsWith("/team_dashboard_context")) result = {name:'Team member',role,admin:false,personal:{percent:null,strikes:0,pending:0},next_meeting:null,orders:[],finance:{allowed:false,approvals:0,school:0},attention:null,robot:null,inventory:null,announcements:[]};
       else if (path.endsWith("/team_meetings")) result = data.meetings;
       else if (path.endsWith("/team_attendance")) result = data.attendance;
       else if (path.endsWith("/team_meeting_members")) result = data.snapshots;
