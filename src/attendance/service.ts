@@ -3,7 +3,9 @@ const url = import.meta.env?.VITE_SUPABASE_URL;
 const key = import.meta.env?.VITE_SUPABASE_ANON_KEY;
 export const supabase =
   url && key
-    ? createSuiteClient(url, key, { auth: { storageKey: "4418-team-hub-auth" } })
+    ? createSuiteClient(url, key, {
+        auth: { storageKey: "4418-team-hub-auth" },
+      })
     : null;
 export type Profile = {
   id: string;
@@ -40,6 +42,8 @@ export type Attendance = {
   left_at: string | null;
   notice_at: string | null;
   notice_reason: string;
+  notice_type?: "absent" | "late" | "early" | null;
+  expected_at?: string | null;
   review_reason: string;
   reviewed_by: string | null;
   reviewed_at: string | null;

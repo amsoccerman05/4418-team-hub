@@ -23,6 +23,7 @@ import {
   type History,
 } from "./service";
 import "./attendance.css";
+import { occurrences, type Repeat } from "./recurrence";
 import { MeetingCalendar } from "./Calendar";
 const time = (s: string | null) =>
   s
@@ -264,6 +265,9 @@ export function AttendanceHub({
                 </div>
                 {!workspace && (
                   <>
+                    {!isManager(profile) && (
+                      <PersonalCallouts data={data} id={profile.id} />
+                    )}
                     {isManager(profile) ? (
                       <div className="attendance-stats">
                         <span>
@@ -283,7 +287,7 @@ export function AttendanceHub({
                               ).length
                             }
                           </strong>{" "}
-                          Notices to review
+                          Attendance requests to review
                         </span>
                         <span>
                           <strong>
@@ -299,13 +303,12 @@ export function AttendanceHub({
                     ) : (
                       <Stats data={data} id={profile.id} />
                     )}
-                    {!isManager(profile) && (
-                      <PersonalCallouts data={data} id={profile.id} />
-                    )}
                     {isManager(profile) && (
                       <div className="att-toolbar att-callouts">
                         <a href="#attendance/calendar">Open calendar →</a>
-                        <a href="#attendance/notices">Review notices →</a>
+                        <a href="#attendance/notices">
+                          Review attendance requests →
+                        </a>
                         <a href="#attendance/strikes">
                           Review strike actions →
                         </a>
@@ -403,43 +406,8 @@ function Student({ data, id, run }: { data: Data; id: string; run: Run }) {
                 </form>
               )}
             {a.checked_in_at && <p>Checked in: {time(a.checked_in_at)}</p>}
-            {a.notice_at ? (
-              <p>
-                Notice submitted {time(a.notice_at)}: {a.notice_reason}
-                <br />
-                {noticeTiming(a, m)}
-              </p>
-            ) : (
-              m.status !== "finalized" && (
-                <details>
-                  <summary>Notify leadership / request excuse</summary>
-                  <form
-                    className="att-form"
-                    onSubmit={(e) => {
-                      const f = fields(e);
-                      void run(
-                        () =>
-                          rpc("team_attendance_notice", {
-                            meeting_id: m.id,
-                            reason: text(f, "reason"),
-                          }),
-                        "Notice submitted for leadership review",
-                      );
-                    }}
-                  >
-                    <label>
-                      Reason
-                      <textarea name="reason" maxLength={2000} required />
-                    </label>
-                    <p>
-                      Submitting a notice does not automatically excuse
-                      attendance. Submission time is recorded.
-                    </p>
-                    <button>Submit notice</button>
-                  </form>
-                </details>
-              )
-            )}
+            <NoticeDetails a={a} meeting={m} />
+            <NoticeForm a={a} meeting={m} run={run} />
             {a.review_reason && <p>Leadership review: {a.review_reason}</p>}
             <StrikeList data={data} attendance={a} />
             <button
@@ -516,6 +484,7 @@ function Management({
       expires: string;
     } | null>(null),
     [history, setHistory] = useState<History[] | null>(null);
+  const [rosterFilter, setRosterFilter] = useState("all");
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -638,8 +607,43 @@ function Management({
               check-in.
             </p>
           </div>
+          <label className="att-select">
+            Live roster filter
+            <select
+              value={rosterFilter}
+              onChange={(e) => setRosterFilter(e.target.value)}
+            >
+              {[
+                "all",
+                "present",
+                "late",
+                "left_early",
+                "excused",
+                "absent",
+                "pending",
+                "notice",
+              ].map((v) => (
+                <option key={v} value={v}>
+                  {v === "pending"
+                    ? "Pending / not checked in"
+                    : v === "notice"
+                      ? "Notice submitted"
+                      : label(v)}
+                </option>
+              ))}
+            </select>
+          </label>
           {data.attendance
-            .filter((a) => a.meeting_id === m.id)
+            .filter(
+              (a) =>
+                a.meeting_id === m.id &&
+                (rosterFilter === "all" ||
+                  (rosterFilter === "excused"
+                    ? a.review_status === "excused"
+                    : rosterFilter === "notice"
+                      ? !!a.notice_at
+                      : a.physical_status === rosterFilter)),
+            )
             .map((a) => (
               <details className="att-record" key={a.id}>
                 <summary>
@@ -648,8 +652,21 @@ function Management({
                   )?.display_name ?? a.student_id}
                   <span>
                     {label(a.physical_status)} · {label(a.review_status)}
+                    <small>
+                      Check-in {time(a.checked_in_at)} · Departure{" "}
+                      {time(a.left_at)}
+                      {a.notice_at && (
+                        <>
+                          {" "}
+                          · {a.notice_type ? label(a.notice_type) : "Notice"} ·
+                          Expected {time(a.expected_at ?? null)} ·{" "}
+                          {noticeTiming(a, m)}
+                        </>
+                      )}
+                    </small>
                   </span>
                 </summary>
+                <NoticeDetails a={a} meeting={m} />
                 <AttendanceEditor
                   key={`${a.id}-${a.version}`}
                   a={a}
@@ -711,6 +728,8 @@ function MeetingForm({
   onCreated: () => void;
 }) {
   const [requirement, setRequirement] = useState("registered");
+  const [repeat, setRepeat] = useState<Repeat>("none");
+  const [preview, setPreview] = useState("");
   const [preset, setPreset] = useState("Offseason"),
     [title, setTitle] = useState("Offseason meeting"),
     [type, setType] = useState("offseason");
@@ -719,6 +738,7 @@ function MeetingForm({
   return (
     <form
       className="att-form"
+      onChange={() => setPreview("")}
       onSubmit={(e) => {
         const f = fields(e);
         const form = e.currentTarget;
@@ -729,7 +749,7 @@ function MeetingForm({
             throw new Error("Select at least one required area.");
           if (requirement === "selected" && !f.getAll("students").length)
             throw new Error("Select at least one required student.");
-          await manage("create", {
+          const base = {
             title: text(f, "title"),
             meeting_type: text(f, "type"),
             starts_at: new Date(text(f, "start")).toISOString(),
@@ -738,7 +758,20 @@ function MeetingForm({
             requirement,
             areas: f.getAll("areas"),
             selected_students: f.getAll("students"),
-          });
+          };
+          const dates = occurrences(
+            text(f, "start"),
+            text(f, "end"),
+            repeat,
+            text(f, "until"),
+            Number(f.get("interval") || 1),
+            f.getAll("weekday").map(Number),
+          );
+          if (repeat === "none") await manage("create", base);
+          else
+            await rpc("team_attendance_create_batch", {
+              meetings: dates.map((d) => ({ ...base, ...d })),
+            });
           form.reset();
           onCreated();
         }, "Meeting created with required roster snapshot");
@@ -808,6 +841,96 @@ function MeetingForm({
           />
         </label>
       </div>
+      <label>
+        Repeat
+        <select
+          aria-label="Repeat"
+          value={repeat}
+          onChange={(e) => setRepeat(e.target.value as Repeat)}
+        >
+          <option value="none">Does not repeat</option>
+          <option value="weekly">Weekly</option>
+          <option value="custom">Custom recurrence</option>
+        </select>
+      </label>
+      {repeat !== "none" && (
+        <div className="att-panel att-form">
+          <p>
+            Use the start/end fields above for the first date and daily times.
+            Each occurrence is a separate meeting with its own required roster.
+          </p>
+          <label>
+            Repeat through (end date)
+            <input type="date" name="until" required />
+          </label>
+          {repeat === "custom" && (
+            <>
+              <label>
+                Repeat every N weeks
+                <input
+                  type="number"
+                  name="interval"
+                  min="1"
+                  max="12"
+                  defaultValue="1"
+                  required
+                />
+              </label>
+              <fieldset>
+                <legend>Weekdays</legend>
+                {[
+                  "Sunday",
+                  "Monday",
+                  "Tuesday",
+                  "Wednesday",
+                  "Thursday",
+                  "Friday",
+                  "Saturday",
+                ].map((day, index) => (
+                  <label className="att-check" key={day}>
+                    <input
+                      type="checkbox"
+                      name="weekday"
+                      value={index}
+                      defaultChecked={date.getDay() === index}
+                    />
+                    {day}
+                  </label>
+                ))}
+              </fieldset>
+            </>
+          )}
+          <button
+            type="button"
+            className="att-secondary"
+            onClick={(e) => {
+              const f = new FormData(e.currentTarget.form!);
+              try {
+                const dates = occurrences(
+                  text(f, "start"),
+                  text(f, "end"),
+                  repeat,
+                  text(f, "until"),
+                  Number(f.get("interval") || 1),
+                  f.getAll("weekday").map(Number),
+                );
+                setPreview(
+                  `${dates.length} meetings: ${dates.map((d) => new Date(d.starts_at).toLocaleDateString()).join(", ")}`,
+                );
+              } catch (error) {
+                setPreview(errorText(error));
+              }
+            }}
+          >
+            Preview meetings
+          </button>
+          {preview && <p role="status">{preview}</p>}
+          <small>
+            Maximum 52 meetings and one year per creation. All meetings are
+            saved together or none are saved.
+          </small>
+        </div>
+      )}
       <label>
         Required attendance
         <select
@@ -919,17 +1042,46 @@ function AttendanceEditor({
       <p>
         Check-in: {time(a.checked_in_at)} · {noticeTiming(a, m)}
       </p>
-      {a.notice_at && (
-        <p>
-          Notice {time(a.notice_at)}: {a.notice_reason}
-        </p>
-      )}
+      <NoticeDetails a={a} meeting={m} />
+      <DepartureForm a={a} meeting={m} run={run} />
       {a.review_reason && (
         <p>
           Latest review: {a.review_reason} · {time(a.reviewed_at)}
         </p>
       )}
-      <details>
+      <div className="att-toolbar">
+        <button
+          type="button"
+          className="att-secondary"
+          onClick={(e) => {
+            const d = e.currentTarget
+              .closest("article")
+              ?.querySelector<HTMLDetailsElement>("[data-review]");
+            if (d) {
+              d.open = true;
+              d.scrollIntoView({ block: "nearest" });
+            }
+          }}
+        >
+          Review excuse / correct attendance
+        </button>
+        <button
+          type="button"
+          className="att-secondary"
+          onClick={(e) => {
+            const d = e.currentTarget
+              .closest("article")
+              ?.querySelector<HTMLDetailsElement>("[data-strike]");
+            if (d) {
+              d.open = true;
+              d.scrollIntoView({ block: "nearest" });
+            }
+          }}
+        >
+          Add / review strikes
+        </button>
+      </div>
+      <details data-review>
         <summary>Review / correct attendance</summary>
         <form
           className="att-form"
@@ -998,7 +1150,7 @@ function AttendanceEditor({
         </form>
       </details>
       <StrikeList data={data} attendance={a} run={run} />
-      <details>
+      <details data-strike>
         <summary>Assign strike</summary>
         <form
           className="att-form"
@@ -1168,9 +1320,7 @@ function PersonalCallouts({ data, id }: { data: Data; id: string }) {
         </strong>
       </div>
       <a href="#attendance">View meetings / check in →</a>
-      <a href="#attendance/notices">
-        {pending} pending notices / excuse requests →
-      </a>
+      <a href="#attendance/notices">{pending} pending attendance requests →</a>
     </div>
   );
 }
@@ -1260,7 +1410,7 @@ function Workspace({
   const notices = ownData.attendance.filter(
     (a) =>
       (a.notice_at || a.review_status === "pending") &&
-      (noticeFilter === "all" || a.review_status === "pending"),
+      (noticeFilter === "all" || a.review_status === noticeFilter),
   );
   const incidentRows =
     current === "notices"
@@ -1277,7 +1427,7 @@ function Workspace({
             href={`#attendance/${name}`}
             aria-current={current === name ? "page" : undefined}
           >
-            {label(name)}
+            {name === "notices" ? "Attendance Requests" : label(name)}
             {name === "notices" && (
               <span>
                 {
@@ -1392,6 +1542,8 @@ function Workspace({
                 onChange={(e) => setNoticeFilter(e.target.value)}
               >
                 <option value="pending">Pending review</option>
+                <option value="excused">Approved / excused</option>
+                <option value="denied">Denied / unexcused</option>
                 <option value="all">All notices</option>
               </select>
             </label>
@@ -1441,7 +1593,7 @@ function Workspace({
                     <>
                       <Status attendance={a} />
                       <p>{a.notice_reason || "Excuse review requested"}</p>
-                      <small>{noticeTiming(a, meeting)}</small>
+                      <NoticeDetails a={a} meeting={meeting} />
                       {a.review_reason && <p>{a.review_reason}</p>}
                       {manager && (
                         <details>
@@ -1578,5 +1730,214 @@ function Workspace({
         </Modal>
       )}
     </>
+  );
+}
+
+function NoticeDetails({ a, meeting: m }: { a: Attendance; meeting: Meeting }) {
+  const lead = a.notice_at
+    ? (Date.parse(m.starts_at) - Date.parse(a.notice_at)) / 3600000
+    : null;
+  return (
+    <div className="att-muted">
+      {a.notice_at && (
+        <>
+          <p>
+            <strong>
+              Attendance notice:{" "}
+              {a.notice_type === "late"
+                ? "Arriving late"
+                : a.notice_type === "early"
+                  ? "Leaving early"
+                  : a.notice_type === "absent"
+                    ? "Absent"
+                    : "Attendance impact"}
+            </strong>
+            {a.expected_at && <> · Expected {time(a.expected_at)}</>}
+            <br />
+            {a.notice_reason}
+            <br />
+            Submitted {time(a.notice_at)} ·{" "}
+            {lead! >= 0
+              ? `${lead!.toFixed(1)} hours in advance`
+              : `${Math.abs(lead!).toFixed(1)} hours after start`}{" "}
+            · {noticeTiming(a, m)}
+          </p>
+        </>
+      )}
+      <p>
+        Actual check-in: {time(a.checked_in_at)} · Actual departure:{" "}
+        {time(a.left_at)}
+        <br />
+        Excuse review:{" "}
+        {a.review_status === "denied"
+          ? "Denied / unexcused"
+          : label(a.review_status)}
+      </p>
+    </div>
+  );
+}
+function NoticeForm({
+  a,
+  meeting: m,
+  run,
+}: {
+  a: Attendance;
+  meeting: Meeting;
+  run: Run;
+}) {
+  const active = Date.now() >= Date.parse(m.starts_at);
+  const [kind, setKind] = useState<string>(
+    active ? "early" : a.notice_type || "absent",
+  );
+  if (m.status === "finalized" || Date.now() >= Date.parse(m.ends_at))
+    return null;
+  return (
+    <details>
+      <summary>
+        {active
+          ? "I need to leave early"
+          : a.notice_at
+            ? "Update attendance request"
+            : "Submit attendance request"}
+      </summary>
+      <form
+        className="att-form"
+        onSubmit={(e) => {
+          const f = fields(e);
+          void run(
+            () =>
+              rpc("team_attendance_request", {
+                p: {
+                  meeting_id: m.id,
+                  version: a.version,
+                  notice_type: active ? "early" : kind,
+                  expected_at: text(f, "expected")
+                    ? new Date(text(f, "expected")).toISOString()
+                    : null,
+                  reason: text(f, "reason"),
+                },
+              }),
+            "Attendance request submitted for leadership review",
+          );
+        }}
+      >
+        <label>
+          How will your attendance be affected?
+          <select
+            value={active ? "early" : kind}
+            onChange={(e) => setKind(e.target.value)}
+          >
+            {!active && (
+              <>
+                <option value="absent">I will be absent</option>
+                <option value="late">I will arrive late</option>
+              </>
+            )}
+            <option value="early">I need to leave early</option>
+          </select>
+        </label>
+        {(active || kind !== "absent") && (
+          <label>
+            {active || kind === "early"
+              ? "Expected departure"
+              : "Expected arrival"}
+            <input
+              type="datetime-local"
+              name="expected"
+              defaultValue={localTime(a.expected_at ?? null)}
+              required
+            />
+          </label>
+        )}
+        <label>
+          Reason
+          <textarea
+            name="reason"
+            maxLength={2000}
+            defaultValue={a.notice_reason}
+            required
+          />
+        </label>
+        <p className="att-muted">
+          Leadership reviews this request separately. It does not excuse you,
+          record an actual departure, or assign strikes. Updating a request
+          records a new submission time; the previous notice remains in audit
+          history.
+        </p>
+        <button>Submit attendance request</button>
+      </form>
+    </details>
+  );
+}
+function DepartureForm({
+  a,
+  meeting: m,
+  run,
+}: {
+  a: Attendance;
+  meeting: Meeting;
+  run: Run;
+}) {
+  const [departure, setDeparture] = useState("");
+  if (Date.now() < Date.parse(m.starts_at) || m.status === "finalized")
+    return null;
+  return (
+    <details
+      onToggle={(e) => {
+        if (e.currentTarget.open && !departure)
+          setDeparture(localTime(a.left_at || new Date().toISOString()));
+      }}
+    >
+      <summary>Mark left early</summary>
+      <form
+        className="att-form"
+        onSubmit={(e) => {
+          const f = fields(e);
+          void run(
+            () =>
+              manage("attendance", {
+                meeting_id: m.id,
+                attendance_id: a.id,
+                version: a.version,
+                physical_status: "left_early",
+                left_at: new Date(text(f, "departure")).toISOString(),
+                review_status: text(f, "decision"),
+                explanation:
+                  text(f, "departure_reason").trim() ||
+                  "Leadership recorded early departure.",
+              }),
+            "Early departure recorded",
+          );
+        }}
+      >
+        <label>
+          Actual departure time
+          <input
+            name="departure"
+            type="datetime-local"
+            value={departure}
+            onChange={(e) => setDeparture(e.target.value)}
+            required
+          />
+        </label>
+        <label>
+          Departure reason (optional)
+          <textarea name="departure_reason" maxLength={2000} />
+        </label>
+        <label>
+          Departure excuse decision
+          <select name="decision" defaultValue={a.review_status}>
+            {["none", "pending", "excused", "denied", "not_required"].map(
+              (v) => (
+                <option value={v} key={v}>
+                  {v === "denied" ? "Denied / unexcused" : label(v)}
+                </option>
+              ),
+            )}
+          </select>
+        </label>
+        <button>Confirm left early</button>
+      </form>
+    </details>
   );
 }

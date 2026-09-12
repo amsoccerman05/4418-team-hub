@@ -69,6 +69,14 @@ test.describe("Attendance database permissions and policy", () => {
       ),
     );
   });
+  test.beforeAll(async () => {
+    await db.exec(
+      readFileSync(
+        "supabase/migrations/202609120001_attendance_requests_recurrence.sql",
+        "utf8",
+      ),
+    );
+  });
   test.afterAll(async () => {
     await db.close();
   });
@@ -396,5 +404,142 @@ test.describe("Attendance database permissions and policy", () => {
     await expect(
       db.query("select selected_students from public.team_meetings"),
     ).rejects.toThrow(/permission denied/);
+  });
+  test("structured notices stay separate from physical attendance and strikes; revisions are audited", async () => {
+    await as("lead");
+    const mid = await create({
+      starts_at: new Date(Date.now() + 48 * 3600000).toISOString(),
+      ends_at: new Date(Date.now() + 51 * 3600000).toISOString(),
+    });
+    await as("student");
+    const request = async (p: any) =>
+      db.query("select public.team_attendance_request($1::jsonb)", [
+        JSON.stringify(p),
+      ]);
+    let a = await row(mid);
+    const p = {
+      meeting_id: mid,
+      version: a.version,
+      notice_type: "late",
+      expected_at: new Date(Date.now() + 49 * 3600000).toISOString(),
+      reason: "Transport",
+    };
+    await request(p);
+    a = await row(mid);
+    expect(a.notice_type).toBe("late");
+    expect(a.physical_status).toBe("pending");
+    expect(a.review_status).toBe("pending");
+    expect(Date.parse(a.notice_at)).toBeGreaterThan(Date.now() - 10000);
+    await expect(request(p)).rejects.toThrow(/changed/);
+    await expect(
+      request({
+        ...p,
+        version: a.version,
+        expected_at: new Date(Date.now() + 60 * 3600000).toISOString(),
+      }),
+    ).rejects.toThrow(/Expected time/);
+    await as("readonly");
+    await expect(request(p)).rejects.toThrow(/Student access/);
+    await as("other");
+    await request({ ...p, student_id: ids.student, reason: "Own record only" });
+    expect((await row(mid, ids.other)).notice_reason).toBe("Own record only");
+    await as("student");
+    expect((await row(mid)).notice_reason).toBe("Transport");
+    await as("lead");
+    const active = await create();
+    await as("student");
+    a = await row(active);
+    await request({
+      meeting_id: active,
+      version: a.version,
+      notice_type: "early",
+      expected_at: new Date(Date.now() + 10 * 60000).toISOString(),
+      reason: "Need to leave",
+    });
+    a = await row(active);
+    expect(a.physical_status).toBe("pending");
+    expect(a.left_at).toBeNull();
+    await expect(
+      request({
+        meeting_id: active,
+        version: a.version,
+        notice_type: "absent",
+        reason: "No",
+      }),
+    ).rejects.toThrow(/only early/);
+    await request({
+      meeting_id: active,
+      version: a.version,
+      notice_type: "early",
+      expected_at: new Date(Date.now() + 15 * 60000).toISOString(),
+      reason: "Updated departure",
+    });
+    expect(
+      (
+        await db.query<any>(
+          "select * from public.team_attendance_history where meeting_id=$1",
+          [active],
+        )
+      ).rows.length,
+    ).toBeGreaterThanOrEqual(3);
+    await as("lead");
+    a = await row(active);
+    await manage("attendance", {
+      meeting_id: active,
+      attendance_id: a.id,
+      version: a.version,
+      physical_status: "left_early",
+      left_at: new Date().toISOString(),
+      review_status: "excused",
+      explanation: "Confirmed departure",
+    });
+    expect((await row(active)).physical_status).toBe("left_early");
+    expect(
+      (
+        await db.query(
+          "select * from public.team_attendance_strikes where meeting_id=$1",
+          [active],
+        )
+      ).rows,
+    ).toHaveLength(0);
+  });
+  test("recurrence batches enforce roles and rollback every meeting on failure", async () => {
+    const base = {
+      title: "Recurring",
+      meeting_type: "offseason",
+      starts_at: new Date(Date.now() + 3600000).toISOString(),
+      ends_at: new Date(Date.now() + 7200000).toISOString(),
+      requirement: "registered",
+    };
+    const batch = (items: any[]) =>
+      db.query<any>(
+        "select public.team_attendance_create_batch($1::jsonb) result",
+        [JSON.stringify(items)],
+      );
+    await as("student");
+    await expect(batch([base])).rejects.toThrow(/Leadership/);
+    await as("mentor");
+    await expect(batch([])).rejects.toThrow(/between 1 and 52/);
+    await expect(batch(Array(53).fill(base))).rejects.toThrow(
+      /between 1 and 52/,
+    );
+    const before = (await db.query("select id from public.team_meetings")).rows
+      .length;
+    await expect(batch([base, { ...base, title: "" }])).rejects.toThrow();
+    expect(
+      (await db.query("select id from public.team_meetings")).rows,
+    ).toHaveLength(before);
+    const ids = (await batch([base, base])).rows[0].result.map(
+      (x: any) => x.id,
+    );
+    for (const id of ids)
+      expect(
+        (
+          await db.query(
+            "select * from public.team_meeting_members where meeting_id=$1",
+            [id],
+          )
+        ).rows.length,
+      ).toBeGreaterThan(0);
   });
 });
