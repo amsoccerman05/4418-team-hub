@@ -433,7 +433,7 @@ function MeetingHeader({ meeting: m }: { meeting: Meeting }) {
     <>
       <div className="att-toolbar">
         <h3>{m.title}</h3>
-        <span className="att-badge">{label(m.status)}</span>
+        <span className={`att-badge ${m.status}`}>{label(m.status)}</span>
       </div>
       <p>
         {time(m.starts_at)} – {time(m.ends_at)} · {label(m.meeting_type)} ·{" "}
@@ -451,7 +451,7 @@ function Status({ attendance: a }: { attendance: Attendance }) {
       {a.review_status !== "none" && (
         <>
           {" "}
-          <span className="att-badge">
+          <span className={`att-badge ${a.review_status}`}>
             {a.review_status === "pending"
               ? "Excuse review pending"
               : label(a.review_status)}

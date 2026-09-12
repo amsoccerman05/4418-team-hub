@@ -125,13 +125,13 @@
 }
 .att-badge.late,
 .att-badge.left_early {
-  color: #754800;
-  background: #fff1cd;
+  color: var(--suite-warning);
+  background: var(--suite-warning-bg);
 }
 .att-badge.absent,
 .att-error {
-  color: #8f2929;
-  background: #fff0f0;
+  color: var(--suite-danger);
+  background: var(--suite-danger-bg);
 }
 .att-error {
   padding: 12px;
@@ -347,7 +347,7 @@
   color: var(--color-muted);
 }
 .attendance-section .att-event.open {
-  background: #e2f2e6;
+  background: var(--suite-subtle);
 }
 .att-no-events {
   font-size: 11px;
@@ -470,3 +470,10 @@
     padding: 12px;
   }
 }
+
+.att-badge.present, .att-badge.excused { color: var(--suite-success); background: var(--suite-success-bg); }
+.att-badge.pending, .att-badge.late, .att-badge.left_early { color: var(--suite-warning); background: var(--suite-warning-bg); }
+.att-badge.absent, .att-badge.denied, .att-error { color: var(--suite-danger); background: var(--suite-danger-bg); }
+.att-badge.not_required { color: var(--suite-muted); background: var(--suite-subtle); }
+.attendance-section .att-event.open { color: var(--suite-primary); background: var(--suite-info-bg); }
+.attendance-section input, .attendance-section select, .attendance-section textarea { border-color: var(--suite-input-border); }
