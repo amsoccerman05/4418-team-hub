@@ -8,6 +8,7 @@ import {
   Boxes,
   Wrench,
   Receipt,
+  CalendarDays,
   Flag,
   MessageSquare,
   LayoutList,
@@ -24,6 +25,7 @@ const icons: Record<string, LucideIcon> = {
   inventory: Boxes,
   pit: Wrench,
   finance: Receipt,
+  attendance: CalendarDays,
   first: Flag,
   slack: MessageSquare,
   monday: LayoutList,
@@ -155,7 +157,7 @@ function App() {
             </section>
           </>
         )}
-        {!management && <AttendanceHub
+        {workspace && <AttendanceHub
           workspace={workspace}
           tab={route.split("/")[1] || "calendar"}
         />}

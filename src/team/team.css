@@ -1,4 +1,4 @@
-.team-entry { margin: 2rem 0; padding: 1.5rem; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); }
+.team-entry { display:flex; align-items:center; justify-content:space-between; gap:16px; margin:2rem 0; padding:16px 20px; border:1px solid var(--color-border); border-radius:var(--radius-card); background:var(--color-surface); }.team-entry h2{font-size:16px;margin:0}.team-entry p{font-size:13px;color:var(--suite-muted);margin:4px 0 0}.team-entry a{min-height:44px;display:flex;align-items:center}@media(max-width:600px){.team-entry{align-items:flex-start;flex-direction:column;gap:4px}}
 .team-member-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:1rem; margin:1.5rem 0; }
 .team-member,.team-editor { padding:1.25rem; border:1px solid var(--color-border); border-radius:var(--radius-card); background:var(--color-surface); }
 .team-member h2 { font-size:1.2rem; }.team-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; margin-bottom:1rem; }

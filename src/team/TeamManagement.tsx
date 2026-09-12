@@ -29,7 +29,7 @@ export function TeamManagement({workspace}:{workspace:boolean}) {
   return()=>{live=false;version++;clearTimeout(timer);sub.data.subscription.unsubscribe();};
  },[workspace]);
  async function save(action:string,p:Record<string,unknown>){setBusy(true);setError('');setNotice('');try{await rpc('team_manage',{action,p});setData(await rpc('team_management_context'));setNotice(action==='create_area'?'Team area added.':'Team member updated.');}catch(e){setError(message(e));if(e&&typeof e==='object'&&'code' in e&&e.code==='42501'){setAllowed(false);setData(null);}}finally{setBusy(false);}}
- if(!workspace)return allowed?<section className="team-entry"><h2>Team Management</h2><p>Manage members, roles, areas, registration, and team positions.</p><a className="system-action" href="#team-management">Manage team →</a></section>:null;
+ if(!workspace)return allowed?<section className="team-entry" aria-labelledby="administration-heading"><div><h2 id="administration-heading">Administration</h2><p>Members, roles, and team positions.</p></div><a className="system-action" href="#team-management">Team Management →</a></section>:null;
  const member=data?.members.find(m=>m.id===selected);
  return <section className="team-management"><div className="section-heading"><div><h1>Team Management</h1><p>Shared team identity and positions across the 4418 suite.</p></div><a href="#">Team Hub / Home</a></div>
  {!member&&error&&<p role="alert">{error}</p>}{!member&&notice&&<p role="status">{notice}</p>}

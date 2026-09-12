@@ -102,7 +102,7 @@ for (const width of [390, 1440])
     const calls = await setup(context);
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(e.message));
-    await page.goto("https://team.frc4418.org/");
+    await page.goto("https://team.frc4418.org/#attendance");
     await page.getByLabel("Email", { exact: true }).fill(user.email);
     await page.getByLabel("Password", { exact: true }).fill("fixture-password");
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
@@ -118,8 +118,10 @@ for (const width of [390, 1440])
       await expect(
         page.getByRole("button", { name: "Sign in", exact: true }),
       ).toHaveCount(0);
-      if (dest.includes("team."))
+      if (dest.includes("team.")) {
+        await page.locator('.system-card[href="#attendance"]').click();
         await expect(page.getByText("Welcome, Suite Student")).toBeVisible();
+      }
       else await expect(page.locator(".topbar")).toBeVisible();
       await expect(page).toHaveTitle(title);
       expect(
@@ -241,6 +243,7 @@ for (const host of ["inventory", "pit"])
     await expect(page.locator(".topbar")).toBeVisible();
     await page.locator(".suite-picker summary").click();
     await page.locator('.suite-picker a[href="https://team.frc4418.org/"]').click();
+    await page.locator('.system-card[href="#attendance"]').click();
     await expect(page.getByText("Welcome, Suite Student")).toBeVisible();
     expect(
       calls.filter((c) => c.path.includes("grant_type=password")),

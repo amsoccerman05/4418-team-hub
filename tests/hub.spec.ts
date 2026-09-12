@@ -13,6 +13,10 @@ for (const width of [390, 768, 1280, 1440])
     await expect(
       page.getByRole("heading", { name: "Team Resources", exact: true }),
     ).toBeVisible();
+    await expect(page.locator(".system-card h3")).toHaveText(["Inventory", "Pit Operations", "Attendance", "Finance"]);
+    await expect(page.locator(".attendance-section")).toHaveCount(0);
+    await expect(page.getByRole("heading", {name:"Administration",exact:true})).toHaveCount(0);
+    if(width>=768) expect(await page.locator(".systems-grid").evaluate(e=>getComputedStyle(e).gridTemplateColumns.split(" ").length)).toBe(2);
     for (const link of systems) {
       const a = page
         .locator(".system-card")

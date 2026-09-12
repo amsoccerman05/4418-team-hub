@@ -173,7 +173,7 @@ for (const width of [390, 1440]) {
   }) => {
     await page.setViewportSize({ width, height: 900 });
     const { calls } = await mock(page);
-    await page.getByRole("link", { name: "My Attendance" }).click();
+    await page.locator('.system-card[href="#attendance"]').click();
     await expect(
       page.getByRole("button", { name: "Manage attendance" }),
     ).toHaveCount(0);
@@ -217,7 +217,7 @@ for (const width of [390, 1440]) {
   }) => {
     await page.setViewportSize({ width, height: 900 });
     const { calls } = await mock(page, "lead");
-    await page.getByRole("link", { name: "Manage attendance" }).click();
+    await page.locator('.system-card[href="#attendance"]').click();
     await page
       .getByRole("button", { name: "New meeting", exact: true })
       .click();
@@ -329,10 +329,8 @@ for (const width of [390, 1440]) {
   }) => {
     await page.setViewportSize({ width, height: 900 });
     const { calls, data } = await mock(page, "lead");
-    await expect(page.locator(".attendance-stats")).toContainText(
-      "Open meetings",
-    );
-    await page.getByRole("link", { name: "Manage attendance" }).click();
+    await expect(page.locator(".attendance-stats")).toHaveCount(0);
+    await page.locator('.system-card[href="#attendance"]').click();
     await expect(
       page
         .getByRole("navigation", { name: "Attendance views" })
@@ -427,9 +425,7 @@ for (const width of [390, 1440]) {
     await expect(
       page.getByRole("heading", { name: "4418 Systems" }),
     ).toBeVisible();
-    await expect(page.locator(".attendance-stats")).toContainText(
-      "Attendance requests to review",
-    );
+    await expect(page.locator(".attendance-stats")).toHaveCount(0);
   });
 }
 
@@ -483,9 +479,7 @@ test("student deep links never show team roster or leadership controls", async (
   page,
 }) => {
   await mock(page);
-  await expect(
-    page.getByText("Next required meeting", { exact: true }),
-  ).toBeVisible();
+  await expect(page.locator(".attendance-section")).toHaveCount(0);
   await page.goto("/#attendance/roster");
   await expect(
     page.getByRole("heading", { name: "Meeting calendar" }),
@@ -509,7 +503,7 @@ for (const width of [390, 1440])
   }) => {
     await page.setViewportSize({ width, height: 900 });
     const { calls } = await mock(page, "lead");
-    await page.getByRole("link", { name: "Manage attendance" }).click();
+    await page.locator('.system-card[href="#attendance"]').click();
     await page
       .getByRole("button", { name: "New meeting", exact: true })
       .click();
@@ -568,7 +562,7 @@ for (const width of [390, 1440])
     await page.setViewportSize({ width, height: 900 });
     const { calls } = await mock(page);
     await page.clock.setFixedTime(new Date("2026-09-09T15:00:00Z"));
-    await page.getByRole("link", { name: "My Attendance" }).click();
+    await page.locator('.system-card[href="#attendance"]').click();
     await page.getByRole("button", { name: /Preseason build/ }).click();
     await page
       .locator("summary")
@@ -612,8 +606,7 @@ test("leadership request filters separate pending, excused and denied", async ({
   data.attendance[0].notice_at = "2026-09-09T15:00:00Z";
   data.attendance[0].notice_reason = "Transportation";
   data.attendance[0].review_status = "excused";
-  await page.getByRole("button", { name: "Refresh", exact: true }).click();
-  await page.getByRole("link", { name: "Manage attendance" }).click();
+  await page.locator('.system-card[href="#attendance"]').click();
   await page.getByRole("link", { name: /^Attendance Requests/ }).click();
   await expect(
     page.getByText("No notices to review in this view."),

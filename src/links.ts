@@ -24,6 +24,12 @@ export const systems: HubLink[] = [
     url: "https://pit.frc4418.org",
   },
   {
+    id: "attendance",
+    name: "Attendance",
+    description: "Meetings, check-ins, and attendance records.",
+    url: "#attendance",
+  },
+  {
     id: "finance",
     name: "Finance",
     description: "Purchase orders, approvals, and team finances.",
@@ -32,8 +38,7 @@ export const systems: HubLink[] = [
 ];
 export const suiteApps = [
   { name: "Team Hub / Home", url: "https://team.frc4418.org/" },
-  ...systems,
-  { name: "Attendance", url: "https://team.frc4418.org/#attendance" },
+  ...systems.map(app => ({ ...app, url: app.id === "attendance" ? "https://team.frc4418.org/#attendance" : app.url })),
 ];
 export const resources: HubLink[] = [
   {

@@ -53,3 +53,11 @@ for(const width of [390,1440])test(`focused management views and keyboard dismis
  await page.screenshot({path:`test-results/member-modal-${width}.png`,fullPage:true});await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);
  await expect(page.getByRole('button',{name:'Manage Aiden'})).toBeFocused();
 });
+
+for(const role of ['mentor','admin','student'])test(`homepage administration visibility for ${role}`,async({page})=>{
+ await setup(page,role);await page.goto('/');
+ if(role==='student')await expect(page.getByRole('heading',{name:'Administration',exact:true})).toHaveCount(0);
+ else await expect(page.getByRole('heading',{name:'Administration',exact:true})).toBeVisible();
+ await expect(page.locator('.attendance-section')).toHaveCount(0);
+ await page.locator('.system-card[href="#attendance"]').click();await expect(page.locator('.att-workspace')).toBeVisible();
+});
