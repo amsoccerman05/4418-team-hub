@@ -113,7 +113,8 @@ for (const width of [390, 1440])
       ["https://pit.frc4418.org/", "4418 Pit Operations"],
       ["https://team.frc4418.org/", "4418 Team Hub"],
     ]) {
-      await page.getByLabel("Team 4418 apps").selectOption(dest);
+      await page.locator(".suite-picker summary").click();
+      await page.locator(`.suite-picker a[href="${dest.replace(/\/$/, "")}"] , .suite-picker a[href="${dest}"]`).first().click();
       await expect(
         page.getByRole("button", { name: "Sign in", exact: true }),
       ).toHaveCount(0);
@@ -238,9 +239,8 @@ for (const host of ["inventory", "pit"])
     await page.getByLabel("Password", { exact: true }).fill("fixture-password");
     await page.getByRole("button", { name: /^Sign in$/i }).click();
     await expect(page.locator(".topbar")).toBeVisible();
-    await page
-      .getByLabel("Team 4418 apps")
-      .selectOption("https://team.frc4418.org/");
+    await page.locator(".suite-picker summary").click();
+    await page.locator('.suite-picker a[href="https://team.frc4418.org/"]').click();
     await expect(page.getByText("Welcome, Suite Student")).toBeVisible();
     expect(
       calls.filter((c) => c.path.includes("grant_type=password")),

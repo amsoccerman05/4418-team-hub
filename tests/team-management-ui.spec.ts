@@ -25,6 +25,7 @@ for(const width of [390,1440])test(`member editor and position add/remove at ${w
  const editor=page.getByRole('region',{name:'Member editor'});
  await editor.getByLabel('Display name',{exact:true}).fill('Aiden Updated');await editor.getByRole('combobox',{name:'Registration',exact:true}).selectOption('registered');await editor.getByRole('combobox',{name:'Functional area',exact:true}).selectOption('area');await editor.getByLabel('Reason for change').fill('Registration confirmed');await editor.getByRole('button',{name:'Save member'}).click();
  await expect(page.getByRole('status')).toContainText('updated');expect(calls[0].p.expected_updated_at).toBe('2026-09-12T00:00:00Z');
+ await editor.getByText('Team positions',{exact:true}).click();
  await editor.getByRole('combobox',{name:'Position',exact:true}).selectOption('lead_coach_2');await editor.getByLabel('Assignment reason').fill('Season coach');await editor.getByRole('button',{name:'Assign position',exact:true}).click();
  await expect(editor.getByRole('heading',{name:'Lead Coach 2',exact:true})).toBeVisible();
  await page.screenshot({path:`test-results/team-management-${width}.png`,fullPage:true});
@@ -37,7 +38,18 @@ test('student cannot open management controls via a direct route',async({page})=
 });
 
 test('mentor creates a shared area through the audited RPC',async({page})=>{
- const calls=await setup(page);await page.goto('/#team-management');await page.getByText('Add team area',{exact:true}).click();
+ const calls=await setup(page);await page.goto('/#team-management');await page.getByRole('button',{name:'Areas',exact:true}).click();await page.getByText('Add team area',{exact:true}).click();
  await page.getByLabel('Area name',{exact:true}).fill('Operations');await page.getByLabel('Area key',{exact:true}).fill('operations');await page.getByLabel('Reason for new area').fill('New functional area');await page.getByRole('button',{name:'Add area',exact:true}).click();
  await expect(page.getByRole('status')).toHaveText('Team area added.');expect(calls[0]).toEqual({action:'create_area',p:{name:'Operations',slug:'operations',reason:'New functional area'}});
+});
+
+for(const width of [390,1440])test(`focused management views and keyboard dismissal ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});await setup(page);await page.goto('/#team-management');
+ await page.getByRole('button',{name:'Positions',exact:true}).click();await expect(page.getByText('Unassigned',{exact:true})).toHaveCount(2);
+ await page.screenshot({path:`test-results/positions-${width}.png`,fullPage:true});
+ await page.getByRole('button',{name:'Activity',exact:true}).click();await expect(page.getByText('No changes recorded yet.',{exact:false})).toBeVisible();
+ await page.getByRole('button',{name:'Members',exact:true}).click();await page.getByLabel('Find a member').fill('missing');await page.getByRole('button',{name:'Clear search'}).click();
+ await page.getByRole('button',{name:'Manage Aiden'}).click();await expect(page.getByRole('dialog',{name:'Member editor'})).toBeVisible();
+ await page.screenshot({path:`test-results/member-modal-${width}.png`,fullPage:true});await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'Manage Aiden'})).toBeFocused();
 });

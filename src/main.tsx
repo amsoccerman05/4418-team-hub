@@ -1,3 +1,4 @@
+import { SuiteSwitcher } from './SuiteSwitcher';
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -109,20 +110,7 @@ function App() {
               4418<span>TEAM HUB</span>
             </div>
           </div>
-          <label className="suite-switch">
-            <span className="sr-suite">Team 4418 apps</span>
-            <select
-              aria-label="Team 4418 apps"
-              value="https://team.frc4418.org/"
-              onChange={(e) => {
-                window.location.href = e.target.value;
-              }}
-            >
-              {suiteApps.map((app) => (
-                <option key={app.url} value={app.url!}>{app.name}</option>
-              ))}
-            </select>
-          </label>
+          <SuiteSwitcher current="Team Hub / Home" items={suiteApps} />
           <div className="breadcrumb">
             Workspace
             <ChevronRight size={14} />
