@@ -1,0 +1,49 @@
+import { useEffect, useState } from 'react';
+import { supabase } from '../attendance/service';
+import './team.css';
+type Member = { id:string; display_name:string; role:string; active:boolean; primary_area_id:string|null; updated_at:string; member_status:string|null; team_area:string|null };
+type Assignment = {id:string;user_id:string;position_key:string;assigned_by:string;assigned_at:string;assignment_reason:string;revoked_at:string|null;revoked_by:string|null;revoke_reason:string|null};
+type Context = {members:Member[];areas:{id:string;name:string;active:boolean}[];positions:{key:string;name:string;active:boolean}[];assignments:Assignment[];history:{id:number;user_id:string|null;after_data?:{name?:string};actor_id:string;action:string;reason:string;created_at:string}[]};
+const message=(e:unknown)=>e&&typeof e==='object'&&'message' in e?String(e.message):'Unable to load team management.';
+async function rpc(name:string,args:Record<string,unknown>={}) {
+ if(!supabase) throw new Error('Team connection is not configured.');
+ const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),15000);
+ try {const r=await supabase.rpc(name,args).abortSignal(controller.signal);if(r.error)throw r.error;return r.data;} finally{clearTimeout(timeout);}
+}
+export function TeamManagement({workspace}:{workspace:boolean}) {
+ const [allowed,setAllowed]=useState(false),[ready,setReady]=useState(false),[data,setData]=useState<Context|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[search,setSearch]=useState(''),[selected,setSelected]=useState<string|null>(null),[notice,setNotice]=useState('');
+ useEffect(()=>{
+  if(!supabase){setReady(true);return;}
+  let live=true,version=0;
+  const update=(uid?:string)=>{const v=++version;setAllowed(false);setData(null);setError('');setReady(!uid);if(!uid){clearTimeout(timer);return;}
+   setTimeout(()=>{void (async()=>{const {data:p,error:e}=await supabase!.from('profiles').select('role,active').eq('id',uid).abortSignal(AbortSignal.timeout(15000)).single();if(e)throw e;if(!live||v!==version)return;const ok=p.active&&['admin','mentor'].includes(p.role);setAllowed(ok);if(workspace&&ok){const c=await rpc('team_management_context');if(live&&v===version)setData(c);}})().catch(e=>{if(live&&v===version)setError(message(e));}).finally(()=>{if(live&&v===version){clearTimeout(timer);setReady(true);}});},0);
+  };
+  const timer=setTimeout(()=>{if(live){setReady(true);setError('Team management timed out. Reload to try again.');}},15000);
+  const sub=supabase.auth.onAuthStateChange((_event,session)=>update(session?.user.id));
+  return()=>{live=false;version++;clearTimeout(timer);sub.data.subscription.unsubscribe();};
+ },[workspace]);
+ async function save(action:string,p:Record<string,unknown>){setBusy(true);setError('');setNotice('');try{await rpc('team_manage',{action,p});setData(await rpc('team_management_context'));setNotice(action==='create_area'?'Team area added.':'Team member updated.');}catch(e){setError(message(e));if(e&&typeof e==='object'&&'code' in e&&e.code==='42501'){setAllowed(false);setData(null);}}finally{setBusy(false);}}
+ if(!workspace)return allowed?<section className="team-entry"><h2>Team Management</h2><p>Manage members, roles, areas, registration, and team positions.</p><a className="system-action" href="#team-management">Manage team →</a></section>:null;
+ const member=data?.members.find(m=>m.id===selected);
+ return <section className="team-management"><div className="section-heading"><div><h1>Team Management</h1><p>Shared team identity and positions across the 4418 suite.</p></div><a href="#">Team Hub / Home</a></div>
+ {error&&<p role="alert">{error}</p>}{notice&&<p role="status">{notice}</p>}
+ {!ready?<p role="status">Loading members…</p>:!allowed?<p>Active mentors and admins can manage the team. <a href="#">Sign in through Team Hub</a>.</p>:!data?<p>Team management is unavailable. <button onClick={()=>location.reload()}>Reload</button></p>:<>
+ <p>New accounts are invited through Supabase Auth. Existing member records are preserved.</p>
+ <label>Find a member<input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Name, role, or position"/></label>
+ <div className="team-member-grid">{data.members.filter(m=>`${m.display_name} ${m.role} ${data.assignments.filter(a=>a.user_id===m.id&&!a.revoked_at).map(a=>data.positions.find(p=>p.key===a.position_key)?.name).join(' ')}`.toLowerCase().includes(search.toLowerCase())).map(m=><article className="team-member" key={m.id}><h2>{m.display_name||'Unnamed member'}</h2><p>{m.role} · {m.active?'Active':'Inactive'} · {data.areas.find(a=>a.id===m.primary_area_id)?.name||'Unassigned'}</p><p>Registration: {m.member_status||'Not tracked'}</p><p>Positions: {data.assignments.filter(a=>a.user_id===m.id&&!a.revoked_at).map(a=>data.positions.find(p=>p.key===a.position_key)?.name).join(', ')||'None'}</p><button disabled={busy} onClick={()=>setSelected(m.id)}>Manage {m.display_name||'member'}</button></article>)}</div>
+ {member&&<section className="team-editor" aria-label="Member editor"><div className="section-heading"><h2>{member.display_name||'Member'}</h2><button disabled={busy} onClick={()=>setSelected(null)}>Close editor</button></div>
+ <form key={member.id+member.updated_at+member.member_status} onSubmit={e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.currentTarget));void save('member',{...f,user_id:member.id,active:f.active==='true',member_status:f.member_status||null,expected_updated_at:member.updated_at,expected_member_status:member.member_status,expected_team_area:member.team_area});}}><fieldset disabled={busy}><div className="team-fields">
+ <label>Display name<input name="display_name" defaultValue={member.display_name} required maxLength={150}/></label>
+ <label>Role<select name="role" defaultValue={member.role}>{['student','lead','mentor','admin','readonly'].map(r=><option key={r}>{r}</option>)}</select></label>
+ <label>Active<select name="active" defaultValue={String(member.active)}><option value="true">Active</option><option value="false">Inactive</option></select></label>
+ <label>Functional area<select name="primary_area_id" defaultValue={member.primary_area_id||''}><option value="">Unassigned</option>{data.areas.filter(a=>a.active||a.id===member.primary_area_id).map(a=><option key={a.id} value={a.id} disabled={!a.active}>{a.name}{!a.active?' (inactive)':''}</option>)}</select></label>
+ <label>Registration<select name="member_status" defaultValue={member.member_status||''}>{!member.member_status&&<option value="">Not tracked</option>}{['prospective','registered','inactive'].map(r=><option key={r}>{r}</option>)}</select></label>
+ <label>Reason for change<input name="reason" required maxLength={2000}/></label></div><button className="primary">Save member</button></fieldset></form>
+ <h3>Team positions</h3><form onSubmit={e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.currentTarget));void save('assign_position',{...f,user_id:member.id});}}><fieldset disabled={busy||!member.active||member.role==='readonly'}><div className="team-fields"><label>Position<select name="position_key" required><option value="">Choose position</option>{data.positions.filter(p=>p.active&&!data.assignments.some(a=>a.user_id===member.id&&a.position_key===p.key&&!a.revoked_at)).map(p=><option key={p.key} value={p.key}>{p.name}</option>)}</select></label><label>Assignment reason<input name="reason" required maxLength={2000}/></label></div><button className="primary">Assign position</button></fieldset></form>
+ {data.assignments.filter(a=>a.user_id===member.id&&!a.revoked_at).map(a=><form key={a.id} onSubmit={e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.currentTarget));void save('revoke_position',{...f,user_id:member.id,assignment_id:a.id});}}><fieldset disabled={busy}><h4>{data.positions.find(p=>p.key===a.position_key)?.name}</h4><label>Removal reason<input name="reason" required maxLength={2000}/></label><button>Remove position</button></fieldset></form>)}
+ <details><summary>Position history</summary>{data.assignments.filter(a=>a.user_id===member.id).map(a=><p key={a.id}>{data.positions.find(p=>p.key===a.position_key)?.name} · Assigned {new Date(a.assigned_at).toLocaleString()} by {data.members.find(m=>m.id===a.assigned_by)?.display_name||'Team administrator'} · {a.assignment_reason}{a.revoked_at&&` · Removed ${new Date(a.revoked_at).toLocaleString()}: ${a.revoke_reason}`}</p>)}</details>
+ </section>}
+ <details><summary>Add team area</summary><p>Existing area IDs and inventory ownership are preserved.</p><form onSubmit={e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.currentTarget));void save('create_area',f);}}><fieldset disabled={busy}><div className="team-fields"><label>Area name<input name="name" required maxLength={100}/></label><label>Area key<input name="slug" required maxLength={100} pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="e.g. fabrication"/></label><label>Reason for new area<input name="reason" required maxLength={2000}/></label></div><button className="primary">Add area</button></fieldset></form></details>
+ <details><summary>Recent team changes</summary>{data.history.map(h=><p key={h.id}>{data.members.find(m=>m.id===h.actor_id)?.display_name||'Administrator'} · {h.action.replaceAll('_',' ')} · {data.members.find(m=>m.id===h.user_id)?.display_name||h.after_data?.name} · {new Date(h.created_at).toLocaleString()} · {h.reason}</p>)}</details></>}
+ </section>;
+}

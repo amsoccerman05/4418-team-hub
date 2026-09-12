@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { systems, resources, suiteApps, type HubLink } from "./links";
 import "./style.css";
+import { TeamManagement } from "./team/TeamManagement";
 import { AttendanceHub } from "./attendance/Attendance";
 const branding = `${import.meta.env.BASE_URL}branding/`;
 const icons: Record<string, LucideIcon> = {
@@ -88,6 +89,7 @@ function App() {
     window.addEventListener("hashchange", update);
     return () => window.removeEventListener("hashchange", update);
   }, []);
+  const management = route === "#team-management";
   const workspace = route === "#attendance" || route.startsWith("#attendance/");
   return (
     <>
@@ -124,7 +126,7 @@ function App() {
           <div className="breadcrumb">
             Workspace
             <ChevronRight size={14} />
-            <strong>{workspace ? "Attendance" : "Team Hub"}</strong>
+            <strong>{management ? "Team Management" : workspace ? "Attendance" : "Team Hub"}</strong>
           </div>
           <span className="header-team">
             FRC Team 4418 <span>IMPULSE</span>
@@ -132,7 +134,7 @@ function App() {
         </div>
       </header>
       <main id="main">
-        {!workspace && (
+        {!workspace && !management && (
           <>
             <div className="page-heading">
               <div>
@@ -165,11 +167,12 @@ function App() {
             </section>
           </>
         )}
-        <AttendanceHub
+        {!management && <AttendanceHub
           workspace={workspace}
           tab={route.split("/")[1] || "calendar"}
-        />
-        {!workspace && (
+        />}
+        {!workspace && <TeamManagement workspace={management} />}
+        {!workspace && !management && (
           <>
             <section className="resources" aria-labelledby="resources-heading">
               <div className="section-heading">

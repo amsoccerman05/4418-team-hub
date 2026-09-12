@@ -1,0 +1,20 @@
+.team-entry { margin: 2rem 0; padding: 1.5rem; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); }
+.team-member-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:1rem; margin:1.5rem 0; }
+.team-member,.team-editor { padding:1.25rem; border:1px solid var(--color-border); border-radius:var(--radius-card); background:var(--color-surface); }
+.team-member h2 { font-size:1.2rem; }.team-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; margin-bottom:1rem; }
+.team-management label {display:flex; flex-direction:column; gap:.4rem;}.team-management input,.team-management select{width:100%;min-width:0;}.team-management fieldset{border:0;padding:0;margin:1rem 0;min-width:0;}.team-management details{margin:1.5rem 0;}.team-management p{overflow-wrap:anywhere;}.team-editor{margin-bottom:1.5rem;}
+@media(max-width:640px){.team-fields{grid-template-columns:1fr;}.team-management .section-heading{align-items:flex-start;flex-direction:column;gap:.75rem;}}
+
+.team-management p{margin:.5rem 0;}.team-management a{color:var(--color-primary);}.team-management [role="alert"]{color:var(--suite-danger);}
+/* Match the existing Hub form controls without changing Attendance styles. */
+.team-management label {font-weight:600;color:var(--color-label);}
+.team-management input,.team-management select {min-height:44px;padding:9px 10px;border:1px solid var(--color-input-border);border-radius:var(--radius-input);background:var(--color-surface);color:var(--color-input-text);font:16px var(--font-body);}
+.team-management button {min-height:44px;padding:10px 16px;border:1px solid var(--color-border);border-radius:var(--radius-button);background:var(--color-surface);color:var(--color-primary);font:600 14px var(--font-body);cursor:pointer;box-shadow:var(--shadow-button);}
+.team-management button.primary {background:var(--color-primary);border-color:var(--color-primary);color:white;}
+.team-management button.primary:hover {background:var(--color-primary-hover);}
+.team-management button:disabled{opacity:.6;cursor:not-allowed;}
+.team-management :is(button,input,select):focus-visible{outline:2px solid var(--color-focus);outline-offset:2px;}
+.team-management summary{cursor:pointer;min-height:44px;padding:10px 0;}
+.team-management h3{margin-top:1.5rem;}
+.team-editor form+form {border-top:1px solid var(--color-border);padding-top:1rem;}
+.team-editor button{margin-top:.5rem;}
