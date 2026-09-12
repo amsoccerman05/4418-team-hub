@@ -6,6 +6,7 @@ import {
   ExternalLink,
   Boxes,
   Wrench,
+  Receipt,
   Flag,
   MessageSquare,
   LayoutList,
@@ -13,13 +14,14 @@ import {
   Globe,
   type LucideIcon,
 } from "lucide-react";
-import { systems, resources, type HubLink } from "./links";
+import { systems, resources, suiteApps, type HubLink } from "./links";
 import "./style.css";
 import { AttendanceHub } from "./attendance/Attendance";
 const branding = `${import.meta.env.BASE_URL}branding/`;
 const icons: Record<string, LucideIcon> = {
   inventory: Boxes,
   pit: Wrench,
+  finance: Receipt,
   first: Flag,
   slack: MessageSquare,
   monday: LayoutList,
@@ -114,12 +116,9 @@ function App() {
                 window.location.href = e.target.value;
               }}
             >
-              <option value="https://team.frc4418.org/">Team Hub / Home</option>
-              <option value="https://inventory.frc4418.org/">Inventory</option>
-              <option value="https://pit.frc4418.org/">Pit Operations</option>
-              <option value="https://team.frc4418.org/#attendance">
-                Attendance
-              </option>
+              {suiteApps.map((app) => (
+                <option key={app.url} value={app.url!}>{app.name}</option>
+              ))}
             </select>
           </label>
           <div className="breadcrumb">

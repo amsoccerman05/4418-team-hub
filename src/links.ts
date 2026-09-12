@@ -23,6 +23,17 @@ export const systems: HubLink[] = [
       "Track robot issues and batteries. Keep the robot match-ready.",
     url: "https://pit.frc4418.org",
   },
+  {
+    id: "finance",
+    name: "Finance",
+    description: "Purchase orders, approvals, and team finances.",
+    url: "https://finance.frc4418.org",
+  },
+];
+export const suiteApps = [
+  { name: "Team Hub / Home", url: "https://team.frc4418.org/" },
+  ...systems,
+  { name: "Attendance", url: "https://team.frc4418.org/#attendance" },
 ];
 export const resources: HubLink[] = [
   {
