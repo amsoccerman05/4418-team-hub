@@ -61,3 +61,9 @@ for(const role of ['mentor','admin','student'])test(`homepage administration vis
  await expect(page.locator('.attendance-section')).toHaveCount(0);
  await page.locator('.system-card[href="#attendance"]').click();await expect(page.locator('.att-workspace')).toBeVisible();
 });
+
+for(const width of [390,1440])test(`leadership directory grouping and vacancies ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:1000});await setup(page);const names=['Lead Coach 1','Lead Coach 2','Finance Lead','Program Manager','Product/Technical Manager','Software Lead','Business Lead','CAD Lead','Fabrication Lead','Strategy Lead','Power Lead','Communications Lead','Operations Lead'];
+ await page.route('**/rpc/team_management_context',r=>r.fulfill({json:{members:[],areas:[],positions:names.map(name=>({key:name==='Product/Technical Manager'?'product_technical_manager':name.toLowerCase().replaceAll(' ','_'),name,active:true})),assignments:[],history:[]}}));
+ await page.goto('/#team-management');await page.getByRole('button',{name:'Positions',exact:true}).click();for(const name of ['Coaching','Program','Functional Leads'])await expect(page.getByRole('heading',{name,exact:true})).toBeVisible();await expect(page.getByText('Unassigned',{exact:true})).toHaveCount(13);await expect(page.getByRole('button',{name:'Find a member',exact:true})).toHaveCount(13);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:`test-results/leadership-directory-${width}.png`,fullPage:true});
+});
