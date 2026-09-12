@@ -159,9 +159,6 @@ export function AttendanceHub({
         <div>
           {workspace ? (
             <>
-              <a href="#" className="att-home">
-                ← Team Hub / Home
-              </a>
               <h1 id="attendance-heading">Attendance</h1>
             </>
           ) : (
@@ -169,22 +166,7 @@ export function AttendanceHub({
           )}
           <p>Show up. Stay connected. Keep your record clear.</p>
         </div>
-        {signedIn && (
-          <button
-            className="att-secondary"
-            disabled={busy}
-            onClick={() =>
-              void run(async () => {
-                const { error } = await supabase!.auth.signOut({
-                  scope: "local",
-                });
-                if (error) throw error;
-              }, "Signed out")
-            }
-          >
-            Sign out
-          </button>
-        )}
+
       </div>
       {!supabase ? (
         <div className="att-panel">
@@ -207,41 +189,7 @@ export function AttendanceHub({
               for this account; you can still open your permitted apps above.
             </p>
           ) : !profile ? (
-            <form
-              className="att-panel att-form"
-              onSubmit={(e) => {
-                const f = fields(e);
-                void run(async () => {
-                  const { error } = await supabase!.auth.signInWithPassword({
-                    email: text(f, "email"),
-                    password: text(f, "password"),
-                  });
-                  if (error) throw error;
-                }, "");
-              }}
-            >
-              <h3>Team sign-in</h3>
-              <p>Use your existing Team 4418 account.</p>
-              <label>
-                Email
-                <input
-                  name="email"
-                  type="email"
-                  autoComplete="username"
-                  required
-                />
-              </label>
-              <label>
-                Password
-                <input
-                  name="password"
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                />
-              </label>
-              <button disabled={busy}>Sign in</button>
-            </form>
+            <p>Sign in to Team Hub to open Attendance.</p>
           ) : (
             data && (
               <>

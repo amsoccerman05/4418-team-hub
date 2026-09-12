@@ -1,9 +1,9 @@
-import { SuiteSwitcher } from './SuiteSwitcher';
+import { SuiteHeader } from './SuiteHeader';
+import {useHubAuth} from './HubAuth';
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   ArrowRight,
-  ChevronRight,
   ExternalLink,
   Boxes,
   Wrench,
@@ -16,7 +16,7 @@ import {
   Globe,
   type LucideIcon,
 } from "lucide-react";
-import { systems, resources, suiteApps, type HubLink } from "./links";
+import { systems, resources, type HubLink } from "./links";
 import "./style.css";
 import { My4418 } from "./dashboard/Dashboard";
 import { TeamManagement } from "./team/TeamManagement";
@@ -87,6 +87,7 @@ function ResourceCard({ link }: { link: HubLink }) {
   );
 }
 function App() {
+  const auth=useHubAuth();
   const [route, setRoute] = useState(location.hash);
   useEffect(() => {
     const update = () => setRoute(location.hash);
@@ -101,31 +102,10 @@ function App() {
       <a className="skip-link" href="#main">
         Skip to content
       </a>
-      <header className="site-header">
-        <div className="header-inner">
-          <div className="brand">
-            <span className="brand-mark">
-              <img
-                src={`${branding}4418-impulse-emblem.png`}
-                alt="Team 4418 IMPULSE rocket logo"
-              />
-            </span>
-            <div>
-              4418<span>TEAM HUB</span>
-            </div>
-          </div>
-          <SuiteSwitcher current="Team Hub / Home" items={suiteApps} />
-          <div className="breadcrumb">
-            Workspace
-            <ChevronRight size={14} />
-            <strong>{management ? "Team Management" : announcements ? "Announcements" : workspace ? "Attendance" : "Team Hub"}</strong>
-          </div>
-          <span className="header-team">
-            FRC Team 4418 <span>IMPULSE</span>
-          </span>
-        </div>
-      </header>
+      <SuiteHeader app="Team Hub" context={management?'Team Management':announcements?'Announcements':workspace?'Attendance':'My 4418'} account={auth.account}/>
+
       <main id="main">
+        {auth.panel}
         {!workspace && !management && !announcements && (
           <>
             <div className="page-heading">
@@ -159,12 +139,12 @@ function App() {
             </section>
           </>
         )}
-        {workspace && <AttendanceHub
+        {auth.signed && workspace && <AttendanceHub
           workspace={workspace}
           tab={route.split("/")[1] || "calendar"}
         />}
-        {management && <TeamManagement workspace /> }
-        {!workspace && !management && <My4418 management={announcements} />}
+        {auth.signed && management && <TeamManagement workspace /> }
+        {auth.signed && !workspace && !management && <My4418 management={announcements} />}
         {!workspace && !management && !announcements && (
           <>
             <section className="resources" aria-labelledby="resources-heading">
@@ -192,7 +172,7 @@ function App() {
             </section>
           </>
         )}
-        {!workspace && !management && !announcements && <TeamManagement workspace={false} />}
+        {auth.signed && !workspace && !management && !announcements && <TeamManagement workspace={false} />}
         <footer>
           <span>
             4418 IMPULSE <span className="footer-divider">/</span> One team.

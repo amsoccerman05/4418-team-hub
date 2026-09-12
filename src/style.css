@@ -474,3 +474,5 @@ a:focus-visible, button:focus-visible { outline-color: var(--suite-primary); }
 .danger, .badge.out, .error, .alert, .auth-error { color: var(--suite-danger); }
 .danger.badge, .badge.out, .error, .alert { background: var(--suite-danger-bg); }
 .info, .notice { color: var(--suite-primary); background: var(--suite-info-bg); }
+
+.hub-auth{max-width:480px;margin:24px auto;padding:24px;background:white;border:1px solid #d5d5d5;border-radius:12px}.hub-auth h2{color:#171717}.hub-auth form,.hub-auth label{display:grid;gap:8px}.hub-auth form{gap:16px}.hub-auth input{width:100%;min-width:0;padding:12px;border:1px solid #aaa;border-radius:6px;font:inherit}.hub-auth button{padding:12px 18px;background:#006bb3;color:white;border:0;border-radius:6px;font:inherit;font-weight:600}.hub-auth p{line-height:1.5}.hub-auth input:focus-visible{outline:2px solid #006bb3;outline-offset:2px}
