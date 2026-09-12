@@ -1,4 +1,4 @@
-import { StrictMode } from "react";
+import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   ArrowRight,
@@ -80,6 +80,13 @@ function ResourceCard({ link }: { link: HubLink }) {
   );
 }
 function App() {
+  const [route, setRoute] = useState(location.hash);
+  useEffect(() => {
+    const update = () => setRoute(location.hash);
+    window.addEventListener("hashchange", update);
+    return () => window.removeEventListener("hashchange", update);
+  }, []);
+  const workspace = route === "#attendance" || route.startsWith("#attendance/");
   return (
     <>
       <a className="skip-link" href="#main">
@@ -98,10 +105,27 @@ function App() {
               4418<span>TEAM HUB</span>
             </div>
           </div>
-          <label className="suite-switch"><span className="sr-suite">Team 4418 apps</span><select aria-label="Team 4418 apps" value="https://team.frc4418.org/" onChange={e=>{window.location.href=e.target.value;}}><option value="https://team.frc4418.org/">Team Hub / Home</option><option value="https://inventory.frc4418.org/">Inventory</option><option value="https://pit.frc4418.org/">Pit Operations</option><option value="https://team.frc4418.org/#attendance">Attendance</option></select></label><div className="breadcrumb">
+          <label className="suite-switch">
+            <span className="sr-suite">Team 4418 apps</span>
+            <select
+              aria-label="Team 4418 apps"
+              value="https://team.frc4418.org/"
+              onChange={(e) => {
+                window.location.href = e.target.value;
+              }}
+            >
+              <option value="https://team.frc4418.org/">Team Hub / Home</option>
+              <option value="https://inventory.frc4418.org/">Inventory</option>
+              <option value="https://pit.frc4418.org/">Pit Operations</option>
+              <option value="https://team.frc4418.org/#attendance">
+                Attendance
+              </option>
+            </select>
+          </label>
+          <div className="breadcrumb">
             Workspace
             <ChevronRight size={14} />
-            <strong>Team Hub</strong>
+            <strong>{workspace ? "Attendance" : "Team Hub"}</strong>
           </div>
           <span className="header-team">
             FRC Team 4418 <span>IMPULSE</span>
@@ -109,56 +133,70 @@ function App() {
         </div>
       </header>
       <main id="main">
-        <div className="page-heading">
-          <div>
-            <span className="eyebrow">TEAM 4418 / IMPULSE</span>
-            <h1>Your team. Connected.</h1>
-            <p>One place for the tools and resources that keep us moving.</p>
-          </div>
-          <span className="wordmark">
-            <img
-              src={`${branding}4418-impulse-wordmark.png`}
-              alt="IMPULSE — FRC Team 4418"
-            />
-          </span>
-        </div>
-        <section aria-labelledby="systems-heading">
-          <div className="section-heading">
-            <div>
-              <h2 id="systems-heading">4418 Systems</h2>
-              <p>Built for our team. Ready when you need them.</p>
+        {!workspace && (
+          <>
+            <div className="page-heading">
+              <div>
+                <span className="eyebrow">TEAM 4418 / IMPULSE</span>
+                <h1>Your team. Connected.</h1>
+                <p>
+                  One place for the tools and resources that keep us moving.
+                </p>
+              </div>
+              <span className="wordmark">
+                <img
+                  src={`${branding}4418-impulse-wordmark.png`}
+                  alt="IMPULSE — FRC Team 4418"
+                />
+              </span>
             </div>
-            <span className="section-label">TEAM WORKSPACES</span>
-          </div>
-          <div className="systems-grid">
-            {systems.map((link) => (
-              <SystemCard key={link.id} link={link} />
-            ))}
-          </div>
-        </section>
-        <AttendanceHub />
-        <section className="resources" aria-labelledby="resources-heading">
-          <div className="section-heading">
-            <div>
-              <h2 id="resources-heading">Team Resources</h2>
-              <p>The other places we work, learn, and connect.</p>
-            </div>
-            <span className="external-label">
-              <ExternalLink size={14} />
-              External links
-            </span>
-          </div>
-          <div className="resources-grid">
-            {resources.map((link) => (
-              <ResourceCard key={link.id} link={link} />
-            ))}
-          </div>
-          {resources.some((link) => !link.url) && (
-            <p className="configuration-note">
-              Some team links aren’t set up yet. Check with a mentor for access.
-            </p>
-          )}
-        </section>
+            <section aria-labelledby="systems-heading">
+              <div className="section-heading">
+                <div>
+                  <h2 id="systems-heading">4418 Systems</h2>
+                  <p>Built for our team. Ready when you need them.</p>
+                </div>
+                <span className="section-label">TEAM WORKSPACES</span>
+              </div>
+              <div className="systems-grid">
+                {systems.map((link) => (
+                  <SystemCard key={link.id} link={link} />
+                ))}
+              </div>
+            </section>
+          </>
+        )}
+        <AttendanceHub
+          workspace={workspace}
+          tab={route.split("/")[1] || "calendar"}
+        />
+        {!workspace && (
+          <>
+            <section className="resources" aria-labelledby="resources-heading">
+              <div className="section-heading">
+                <div>
+                  <h2 id="resources-heading">Team Resources</h2>
+                  <p>The other places we work, learn, and connect.</p>
+                </div>
+                <span className="external-label">
+                  <ExternalLink size={14} />
+                  External links
+                </span>
+              </div>
+              <div className="resources-grid">
+                {resources.map((link) => (
+                  <ResourceCard key={link.id} link={link} />
+                ))}
+              </div>
+              {resources.some((link) => !link.url) && (
+                <p className="configuration-note">
+                  Some team links aren’t set up yet. Check with a mentor for
+                  access.
+                </p>
+              )}
+            </section>
+          </>
+        )}
         <footer>
           <span>
             4418 IMPULSE <span className="footer-divider">/</span> One team.

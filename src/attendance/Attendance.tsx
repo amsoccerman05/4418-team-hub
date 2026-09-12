@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import {
   supabase,
   isManager,
@@ -17,6 +23,7 @@ import {
   type History,
 } from "./service";
 import "./attendance.css";
+import { MeetingCalendar } from "./Calendar";
 const time = (s: string | null) =>
   s
     ? new Date(s).toLocaleString([], {
@@ -59,22 +66,20 @@ function Stats({ data, id }: { data: Data; id: string }) {
     </div>
   );
 }
-export function AttendanceHub() {
+export function AttendanceHub({
+  workspace,
+  tab,
+}: {
+  workspace: boolean;
+  tab: string;
+}) {
   const [profile, setProfile] = useState<Profile | null>(null),
     [signedIn, setSignedIn] = useState(false),
     [loading, setLoading] = useState(!!supabase),
     [data, setData] = useState<Data | null>(null),
-    [page, setPage] = useState(location.hash === "#attendance"),
     [error, setError] = useState(""),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false);
-  useEffect(() => {
-    const openAttendance = () => {
-      if (location.hash === "#attendance") setPage(true);
-    };
-    window.addEventListener("hashchange", openAttendance);
-    return () => window.removeEventListener("hashchange", openAttendance);
-  }, []);
   const generation = useRef(0);
   useEffect(() => {
     if (!supabase) return;
@@ -146,12 +151,21 @@ export function AttendanceHub() {
   return (
     <section
       id="attendance"
-      className="attendance-section"
+      className={`attendance-section ${workspace ? "att-workspace" : ""}`}
       aria-labelledby="attendance-heading"
     >
       <div className="section-heading">
         <div>
-          <h2 id="attendance-heading">Attendance</h2>
+          {workspace ? (
+            <>
+              <a href="#" className="att-home">
+                ← Team Hub / Home
+              </a>
+              <h1 id="attendance-heading">Attendance</h1>
+            </>
+          ) : (
+            <h2 id="attendance-heading">Attendance</h2>
+          )}
           <p>Show up. Stay connected. Keep your record clear.</p>
         </div>
         {signedIn && (
@@ -239,75 +253,78 @@ export function AttendanceHub() {
                   >
                     Refresh
                   </button>
-                  <button onClick={() => setPage(!page)}>
-                    {page
-                      ? "Hide attendance details"
-                      : isManager(profile)
+                  {!workspace && (
+                    <a className="att-link-button" href="#attendance">
+                      {isManager(profile)
                         ? "Manage attendance"
-                        : "My Attendance"}
-                  </button>
+                        : "My Attendance"}{" "}
+                      →
+                    </a>
+                  )}
                 </div>
-                {isManager(profile) ? (
-                  <div className="attendance-stats">
-                    <span>
-                      <strong>
-                        {
-                          data.meetings.filter((m) => m.status === "open")
-                            .length
-                        }
-                      </strong>{" "}
-                      Open meetings
-                    </span>
-                    <span>
-                      <strong>
-                        {
-                          data.attendance.filter(
-                            (a) => a.review_status === "pending",
-                          ).length
-                        }
-                      </strong>{" "}
-                      Notices to review
-                    </span>
-                    <span>
-                      <strong>
-                        {
-                          data.members.filter(
-                            (m) => summary(data, m.student_id).strikes >= 3,
-                          ).length
-                        }
-                      </strong>{" "}
-                      Students requiring strike action
-                    </span>
-                  </div>
-                ) : (
-                  <Stats data={data} id={profile.id} />
+                {!workspace && (
+                  <>
+                    {isManager(profile) ? (
+                      <div className="attendance-stats">
+                        <span>
+                          <strong>
+                            {
+                              data.meetings.filter((m) => m.status === "open")
+                                .length
+                            }
+                          </strong>{" "}
+                          Open meetings
+                        </span>
+                        <span>
+                          <strong>
+                            {
+                              data.attendance.filter(
+                                (a) => a.review_status === "pending",
+                              ).length
+                            }
+                          </strong>{" "}
+                          Notices to review
+                        </span>
+                        <span>
+                          <strong>
+                            {
+                              data.members.filter(
+                                (m) => summary(data, m.student_id).strikes >= 3,
+                              ).length
+                            }
+                          </strong>{" "}
+                          Students requiring strike action
+                        </span>
+                      </div>
+                    ) : (
+                      <Stats data={data} id={profile.id} />
+                    )}
+                    {!isManager(profile) && (
+                      <PersonalCallouts data={data} id={profile.id} />
+                    )}
+                    {isManager(profile) && (
+                      <div className="att-toolbar att-callouts">
+                        <a href="#attendance/calendar">Open calendar →</a>
+                        <a href="#attendance/notices">Review notices →</a>
+                        <a href="#attendance/strikes">
+                          Review strike actions →
+                        </a>
+                      </div>
+                    )}
+                  </>
                 )}
-                {page && (
-                  <div className="att-details">
-                    <p className="att-policy">
-                      Notify leadership at least 24 hours before a meeting if
-                      attendance will be impacted. The default grace period is
-                      10 minutes. Excused and Not Required meetings are excluded
-                      from percentages. Late and Left Early count as attended;
-                      strikes are reviewed separately. No strike threshold
-                      automatically removes a member or changes access.
-                    </p>
-                    <fieldset disabled={busy} className="att-fieldset">
-                      {isManager(profile) ? (
-                        <>
-                          {profile.role === "lead" && (
-                            <details className="att-panel">
-                              <summary>My Attendance (lead)</summary>
-                              <Student data={data} id={profile.id} run={run} />
-                            </details>
-                          )}
-                          <Management data={data} run={run} />
-                        </>
-                      ) : (
-                        <Student data={data} id={profile.id} run={run} />
-                      )}
-                    </fieldset>
-                  </div>
+                {workspace && (
+                  <fieldset disabled={busy} className="att-fieldset">
+                    <Workspace
+                      data={data}
+                      profile={profile}
+                      tab={tab}
+                      run={run}
+                      busy={busy}
+                      error={error}
+                      message={message}
+                    />
+                  </fieldset>
                 )}
               </>
             )
@@ -339,6 +356,16 @@ function Student({ data, id, run }: { data: Data; id: string; run: Run }) {
         return (
           <article className="att-panel" key={m.id}>
             <MeetingHeader meeting={m} />
+            <ol className="att-lifecycle" aria-label="Meeting lifecycle">
+              {["draft", "open", "closed", "finalized"].map((stage) => (
+                <li
+                  key={stage}
+                  aria-current={m.status === stage ? "step" : undefined}
+                >
+                  {stage === "open" ? "Open check-in" : label(stage)}
+                </li>
+              ))}
+            </ol>
             <p>
               {required ? "Required" : "Optional"} · <Status attendance={a} />
             </p>
@@ -474,62 +501,43 @@ function noticeTiming(a: Attendance, m: Meeting) {
       : "Less than 24 hours’ notice"
     : "No notice submitted";
 }
-function Management({ data, run }: { data: Data; run: Run }) {
-  const [selected, setSelected] = useState(""),
-    [code, setCode] = useState<{
+function Management({
+  data,
+  run,
+  selected,
+}: {
+  data: Data;
+  run: Run;
+  selected: string;
+}) {
+  const [code, setCode] = useState<{
       meetingId: string;
       code: string;
       expires: string;
     } | null>(null),
     [history, setHistory] = useState<History[] | null>(null);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
   const m = data.meetings.find((m) => m.id === selected);
   return (
     <>
-      <h3>Team attendance</h3>
-      <details className="att-panel">
-        <summary>Membership & team areas</summary>
-        <p>
-          New members default to Prospective. Set Registered before creating
-          required meetings. Changes do not alter existing meeting snapshots.
-        </p>
-        {data.members.map((member) => (
-          <MemberForm key={member.student_id} member={member} run={run} />
-        ))}
-        {!data.members.length && <p>No active student accounts found.</p>}
-      </details>
-      <details className="att-panel">
-        <summary>Create meeting</summary>
-        <MeetingForm members={data.members} run={run} />
-      </details>
-      <label className="att-select">
-        Meeting
-        <select
-          aria-label="Meeting"
-          value={selected}
-          onChange={(e) => {
-            setSelected(e.target.value);
-            setCode(null);
-            setHistory(null);
-          }}
-        >
-          <option value="">Select a meeting</option>
-          {data.meetings.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.title} · {time(m.starts_at)} · {label(m.status)}
-            </option>
-          ))}
-        </select>
-      </label>
-      {!data.meetings.length && (
-        <p className="att-panel">
-          Create your first meeting after reviewing member registration and team
-          areas.
-        </p>
-      )}
       {m && (
         <>
           <div className="att-panel">
             <MeetingHeader meeting={m} />
+            <ol className="att-lifecycle" aria-label="Meeting lifecycle">
+              {["draft", "open", "closed", "finalized"].map((stage) => (
+                <li
+                  key={stage}
+                  aria-current={m.status === stage ? "step" : undefined}
+                >
+                  {stage === "open" ? "Open check-in" : label(stage)}
+                </li>
+              ))}
+            </ol>
             <p>
               Required roster snapshotted at creation ·{" "}
               {
@@ -610,15 +618,20 @@ function Management({ data, run }: { data: Data; run: Run }) {
                 View audit history
               </button>
             </div>
-            {code && code.meetingId === m.id && m.check_in_open && (
-              <p className="att-code">
-                Meeting code: <strong>{code.code}</strong>
-                <small>
-                  Expires {time(code.expires)}. Share only with attendees.
-                  Rotation invalidates the previous code.
-                </small>
-              </p>
-            )}
+            {code &&
+              code.meetingId === m.id &&
+              m.check_in_open &&
+              m.status === "open" &&
+              now < Date.parse(code.expires) &&
+              now < Date.parse(m.ends_at) && (
+                <p className="att-code">
+                  Meeting code: <strong>{code.code}</strong>
+                  <small>
+                    Expires {time(code.expires)}. Share only with attendees.
+                    Rotation invalidates the previous code.
+                  </small>
+                </p>
+              )}
             <p className="att-muted">
               Open from 30 minutes before start until meeting end. Codes last up
               to 30 minutes. Finalize after the scheduled end and closing
@@ -628,13 +641,23 @@ function Management({ data, run }: { data: Data; run: Run }) {
           {data.attendance
             .filter((a) => a.meeting_id === m.id)
             .map((a) => (
-              <AttendanceEditor
-                key={`${a.id}-${a.version}`}
-                a={a}
-                meeting={m}
-                data={data}
-                run={run}
-              />
+              <details className="att-record" key={a.id}>
+                <summary>
+                  {data.members.find(
+                    (member) => member.student_id === a.student_id,
+                  )?.display_name ?? a.student_id}
+                  <span>
+                    {label(a.physical_status)} · {label(a.review_status)}
+                  </span>
+                </summary>
+                <AttendanceEditor
+                  key={`${a.id}-${a.version}`}
+                  a={a}
+                  meeting={m}
+                  data={data}
+                  run={run}
+                />
+              </details>
             ))}
           {history && <HistoryList history={history} />}
         </>
@@ -676,8 +699,23 @@ function MemberForm({ member: m, run }: { member: Member; run: Run }) {
     </form>
   );
 }
-function MeetingForm({ members, run }: { members: Member[]; run: Run }) {
+function MeetingForm({
+  members,
+  run,
+  date,
+  onCreated,
+}: {
+  members: Member[];
+  run: Run;
+  date: Date;
+  onCreated: () => void;
+}) {
   const [requirement, setRequirement] = useState("registered");
+  const [preset, setPreset] = useState("Offseason"),
+    [title, setTitle] = useState("Offseason meeting"),
+    [type, setType] = useState("offseason");
+  const end = new Date(date);
+  end.setHours(end.getHours() + 3);
   return (
     <form
       className="att-form"
@@ -685,6 +723,12 @@ function MeetingForm({ members, run }: { members: Member[]; run: Run }) {
         const f = fields(e);
         const form = e.currentTarget;
         void run(async () => {
+          if (Date.parse(text(f, "end")) <= Date.parse(text(f, "start")))
+            throw new Error("End time must be after start time.");
+          if (requirement === "areas" && !f.getAll("areas").length)
+            throw new Error("Select at least one required area.");
+          if (requirement === "selected" && !f.getAll("students").length)
+            throw new Error("Select at least one required student.");
           await manage("create", {
             title: text(f, "title"),
             meeting_type: text(f, "type"),
@@ -696,41 +740,72 @@ function MeetingForm({ members, run }: { members: Member[]; run: Run }) {
             selected_students: f.getAll("students"),
           });
           form.reset();
-          setRequirement("registered");
+          onCreated();
         }, "Meeting created with required roster snapshot");
       }}
     >
+      <div className="att-presets" role="group" aria-label="Meeting presets">
+        {[
+          "Offseason",
+          "Preseason",
+          "Build Meeting",
+          "Competition",
+          "Optional",
+        ].map((name) => (
+          <button
+            type="button"
+            key={name}
+            aria-pressed={preset === name}
+            className={preset === name ? "" : "att-secondary"}
+            onClick={() => {
+              setPreset(name);
+              setTitle(
+                name === "Offseason" || name === "Preseason"
+                  ? `${name} meeting`
+                  : name,
+              );
+              setType(
+                name === "Offseason"
+                  ? "offseason"
+                  : name === "Preseason"
+                    ? "preseason"
+                    : "other",
+              );
+              setRequirement(name === "Optional" ? "optional" : "registered");
+            }}
+          >
+            {name}
+          </button>
+        ))}
+      </div>
       <label>
         Title
-        <input name="title" maxLength={150} required />
+        <input
+          name="title"
+          maxLength={150}
+          required
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+        />
       </label>
       <div className="att-grid">
         <label>
-          Meeting type
-          <select name="type">
-            <option value="offseason">Offseason</option>
-            <option value="preseason">Preseason</option>
-            <option value="other">Other</option>
-          </select>
-        </label>
-        <label>
-          Late threshold (minutes)
+          Start (your local time)
           <input
-            name="late"
-            type="number"
-            min={0}
-            max={120}
-            defaultValue={10}
+            name="start"
+            type="datetime-local"
+            defaultValue={localTime(date.toISOString())}
             required
           />
         </label>
         <label>
-          Start (your local time)
-          <input name="start" type="datetime-local" required />
-        </label>
-        <label>
           End (your local time)
-          <input name="end" type="datetime-local" required />
+          <input
+            name="end"
+            type="datetime-local"
+            defaultValue={localTime(end.toISOString())}
+            required
+          />
         </label>
       </div>
       <label>
@@ -750,6 +825,9 @@ function MeetingForm({ members, run }: { members: Member[]; run: Run }) {
       {requirement === "areas" && (
         <fieldset>
           <legend>Required areas</legend>
+          {!members.some((m) => m.team_area) && (
+            <p>Add team areas in Roster before using this option.</p>
+          )}
           {[...new Set(members.map((m) => m.team_area).filter(Boolean))].map(
             (area) => (
               <label className="att-check" key={area}>
@@ -773,6 +851,39 @@ function MeetingForm({ members, run }: { members: Member[]; run: Run }) {
             ))}
         </fieldset>
       )}
+      <details>
+        <summary>Advanced settings · 10-minute grace by default</summary>
+        <div className="att-grid">
+          {" "}
+          <label>
+            Meeting type
+            <select
+              name="type"
+              value={type}
+              onChange={(e) => setType(e.target.value)}
+            >
+              <option value="offseason">Offseason</option>
+              <option value="preseason">Preseason</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+          <label>
+            Late threshold (minutes)
+            <input
+              name="late"
+              type="number"
+              min={0}
+              max={120}
+              defaultValue={10}
+              required
+            />
+          </label>
+        </div>
+      </details>
+      <p className="att-muted">
+        Local times · Required members are snapshotted when this meeting is
+        created.
+      </p>
       <button>Create meeting</button>
     </form>
   );
@@ -804,7 +915,7 @@ function AttendanceEditor({
         {label(snapshot?.member_status ?? "prospective")} ·{" "}
         {snapshot?.team_area || "No area"} (meeting snapshot)
       </p>
-      <Stats data={data} id={a.student_id} />
+
       <p>
         Check-in: {time(a.checked_in_at)} · {noticeTiming(a, m)}
       </p>
@@ -1030,5 +1141,442 @@ function HistoryList({ history }: { history: History[] }) {
         </details>
       ))}
     </section>
+  );
+}
+
+function PersonalCallouts({ data, id }: { data: Data; id: string }) {
+  const next = [...data.meetings]
+    .filter(
+      (m) =>
+        Date.parse(m.ends_at) > Date.now() &&
+        data.snapshots.some(
+          (s) => s.meeting_id === m.id && s.student_id === id && s.required,
+        ),
+    )
+    .sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at))[0];
+  const pending = data.attendance.filter(
+    (a) => a.student_id === id && a.review_status === "pending",
+  ).length;
+  return (
+    <div className="att-panel att-callouts">
+      <div>
+        <small>Next required meeting</small>
+        <strong>
+          {next
+            ? `${next.title} · ${time(next.starts_at)}`
+            : "No upcoming required meeting"}
+        </strong>
+      </div>
+      <a href="#attendance">View meetings / check in →</a>
+      <a href="#attendance/notices">
+        {pending} pending notices / excuse requests →
+      </a>
+    </div>
+  );
+}
+function Modal({
+  title,
+  children,
+  onClose,
+  busy,
+}: {
+  title: string;
+  children: ReactNode;
+  onClose: () => void;
+  busy: boolean;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = ref.current!;
+    dialog.showModal();
+    return () => dialog.close();
+  }, []);
+  return (
+    <dialog
+      className="att-dialog"
+      ref={ref}
+      aria-label={title}
+      onCancel={(e) => {
+        e.preventDefault();
+        if (!busy) onClose();
+      }}
+    >
+      <div className="att-toolbar">
+        <h2>{title}</h2>
+        <button
+          type="button"
+          className="att-secondary"
+          disabled={busy}
+          onClick={onClose}
+        >
+          Close
+        </button>
+      </div>
+      {children}
+    </dialog>
+  );
+}
+function Workspace({
+  data,
+  profile,
+  tab,
+  run,
+  busy,
+  error,
+  message,
+}: {
+  data: Data;
+  profile: Profile;
+  tab: string;
+  run: Run;
+  busy: boolean;
+  error: string;
+  message: string;
+}) {
+  const manager = isManager(profile);
+  const tabs = manager
+    ? ["calendar", "roster", "notices", "strikes", "history"]
+    : ["calendar", "notices", "strikes", "history"];
+  const current = tabs.includes(tab) ? tab : "calendar";
+  const [selected, setSelected] = useState<string | null>(null),
+    [creating, setCreating] = useState<Date | null>(null),
+    [search, setSearch] = useState("");
+  const [historyMeeting, setHistoryMeeting] = useState(""),
+    [history, setHistory] = useState<History[] | null>(null);
+  const [noticeFilter, setNoticeFilter] = useState("pending");
+  useEffect(() => {
+    setSelected(null);
+    setCreating(null);
+    setSearch("");
+  }, [tab]);
+  const ownData = manager
+    ? data
+    : {
+        ...data,
+        attendance: data.attendance.filter((a) => a.student_id === profile.id),
+        strikes: data.strikes.filter((s) => s.student_id === profile.id),
+      };
+  const selectedMeeting = data.meetings.find((m) => m.id === selected);
+  const notices = ownData.attendance.filter(
+    (a) =>
+      (a.notice_at || a.review_status === "pending") &&
+      (noticeFilter === "all" || a.review_status === "pending"),
+  );
+  const incidentRows =
+    current === "notices"
+      ? notices
+      : ownData.attendance.filter((a) =>
+          ownData.strikes.some((s) => s.attendance_id === a.id),
+        );
+  return (
+    <>
+      <nav className="att-tabs" aria-label="Attendance views">
+        {tabs.map((name) => (
+          <a
+            key={name}
+            href={`#attendance/${name}`}
+            aria-current={current === name ? "page" : undefined}
+          >
+            {label(name)}
+            {name === "notices" && (
+              <span>
+                {
+                  ownData.attendance.filter(
+                    (a) => a.review_status === "pending",
+                  ).length
+                }
+              </span>
+            )}
+          </a>
+        ))}
+      </nav>
+      {current === "calendar" && (
+        <>
+          <div className="att-toolbar att-view-heading">
+            <div>
+              <h2>Meeting calendar</h2>
+              <p className="att-muted">
+                {manager
+                  ? "Plan meetings. Open check-in. Review each roster."
+                  : "Your meetings, check-ins, and attendance record."}
+              </p>
+            </div>
+            {manager && (
+              <button
+                onClick={() => {
+                  const date = new Date();
+                  date.setHours(18, 0, 0, 0);
+                  setCreating(date);
+                }}
+              >
+                New meeting
+              </button>
+            )}
+          </div>
+          <MeetingCalendar
+            meetings={data.meetings}
+            onOpen={setSelected}
+            onCreate={manager ? setCreating : undefined}
+          />
+          {profile.role === "lead" && (
+            <details className="att-panel">
+              <summary>My Attendance (lead)</summary>
+              <Student data={data} id={profile.id} run={run} />
+            </details>
+          )}
+        </>
+      )}
+      {current === "roster" && manager && (
+        <>
+          <h2>Team roster</h2>
+          <p className="att-muted">
+            Registration and team areas apply to future meetings. Existing
+            required rosters stay unchanged.
+          </p>
+          <label className="att-select">
+            Find a member
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Name or team area"
+            />
+          </label>
+          {data.members
+            .filter((m) =>
+              `${m.display_name} ${m.team_area}`
+                .toLowerCase()
+                .includes(search.toLowerCase()),
+            )
+            .map((m) => (
+              <details className="att-record" key={m.student_id}>
+                <summary>
+                  {m.display_name}
+                  <span>
+                    {label(m.member_status)} · {m.team_area || "No team area"}
+                  </span>
+                </summary>
+                <MemberForm member={m} run={run} />
+              </details>
+            ))}
+          {!data.members.filter((m) =>
+            `${m.display_name} ${m.team_area}`
+              .toLowerCase()
+              .includes(search.toLowerCase()),
+          ).length && (
+            <p className="att-empty">
+              {search
+                ? "No members match your search."
+                : "No active student accounts found."}
+            </p>
+          )}
+        </>
+      )}
+      {(current === "notices" || current === "strikes") && (
+        <>
+          <h2>
+            {current === "notices"
+              ? "Notices & excuse review"
+              : "Strikes & leadership actions"}
+          </h2>
+          <p className="att-muted">
+            {current === "notices"
+              ? "Notify leadership at least 24 hours before a meeting. Excuse decisions remain separate from physical attendance."
+              : "Totals use active strike records. Three strikes require warning / parent contact; five require leadership review. Access is never changed automatically."}
+          </p>
+          {current === "notices" && (
+            <label className="att-select">
+              Notice status
+              <select
+                value={noticeFilter}
+                onChange={(e) => setNoticeFilter(e.target.value)}
+              >
+                <option value="pending">Pending review</option>
+                <option value="all">All notices</option>
+              </select>
+            </label>
+          )}
+          {current === "strikes" &&
+            manager &&
+            data.members
+              .filter((m) => summary(data, m.student_id).strikes >= 3)
+              .map((m) => (
+                <p className="att-panel" key={m.student_id}>
+                  <strong>
+                    {m.display_name} · {summary(data, m.student_id).strikes}{" "}
+                    active strikes
+                  </strong>
+                  <small>
+                    {strikeAction(summary(data, m.student_id).strikes)}
+                  </small>
+                </p>
+              ))}
+          {!incidentRows.length && (
+            <p className="att-empty">
+              {current === "notices"
+                ? "No notices to review in this view."
+                : "No strikes recorded."}
+            </p>
+          )}
+          {incidentRows.map((a) => {
+            const meeting = data.meetings.find((m) => m.id === a.meeting_id);
+            return (
+              meeting && (
+                <article className="att-panel" key={a.id}>
+                  <div className="att-toolbar">
+                    <h3>
+                      {manager
+                        ? `${data.members.find((m) => m.student_id === a.student_id)?.display_name ?? "Member"} · `
+                        : ""}
+                      {meeting.title}
+                    </h3>
+                    <button
+                      className="att-secondary"
+                      onClick={() => setSelected(meeting.id)}
+                    >
+                      Open meeting
+                    </button>
+                  </div>
+                  {current === "notices" ? (
+                    <>
+                      <Status attendance={a} />
+                      <p>{a.notice_reason || "Excuse review requested"}</p>
+                      <small>{noticeTiming(a, meeting)}</small>
+                      {a.review_reason && <p>{a.review_reason}</p>}
+                      {manager && (
+                        <details>
+                          <summary>Review notice</summary>
+                          <AttendanceEditor
+                            key={`${a.id}-${a.version}`}
+                            a={a}
+                            meeting={meeting}
+                            data={data}
+                            run={run}
+                          />
+                        </details>
+                      )}
+                    </>
+                  ) : (
+                    <StrikeList
+                      data={ownData}
+                      attendance={a}
+                      run={manager ? run : undefined}
+                    />
+                  )}
+                </article>
+              )
+            );
+          })}
+          {current === "notices" && !manager && (
+            <a href="#attendance/calendar">
+              Open a meeting to submit a notice →
+            </a>
+          )}
+        </>
+      )}
+      {current === "history" && (
+        <>
+          <h2>Attendance history</h2>
+          <p className="att-muted">
+            Select a meeting to see its attendance and strike changes.
+          </p>
+          <label className="att-select">
+            History meeting
+            <select
+              value={historyMeeting}
+              onChange={(e) => {
+                setHistoryMeeting(e.target.value);
+                setHistory(null);
+              }}
+            >
+              <option value="">Select a meeting</option>
+              {data.meetings.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.title} · {time(m.starts_at)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            disabled={!historyMeeting}
+            onClick={() =>
+              void run(
+                async () => setHistory(await loadHistory(historyMeeting)),
+                "History loaded",
+              )
+            }
+          >
+            Load history
+          </button>
+          {history ? (
+            <HistoryList history={history} />
+          ) : (
+            <p className="att-empty">
+              History appears here after you select a meeting and load it.
+            </p>
+          )}
+        </>
+      )}
+      <details className="att-policy">
+        <summary>Attendance policy</summary>
+        <p>
+          Notify leadership at least 24 hours in advance. The default late
+          threshold is 10 minutes. Excused and Not Required meetings are
+          excluded from percentages. Late and Left Early count as attended.
+          Strikes are reviewed separately and never automatically remove members
+          or change access.
+        </p>
+      </details>
+      {creating && (
+        <Modal
+          title="New meeting"
+          busy={busy}
+          onClose={() => setCreating(null)}
+        >
+          <>
+            {error && (
+              <p className="att-error" role="alert">
+                {error}
+              </p>
+            )}
+          </>
+          <MeetingForm
+            members={data.members}
+            run={run}
+            date={creating}
+            onCreated={() => setCreating(null)}
+          />
+        </Modal>
+      )}
+      {selectedMeeting && (
+        <Modal
+          title="Meeting details"
+          busy={busy}
+          onClose={() => setSelected(null)}
+        >
+          {error && (
+            <p className="att-error" role="alert">
+              {error}
+            </p>
+          )}
+          {message && <p role="status">{message}</p>}
+          {manager ? (
+            <Management
+              key={selectedMeeting.id}
+              selected={selectedMeeting.id}
+              data={data}
+              run={run}
+            />
+          ) : (
+            <Student
+              key={selectedMeeting.id}
+              data={{ ...data, meetings: [selectedMeeting] }}
+              id={profile.id}
+              run={run}
+            />
+          )}
+        </Modal>
+      )}
+    </>
   );
 }

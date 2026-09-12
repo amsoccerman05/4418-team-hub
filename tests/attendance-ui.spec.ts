@@ -58,6 +58,7 @@ function fixture(): Data {
   };
 }
 async function mock(page: Page, role = "student") {
+  await page.clock.setFixedTime(new Date("2026-09-10T17:10:00Z"));
   const data = fixture(),
     calls: any[] = [];
   const user = {
@@ -120,6 +121,12 @@ async function mock(page: Page, role = "student") {
         result = {};
         if (body.action === "open")
           result = { code: "123456", expires_at: "2026-09-10T18:00:00Z" };
+        if (body.action === "close" || body.action === "finalize") {
+          data.meetings[0].status =
+            body.action === "close" ? "closed" : "finalized";
+          data.meetings[0].check_in_open = false;
+          data.meetings[0].version++;
+        }
         if (body.action === "attendance") {
           Object.assign(data.attendance[0], body.p, {
             version: 2,
@@ -159,19 +166,20 @@ for (const width of [390, 1440]) {
   }) => {
     await page.setViewportSize({ width, height: 900 });
     const { calls } = await mock(page);
-    await page
-      .getByRole("button", { name: "My Attendance", exact: true })
-      .click();
+    await page.getByRole("link", { name: "My Attendance" }).click();
     await expect(
       page.getByRole("button", { name: "Manage attendance" }),
     ).toHaveCount(0);
+    await page.getByRole("button", { name: /Preseason build/ }).click();
     await page.getByLabel("6-digit meeting code").fill("000000");
     await page.getByRole("button", { name: "Check in", exact: true }).click();
-    await expect(page.getByRole("alert")).toContainText("Invalid meeting code");
+    await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+      "Invalid meeting code",
+    );
     await page.getByLabel("6-digit meeting code").fill("123456");
     await page.getByRole("button", { name: "Check in", exact: true }).click();
     await expect(
-      page.getByText("Check-in recorded", { exact: true }),
+      page.getByRole("dialog").getByText("Check-in recorded", { exact: true }),
     ).toBeVisible();
     expect(calls[1]).toEqual({ meeting_id: "m1", code: "123456" });
     await page
@@ -186,8 +194,11 @@ for (const width of [390, 1440]) {
       await page.evaluate(() => document.body.scrollWidth <= innerWidth),
     ).toBe(true);
     await page
-      .getByRole("heading", { name: "Attendance", exact: true })
-      .click();
+      .getByRole("dialog")
+      .screenshot({
+        path: `test-results/attendance-dialog-${width}-${test.info().title.includes("student") ? "student" : "lead"}.png`,
+      });
+    await page.getByRole("button", { name: "Close", exact: true }).click();
     await page.locator(".attendance-section").screenshot({
       path: `test-results/attendance-student-${width}.png`,
     });
@@ -197,10 +208,10 @@ for (const width of [390, 1440]) {
   }) => {
     await page.setViewportSize({ width, height: 900 });
     const { calls } = await mock(page, "lead");
+    await page.getByRole("link", { name: "Manage attendance" }).click();
     await page
-      .getByRole("button", { name: "Manage attendance", exact: true })
+      .getByRole("button", { name: "New meeting", exact: true })
       .click();
-    await page.getByText("Create meeting", { exact: true }).first().click();
     await page.getByLabel("Title", { exact: true }).fill("Build night");
     await page.getByLabel("Start (your local time)").fill("2026-09-11T16:00");
     await page.getByLabel("End (your local time)").fill("2026-09-11T18:00");
@@ -210,9 +221,13 @@ for (const width of [390, 1440]) {
     await expect
       .poll(() => calls.some((c) => c.action === "create"))
       .toBe(true);
-    await page.getByLabel("Meeting", { exact: true }).selectOption("m1");
+    await page.getByRole("button", { name: /Preseason build/ }).click();
     await page.getByRole("button", { name: "Rotate check-in code" }).click();
     await expect(page.getByText("123456", { exact: true })).toBeVisible();
+    await page
+      .locator(".att-record > summary")
+      .filter({ hasText: "Alex Student" })
+      .click();
     await page
       .getByText("Review / correct attendance", { exact: true })
       .click();
@@ -244,8 +259,11 @@ for (const width of [390, 1440]) {
       await page.evaluate(() => document.body.scrollWidth <= innerWidth),
     ).toBe(true);
     await page
-      .getByRole("heading", { name: "Attendance", exact: true })
-      .click();
+      .getByRole("dialog")
+      .screenshot({
+        path: `test-results/attendance-dialog-${width}-${test.info().title.includes("student") ? "student" : "lead"}.png`,
+      });
+    await page.getByRole("button", { name: "Close", exact: true }).click();
     await page.locator(".attendance-section").screenshot({
       path: `test-results/attendance-lead-${width}.png`,
     });
@@ -296,4 +314,184 @@ test("percentages exclude excuses/not-required, count late/early, and derive act
   expect(strikeAction(3)).toContain("parent contact");
   expect(strikeAction(5)).toContain("possible removal");
   expect(summary(fixture(), student).percent).toBeNull();
+});
+
+for (const width of [390, 1440]) {
+  test(`calendar presets, validation, routes and focused tabs ${width}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const { calls, data } = await mock(page, "lead");
+    await expect(page.locator(".attendance-stats")).toContainText(
+      "Open meetings",
+    );
+    await page.getByRole("link", { name: "Manage attendance" }).click();
+    await expect(
+      page
+        .getByRole("navigation", { name: "Attendance views" })
+        .getByRole("link", { name: "Calendar" }),
+    ).toHaveAttribute("aria-current", "page");
+    await expect(page.locator(".attendance-stats")).toHaveCount(0);
+    await expect(
+      page.getByRole("heading", { name: "4418 Systems" }),
+    ).toHaveCount(0);
+    await page.getByRole("button", { name: "Month", exact: true }).click();
+    await page
+      .getByRole("button", {
+        name: "Create meeting on Fri, Sep 11, 2026",
+        exact: true,
+      })
+      .click();
+    const modal = page.getByRole("dialog");
+    await expect(modal.getByLabel("Start (your local time)")).toHaveValue(
+      "2026-09-11T18:00",
+    );
+    await expect(modal.getByLabel("End (your local time)")).toHaveValue(
+      "2026-09-11T21:00",
+    );
+    await modal
+      .getByRole("button", { name: "Competition", exact: true })
+      .click();
+    await expect(modal.getByLabel("Title", { exact: true })).toHaveValue(
+      "Competition",
+    );
+    await modal.getByLabel("Required attendance").selectOption("selected");
+    await modal
+      .getByRole("button", { name: "Create meeting", exact: true })
+      .click();
+    await expect(modal.getByRole("alert")).toContainText(
+      "Select at least one required student",
+    );
+    expect(calls.filter((c) => c.action === "create")).toHaveLength(0);
+    await modal.getByLabel("Alex Student · Registered").check();
+    await modal.getByLabel("End (your local time)").fill("2026-09-11T17:00");
+    await modal
+      .getByRole("button", { name: "Create meeting", exact: true })
+      .click();
+    await expect(modal.getByRole("alert")).toContainText(
+      "End time must be after start time",
+    );
+    await modal.getByLabel("End (your local time)").fill("2026-09-11T21:00");
+    await modal.screenshot({
+      path: `test-results/attendance-create-${width}.png`,
+    });
+    await modal
+      .getByRole("button", { name: "Create meeting", exact: true })
+      .click();
+    await expect(modal).toHaveCount(0);
+    expect(calls.find((c) => c.action === "create").p).toMatchObject({
+      title: "Competition",
+      meeting_type: "other",
+      late_minutes: 10,
+      requirement: "selected",
+      selected_students: [student],
+    });
+    await page.getByRole("link", { name: "Roster", exact: true }).click();
+    await page.getByLabel("Find a member").fill("Missing");
+    await expect(page.getByText("No members match your search.")).toBeVisible();
+    await page.getByLabel("Find a member").fill("Alex");
+    await page.locator(".att-record > summary").click();
+    await page.getByLabel("Member status").selectOption("prospective");
+    await page.getByRole("button", { name: "Save member" }).click();
+    await expect
+      .poll(() => calls.some((c) => c.action === "member"))
+      .toBe(true);
+    data.attendance[0].notice_at = "2026-09-09T12:00:00Z";
+    data.attendance[0].notice_reason = "Appointment";
+    data.attendance[0].review_status = "pending";
+    await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    await page.getByRole("link", { name: /^Notices/ }).click();
+    await expect(page.getByText("Appointment", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("Review notice", { exact: true }),
+    ).toBeVisible();
+    await page.getByRole("link", { name: "Strikes", exact: true }).click();
+    await expect(page.getByText("No strikes recorded.")).toBeVisible();
+    await page.getByRole("link", { name: "History", exact: true }).click();
+    await page.getByLabel("History meeting").selectOption("m1");
+    await page.getByRole("button", { name: "Load history" }).click();
+    await expect(
+      page.getByText("History loaded", { exact: true }),
+    ).toBeVisible();
+    expect(
+      await page.evaluate(() => document.body.scrollWidth <= innerWidth),
+    ).toBe(true);
+    await page.getByRole("link", { name: "Team Hub / Home" }).click();
+    await expect(
+      page.getByRole("heading", { name: "4418 Systems" }),
+    ).toBeVisible();
+    await expect(page.locator(".attendance-stats")).toContainText(
+      "Notices to review",
+    );
+  });
+}
+
+test("week time slots prefill optional meetings; expired code and finalized actions are hidden", async ({
+  page,
+}) => {
+  const { calls } = await mock(page, "mentor");
+  await page.goto("/#attendance/calendar");
+  await page.getByRole("button", { name: "Week", exact: true }).click();
+  await page
+    .getByRole("button", {
+      name: "Create meeting on Thu, Sep 10, 2026 at 15:00",
+      exact: true,
+    })
+    .click();
+  await expect(page.getByLabel("Start (your local time)")).toHaveValue(
+    "2026-09-10T15:00",
+  );
+  await page.getByRole("button", { name: "Optional", exact: true }).click();
+  await expect(page.getByLabel("Required attendance")).toHaveValue("optional");
+  await page
+    .getByRole("button", { name: "Create meeting", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(calls.find((c) => c.action === "create").p).toMatchObject({
+    requirement: "optional",
+    meeting_type: "other",
+  });
+  await page.getByRole("button", { name: /Preseason build/ }).click();
+  await page.getByRole("button", { name: "Rotate check-in code" }).click();
+  await expect(page.getByText("123456", { exact: true })).toBeVisible();
+  await page.clock.setFixedTime(new Date("2026-09-10T19:01:00Z"));
+  await expect(page.getByText("123456", { exact: true })).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Close check-in", exact: true })
+    .click();
+  await expect(
+    page.getByLabel("Meeting lifecycle").locator("[aria-current]"),
+  ).toHaveText("Closed");
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Finalize meeting" }).click();
+  await expect(
+    page.getByLabel("Meeting lifecycle").locator("[aria-current]"),
+  ).toHaveText("Finalized");
+  await expect(
+    page.getByRole("button", { name: "Open check-in", exact: true }),
+  ).toHaveCount(0);
+});
+
+test("student deep links never show team roster or leadership controls", async ({
+  page,
+}) => {
+  await mock(page);
+  await expect(
+    page.getByText("Next required meeting", { exact: true }),
+  ).toBeVisible();
+  await page.goto("/#attendance/roster");
+  await expect(
+    page.getByRole("heading", { name: "Meeting calendar" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Roster", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "New meeting", exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("link", { name: /^Notices/ }).click();
+  await expect(
+    page.getByText("No notices to review in this view."),
+  ).toBeVisible();
+  await expect(page.getByText("Review notice", { exact: true })).toHaveCount(0);
 });
