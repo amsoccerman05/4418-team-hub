@@ -1,3 +1,4 @@
+import {session} from './hub-session';
 import { test, expect } from "@playwright/test";
 import { resources, systems } from "../src/links";
 for (const width of [390, 768, 1280, 1440])
@@ -5,7 +6,7 @@ for (const width of [390, 768, 1280, 1440])
     await page.setViewportSize({ width, height: 900 });
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(e.message));
-    await page.goto("/");
+    await session(page);await page.goto("/");
     await page.evaluate(() => document.fonts.ready);
     await expect(
       page.getByRole("heading", { name: "4418 Systems", exact: true }),

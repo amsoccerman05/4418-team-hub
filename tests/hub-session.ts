@@ -1,0 +1,2 @@
+import type {Page} from '@playwright/test';
+export async function session(page:Page){await page.addInitScript(()=>localStorage.setItem('4418-team-hub-auth',JSON.stringify({access_token:'fixture-token',refresh_token:'fixture-refresh',expires_at:4000000000,token_type:'bearer',user:{id:'00000000-0000-0000-0000-000000000001',aud:'authenticated',app_metadata:{},user_metadata:{}}})));await page.route('**/rest/v1/**',r=>r.fulfill({json:new URL(r.request().url()).pathname.endsWith('/profiles')?{display_name:'Test member',role:'student',active:true}:[]}));}

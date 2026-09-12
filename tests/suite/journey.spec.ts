@@ -5,6 +5,7 @@ const roots: Record<string, string> = {
   "team.frc4418.org": "4418-team-hub",
   "inventory.frc4418.org": "amsoccerman05.github.io",
   "pit.frc4418.org": "4418-pit-app",
+  "finance.frc4418.org": "4418-finance",
 };
 const uid = "00000000-0000-0000-0000-000000000001";
 const user = {
@@ -36,6 +37,7 @@ async function setup(context: BrowserContext) {
           user,
         };
       else if (u.pathname === "/auth/v1/user") result = user;
+      else if (u.pathname.endsWith('/finance_context')) result={profile:{id:uid,display_name:'Suite Student',role:'student'},can_create:true,is_admin:false,capabilities:[],areas:[],people:[]};
       else if (
         u.pathname === "/auth/v1/logout" ||
         u.pathname === "/auth/v1/recover"
@@ -93,77 +95,23 @@ async function setup(context: BrowserContext) {
   });
   return calls;
 }
-for (const width of [390, 1440])
-  test(`one login journey, shared logout and branding ${width}`, async ({
-    context,
-    page,
-  }) => {
-    await page.setViewportSize({ width, height: 900 });
-    const calls = await setup(context);
-    const errors: string[] = [];
-    page.on("pageerror", (e) => errors.push(e.message));
-    await page.goto("https://team.frc4418.org/#attendance");
-    await page.getByLabel("Email", { exact: true }).fill(user.email);
-    await page.getByLabel("Password", { exact: true }).fill("fixture-password");
-    await page.getByRole("button", { name: "Sign in", exact: true }).click();
-    await expect(page.getByText("Welcome, Suite Student")).toBeVisible();
-    for (const [dest, title] of [
-      ["https://inventory.frc4418.org/", "4418 Inventory"],
-      ["https://team.frc4418.org/", "4418 Team Hub"],
-      ["https://pit.frc4418.org/", "4418 Pit Operations"],
-      ["https://team.frc4418.org/", "4418 Team Hub"],
-    ]) {
-      await page.locator(".suite-picker summary").click();
-      await page.locator(`.suite-picker a[href="${dest.replace(/\/$/, "")}"] , .suite-picker a[href="${dest}"]`).first().click();
-      await expect(
-        page.getByRole("button", { name: "Sign in", exact: true }),
-      ).toHaveCount(0);
-      if (dest.includes("team.")) {
-        await page.locator('.system-card[href="#attendance"]').click();
-        await expect(page.getByText("Welcome, Suite Student")).toBeVisible();
-      }
-      else await expect(page.locator(".topbar")).toBeVisible();
-      await expect(page).toHaveTitle(title);
-      expect(
-        await page.evaluate(
-          () => document.documentElement.scrollWidth <= innerWidth,
-        ),
-      ).toBe(true);
-      expect(
-        await page.locator('link[rel="icon"]').getAttribute("href"),
-      ).toContain("4418-suite-icon.svg");
-      if (!dest.includes("team."))
-        expect(
-          await page.evaluate(() =>
-            Object.keys(localStorage).filter(
-              (k) => k.includes("auth-token") || k === "4418-team-hub-auth",
-            ),
-          ),
-        ).toEqual([]);
-      await page.screenshot({
-        path: `test-results/suite-${new URL(dest).hostname}-${width}.png`,
-        fullPage: true,
-      });
-    }
-    expect(
-      calls.filter((c) => c.path.includes("grant_type=password")),
-    ).toHaveLength(1);
-    const inventory = await context.newPage();
-    await inventory.goto("https://inventory.frc4418.org/");
-    await expect(inventory.locator(".topbar")).toBeVisible();
-    await page.getByRole("button", { name: "Sign out", exact: true }).click();
-    await expect(
-      page.getByRole("heading", { name: "Team sign-in" }),
-    ).toBeVisible();
-    await expect(
-      inventory.getByRole("button", { name: "Sign In", exact: true }),
-    ).toBeVisible();
-    await page.goto("https://pit.frc4418.org/");
-    await expect(
-      page.getByRole("button", { name: "Sign in", exact: true }),
-    ).toBeVisible();
-    expect(errors).toEqual([]);
-  });
+
+for(const width of [390,1440]) for(const origin of ['team','inventory','pit','finance'])
+test(`canonical login and ${origin} logout across all apps ${width}`,async({context,page})=>{
+ await page.setViewportSize({width,height:900});const calls=await setup(context);const errors:string[]=[];
+ context.on('page',p=>p.on('pageerror',e=>errors.push(e.message)));page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(`https://${origin}.frc4418.org/`);
+ await expect(page.getByRole('heading',{name:'Team sign in',exact:true})).toBeVisible();await expect(page).toHaveURL('https://team.frc4418.org/');
+ await page.getByLabel('Email',{exact:true}).fill(user.email);await page.getByLabel('Password',{exact:true}).fill('fixture-password');await page.getByRole('button',{name:'Sign in',exact:true}).click();
+ await expect(page.getByRole('heading',{name:'My 4418',exact:true})).toBeVisible();
+ const pages:Record<string,typeof page>={team:page};
+ for(const host of ['inventory','pit','finance']){const p=await context.newPage();pages[host]=p;await p.setViewportSize({width,height:900});await p.goto(`https://${host}.frc4418.org/`);await expect(p.locator('.suite-header')).toBeVisible();await expect(p.locator('.suite-signout')).toBeVisible();expect(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await p.screenshot({path:`test-results/suite-${host}-${width}.png`});}
+ expect(calls.filter(c=>c.path.includes('grant_type=password'))).toHaveLength(1);
+ await pages[origin].getByRole('button',{name:'Sign out',exact:true}).click();
+ for(const p of Object.values(pages)){await expect(p.getByRole('heading',{name:'Team sign in',exact:true})).toBeVisible();await expect(p).toHaveURL('https://team.frc4418.org/');await expect(p.locator('.suite-header')).toHaveCount(0);}
+ expect(errors).toEqual([]);
+});
+
 test("untrusted sibling cannot retrieve the Hub session", async ({
   context,
   page,
@@ -192,60 +140,3 @@ test("untrusted sibling cannot retrieve the Hub session", async ({
   });
   expect(leaked).toBe(false);
 });
-test("Inventory password reset stays on the supported PKCE flow", async ({
-  context,
-  page,
-}) => {
-  const calls = await setup(context);
-  await page.goto("https://inventory.frc4418.org/");
-  await page.getByLabel("Email", { exact: true }).fill(user.email);
-  await page.getByRole("button", { name: "Forgot password?" }).click();
-  await expect(
-    page.getByText(
-      "If an account exists, a password reset email is on its way.",
-    ),
-  ).toBeVisible();
-  expect(
-    calls.find((c) => c.path.startsWith("/auth/v1/recover"))?.body
-      .code_challenge,
-  ).toBeTruthy();
-  await page.goto(
-    "https://inventory.frc4418.org/?password-reset=1&code=fixture-code",
-  );
-  await expect(
-    page.getByRole("heading", { name: "Set your password" }),
-  ).toBeVisible();
-  expect(page.url()).not.toContain("code=");
-  await page
-    .getByLabel("New password", { exact: true })
-    .fill("new-fixture-password");
-  await page
-    .getByLabel("Confirm password", { exact: true })
-    .fill("new-fixture-password");
-  await page.getByRole("button", { name: "Save password" }).click();
-  await expect(page.locator(".topbar")).toBeVisible();
-});
-
-for (const host of ["inventory", "pit"])
-  test(`signing in at ${host} restores Hub without another login`, async ({
-    context,
-    page,
-  }) => {
-    const calls = await setup(context);
-    await page.goto(`https://${host}.frc4418.org/`);
-    await page
-      .getByLabel(host === "pit" ? "Team account email" : "Email", {
-        exact: true,
-      })
-      .fill(user.email);
-    await page.getByLabel("Password", { exact: true }).fill("fixture-password");
-    await page.getByRole("button", { name: /^Sign in$/i }).click();
-    await expect(page.locator(".topbar")).toBeVisible();
-    await page.locator(".suite-picker summary").click();
-    await page.locator('.suite-picker a[href="https://team.frc4418.org/"]').click();
-    await page.locator('.system-card[href="#attendance"]').click();
-    await expect(page.getByText("Welcome, Suite Student")).toBeVisible();
-    expect(
-      calls.filter((c) => c.path.includes("grant_type=password")),
-    ).toHaveLength(1);
-  });

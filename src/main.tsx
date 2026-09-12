@@ -97,15 +97,17 @@ function App() {
   const management = route === "#team-management";
   const announcements = route === "#announcements";
   const workspace = route === "#attendance" || route.startsWith("#attendance/");
+  if(!auth.signed)return auth.panel;
   return (
     <>
       <a className="skip-link" href="#main">
         Skip to content
       </a>
-      <SuiteHeader app="Team Hub" context={management?'Team Management':announcements?'Announcements':workspace?'Attendance':'My 4418'} account={auth.account}/>
+      <SuiteHeader app="Team Hub" context={management?'Team Management':announcements?'Announcements':workspace?'Attendance':'My 4418'} name={auth.name} onSignOut={auth.signOut} busy={auth.busy}/>
 
       <main id="main">
-        {auth.panel}
+        {auth.error&&<p role="alert">{auth.error}</p>}
+        {auth.signed && !workspace && !management && <My4418 management={announcements} />}
         {!workspace && !management && !announcements && (
           <>
             <div className="page-heading">
@@ -144,7 +146,7 @@ function App() {
           tab={route.split("/")[1] || "calendar"}
         />}
         {auth.signed && management && <TeamManagement workspace /> }
-        {auth.signed && !workspace && !management && <My4418 management={announcements} />}
+
         {!workspace && !management && !announcements && (
           <>
             <section className="resources" aria-labelledby="resources-heading">
