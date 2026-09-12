@@ -10,6 +10,7 @@ export const suiteOrigins = [
   "https://team.frc4418.org",
   "https://inventory.frc4418.org",
   "https://pit.frc4418.org",
+  "https://finance.frc4418.org",
 ];
 const hub = suiteOrigins[0];
 const protocol = "4418-suite-auth-v1";
