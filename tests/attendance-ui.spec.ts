@@ -626,3 +626,16 @@ test("leadership request filters separate pending, excused and denied", async ({
     page.getByRole("button", { name: "Open meeting" }),
   ).toBeVisible();
 });
+
+for(const width of [390,1440])test(`future roster sync and active default ${width}`,async({page})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));await mock(page,'lead');await page.setViewportSize({width,height:900});let synced=0;
+ await page.route('**/rpc/team_attendance_sync_future_rosters',async r=>{synced++;await r.fulfill({json:{added:2,promoted:1,skipped:1}});});
+ await page.goto('/#attendance/calendar');await page.getByRole('button',{name:'Sync future rosters',exact:true}).click();
+ await expect(page.getByText('Added 2; newly required 1; preserved for review 1.',{exact:true})).toBeVisible();expect(synced).toBe(1);
+ await page.getByRole('button',{name:'New meeting',exact:true}).click();const d=page.getByRole('dialog');
+ await expect(d.getByLabel('Required attendance')).toHaveValue('active');await expect(d.getByRole('option',{name:'Registered students only',exact:true})).toHaveCount(1);
+ await d.getByLabel('Required attendance').selectOption('registered');await expect(d.getByLabel('Required attendance')).toHaveValue('registered');
+ await d.getByRole('button',{name:'Preseason',exact:true}).click();await expect(d.getByLabel('Required attendance')).toHaveValue('active');
+ await page.screenshot({path:`test-results/roster-sync-${width}.png`,fullPage:true});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);expect(errors).toEqual([]);
+});
+test('students have no future roster sync action',async({page})=>{await mock(page);await page.goto('/#attendance/calendar');await expect(page.getByRole('button',{name:'Sync future rosters'})).toHaveCount(0);});

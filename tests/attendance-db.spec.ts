@@ -77,6 +77,7 @@ test.describe("Attendance database permissions and policy", () => {
       ),
     );
   });
+  test.beforeAll(async () => {await db.exec(readFileSync("supabase/migrations/202609120008_attendance_roster_sync.sql","utf8"));});
   test.afterAll(async () => {
     await db.close();
   });
@@ -541,5 +542,52 @@ test.describe("Attendance database permissions and policy", () => {
           )
         ).rows.length,
       ).toBeGreaterThan(0);
+  });
+
+  test("future roster sync is additive, audited, authorized and preserves history/custom decisions",async()=>{
+    const fresh="00000000-0000-0000-0000-000000000020",prospective="00000000-0000-0000-0000-000000000021";
+    await db.exec(`reset role;insert into profiles values('${prospective}','Prospective','student',true);`);
+    await as('lead');
+    const future={starts_at:new Date(Date.now()+86400000).toISOString(),ends_at:new Date(Date.now()+90000000).toISOString()};
+    const active=await create({...future,requirement:'active'}),registered=await create({...future,requirement:'registered'});
+    const custom=await create({...future,requirement:'selected',selected_students:[ids.student]});
+    const area=await create({...future,requirement:'areas',areas:['Software']}),optional=await create({...future,requirement:'optional'});
+    const past=await create({requirement:'active'}),finalized=await create({...future,requirement:'active'});
+    await db.exec(`reset role;update team_meetings set status='finalized' where id='${finalized}';`);
+    const protectedIds=[custom,area,optional,past,finalized];
+    const snapshots=async()=>({members:(await db.query('select * from team_meeting_members where meeting_id=any($1::uuid[]) order by meeting_id,student_id',[protectedIds])).rows,attendance:(await db.query('select * from team_attendance where meeting_id=any($1::uuid[]) order by id',[protectedIds])).rows});
+    const before=await snapshots();
+    // All-active creation includes a prospective student without a registration row.
+    expect((await db.query<any>('select required from team_meeting_members where meeting_id=$1 and student_id=$2',[active,prospective])).rows[0].required).toBe(true);
+    await db.exec(`insert into profiles values('${fresh}','New student','student',true);`);
+    const sync=()=>db.query<any>('select team_attendance_sync_future_rosters() result');
+    await as('student');await expect(sync()).rejects.toThrow(/Leadership/);
+    await db.exec('reset role;set role anon');await expect(sync()).rejects.toThrow(/permission denied/);
+    await as('lead');await sync();
+    expect(await row(active,fresh)).toMatchObject({review_status:'none',physical_status:'pending'});
+    expect(await row(registered,fresh)).toBeUndefined();
+    // An existing prospective roster entry is upgraded, not duplicated.
+    await manage('member',{student_id:prospective,member_status:'registered',team_area:'Software'});
+    await manage('member',{student_id:fresh,member_status:'registered',team_area:'Software'});
+    await sync();expect(await row(registered,prospective)).toMatchObject({review_status:'none',version:2});
+    expect(await row(registered,fresh)).toMatchObject({review_status:'none',version:1});
+    const replay=(await sync()).rows[0].result;expect(replay.added).toBe(0);expect(replay.promoted).toBe(0);
+    await db.exec('reset role');expect(await snapshots()).toEqual(before);
+    expect((await db.query("select * from team_attendance_private.history where meeting_id=$1 and action='ROSTER_SYNC_ADD' and student_id=$2",[registered,fresh])).rows).toHaveLength(1);
+    // Existing RLS and request RPC work for the newly synchronized student.
+    await db.exec(`select set_config('test.uid','${fresh}',false);set role authenticated;`);
+    expect((await db.query('select id from team_meetings where id=$1',[registered])).rows).toHaveLength(1);
+    await db.query('select team_attendance_request($1::jsonb)',[JSON.stringify({meeting_id:registered,version:1,notice_type:'absent',reason:'Travel conflict'})]);
+    expect(await row(registered,fresh)).toMatchObject({review_status:'pending',notice_reason:'Travel conflict'});
+    await as('lead');await manage('member',{student_id:fresh,member_status:'inactive',team_area:'Software'});await sync();
+    expect(await row(registered,fresh)).toMatchObject({review_status:'pending',notice_reason:'Travel conflict'});
+    // Do not overwrite a pre-existing optional request when registration changes.
+    await manage('member',{student_id:prospective,member_status:'prospective',team_area:'Software'});
+    const requested=await create({...future,requirement:'registered'});
+    await db.exec(`reset role;select set_config('test.uid','${prospective}',false);set role authenticated;`);
+    await db.query('select team_attendance_request($1::jsonb)',[JSON.stringify({meeting_id:requested,version:1,notice_type:'absent',reason:'Existing request'})]);
+    const untouched=await row(requested,prospective);
+    await as('lead');await manage('member',{student_id:prospective,member_status:'registered',team_area:'Software'});
+    expect((await sync()).rows[0].result.skipped).toBeGreaterThan(0);expect(await row(requested,prospective)).toEqual(untouched);
   });
 });

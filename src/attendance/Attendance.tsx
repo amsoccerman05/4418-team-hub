@@ -456,7 +456,7 @@ function Management({
               ))}
             </ol>
             <p>
-              Required roster snapshotted at creation ·{" "}
+              Required roster saved for this meeting ·{" "}
               {
                 data.snapshots.filter(
                   (s) => s.meeting_id === m.id && s.required,
@@ -675,7 +675,7 @@ function MeetingForm({
   date: Date;
   onCreated: () => void;
 }) {
-  const [requirement, setRequirement] = useState("registered");
+  const [requirement, setRequirement] = useState("active");
   const [repeat, setRepeat] = useState<Repeat>("none");
   const [preview, setPreview] = useState("");
   const [preset, setPreset] = useState("Offseason"),
@@ -752,7 +752,7 @@ function MeetingForm({
                     ? "preseason"
                     : "other",
               );
-              setRequirement(name === "Optional" ? "optional" : "registered");
+              setRequirement(name === "Optional" ? "optional" : "active");
             }}
           >
             {name}
@@ -885,7 +885,8 @@ function MeetingForm({
           value={requirement}
           onChange={(e) => setRequirement(e.target.value)}
         >
-          <option value="registered">All registered students</option>
+          <option value="active">All active students</option>
+          <option value="registered">Registered students only</option>
           <option value="areas">Registered students in selected areas</option>
           <option value="selected">
             Selected students (including prospective)
@@ -1331,6 +1332,7 @@ function Workspace({
   error: string;
   message: string;
 }) {
+  const [rosterSync, setRosterSync] = useState("");
   const manager = isManager(profile);
   const tabs = manager
     ? ["calendar", "roster", "notices", "strikes", "history"]
@@ -1411,6 +1413,10 @@ function Workspace({
               </button>
             )}
           </div>
+          {manager && <div className="att-panel"><button disabled={busy} onClick={() => void run(async () => {
+            const result = await rpc("team_attendance_sync_future_rosters", {}) as {added:number;promoted:number;skipped:number};
+            setRosterSync(`Added ${result.added}; newly required ${result.promoted}; preserved for review ${result.skipped}.`);
+          }, "Future rosters synced")}>Sync future rosters</button><p>Updates future All active students and Registered students only meetings. Existing attendance decisions are preserved.</p>{rosterSync && <p role="status">{rosterSync}</p>}</div>}
           <MeetingCalendar
             meetings={data.meetings}
             onOpen={setSelected}
@@ -1428,8 +1434,8 @@ function Workspace({
         <>
           <h2>Team roster</h2>
           <p className="att-muted">
-            Registration and team areas apply to future meetings. Existing
-            required rosters stay unchanged.
+            After adding students or changing registration, use Sync future rosters.
+            Past, finalized, custom and area rosters stay unchanged.
           </p>
           <label className="att-select">
             Find a member
