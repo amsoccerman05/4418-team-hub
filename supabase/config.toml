@@ -1,0 +1,3 @@
+[functions.team-invitations]
+# The handler validates the caller with Auth /user before its manager-authorized RPC.
+verify_jwt = false
