@@ -307,16 +307,6 @@ function Student({ data, id, run }: { data: Data; id: string; run: Run }) {
         return (
           <article className="att-panel" key={m.id}>
             <MeetingHeader meeting={m} />
-            <ol className="att-lifecycle" aria-label="Meeting lifecycle">
-              {["draft", "open", "closed", "finalized"].map((stage) => (
-                <li
-                  key={stage}
-                  aria-current={m.status === stage ? "step" : undefined}
-                >
-                  {stage === "open" ? "Open check-in" : label(stage)}
-                </li>
-              ))}
-            </ol>
             <p>
               {required ? "Required" : "Optional"} · <Status attendance={a} />
             </p>
@@ -354,9 +344,8 @@ function Student({ data, id, run }: { data: Data; id: string; run: Run }) {
                 </form>
               )}
             {a.checked_in_at && <p>Checked in: {time(a.checked_in_at)}</p>}
-            <NoticeDetails a={a} meeting={m} />
-            <NoticeForm a={a} meeting={m} run={run} />
-            {a.review_reason && <p>Leadership review: {a.review_reason}</p>}
+            {a.notice_at && <details className="att-request-summary"><summary>Request {a.review_status === "pending" ? "pending review" : label(a.review_status)}</summary><NoticeDetails a={a} meeting={m} />{a.review_reason && <p>Leadership review: {a.review_reason}</p>}</details>}
+            <NoticeForm key={`${a.id}-${a.version}`} a={a} meeting={m} run={run} />
             <StrikeList data={data} attendance={a} />
             <button
               className="att-secondary"
@@ -599,22 +588,10 @@ function Management({
                     (member) => member.student_id === a.student_id,
                   )?.display_name ?? a.student_id}
                   <span>
-                    {label(a.physical_status)} · {label(a.review_status)}
-                    <small>
-                      Check-in {time(a.checked_in_at)} · Departure{" "}
-                      {time(a.left_at)}
-                      {a.notice_at && (
-                        <>
-                          {" "}
-                          · {a.notice_type ? label(a.notice_type) : "Notice"} ·
-                          Expected {time(a.expected_at ?? null)} ·{" "}
-                          {noticeTiming(a, m)}
-                        </>
-                      )}
-                    </small>
+                    {label(a.physical_status)}{a.review_status !== "none" && <> · {label(a.review_status)}</>}
+
                   </span>
                 </summary>
-                <NoticeDetails a={a} meeting={m} />
                 <AttendanceEditor
                   key={`${a.id}-${a.version}`}
                   a={a}
@@ -959,6 +936,14 @@ function MeetingForm({
       <button>Create meeting</button>
     </form>
   );
+}
+function RequestReview({a,meeting,run}:{a:Attendance;meeting:Meeting;run:Run}) {
+ return <form className="att-quick-review" onSubmit={e=>{
+  e.preventDefault();const form=e.currentTarget;const decision=(e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement|null;
+  if(!decision || !["excused","denied"].includes(decision.value))return;
+  const explanation=String(new FormData(form).get("explanation")||"").trim();
+  void run(()=>manage("attendance",{meeting_id:meeting.id,attendance_id:a.id,version:a.version,review_status:decision.value,left_at:a.left_at,explanation}),"Request reviewed");
+ }}><label>Review reason<textarea name="explanation" required maxLength={2000} rows={2} placeholder="Briefly explain the decision"/></label><div className="att-toolbar"><button value="excused">Excuse</button><button className="att-secondary" value="denied">Deny</button></div></form>;
 }
 function AttendanceEditor({
   a,
@@ -1413,10 +1398,10 @@ function Workspace({
               </button>
             )}
           </div>
-          {manager && <div className="att-panel"><button disabled={busy} onClick={() => void run(async () => {
+          {manager && <details className="att-roster-tools"><summary>Roster tools</summary><button className="att-secondary" disabled={busy} onClick={() => void run(async () => {
             const result = await rpc("team_attendance_sync_future_rosters", {}) as {added:number;promoted:number;skipped:number};
             setRosterSync(`Added ${result.added}; newly required ${result.promoted}; preserved for review ${result.skipped}.`);
-          }, "Future rosters synced")}>Sync future rosters</button><p>Updates future All active students and Registered students only meetings. Existing attendance decisions are preserved.</p>{rosterSync && <p role="status">{rosterSync}</p>}</div>}
+          }, "Future rosters synced")}>Sync future rosters</button><p>Updates future All active students and Registered students only meetings. Existing attendance decisions are preserved.</p>{rosterSync && <p role="status">{rosterSync}</p>}</details>}
           <MeetingCalendar
             meetings={data.meetings}
             onOpen={setSelected}
@@ -1480,12 +1465,12 @@ function Workspace({
         <>
           <h2>
             {current === "notices"
-              ? "Notices & excuse review"
+              ? "Attendance Requests"
               : "Strikes & leadership actions"}
           </h2>
           <p className="att-muted">
             {current === "notices"
-              ? "Notify leadership at least 24 hours before a meeting. Excuse decisions remain separate from physical attendance."
+              ? "Review attendance requests. Excusing a request does not change physical attendance."
               : "Totals use active strike records. Three strikes require warning / parent contact; five require leadership review. Access is never changed automatically."}
           </p>
           {current === "notices" && (
@@ -1520,7 +1505,7 @@ function Workspace({
           {!incidentRows.length && (
             <p className="att-empty">
               {current === "notices"
-                ? "No notices to review in this view."
+                ? "You’re all caught up. No requests match this view."
                 : "No strikes recorded."}
             </p>
           )}
@@ -1528,7 +1513,7 @@ function Workspace({
             const meeting = data.meetings.find((m) => m.id === a.meeting_id);
             return (
               meeting && (
-                <article className="att-panel" key={a.id}>
+                <article className="att-panel att-request-card" key={a.id}>
                   <div className="att-toolbar">
                     <h3>
                       {manager
@@ -1545,13 +1530,15 @@ function Workspace({
                   </div>
                   {current === "notices" ? (
                     <>
-                      <Status attendance={a} />
-                      <p>{a.notice_reason || "Excuse review requested"}</p>
-                      <NoticeDetails a={a} meeting={meeting} />
+                      <span className={`att-badge ${a.review_status}`}>{a.review_status === "pending" ? "Pending review" : label(a.review_status)}</span>
+                      <p className="att-muted">{time(meeting.starts_at)} · {a.notice_type ? label(a.notice_type) : "Attendance issue"}{a.expected_at && <> · Expected {time(a.expected_at)}</>}</p>
+                      <p className="att-request-reason">{a.notice_reason || "Excuse review requested"}</p>
+                      <details><summary>Submission details</summary><p>{time(a.notice_at)} · {noticeTiming(a, meeting)}</p></details>
+                      {manager && a.review_status === "pending" && <RequestReview key={`${a.id}-${a.version}`} a={a} meeting={meeting} run={run} />}
                       {a.review_reason && <p>{a.review_reason}</p>}
                       {manager && (
                         <details>
-                          <summary>Review notice</summary>
+                          <summary>Advanced attendance &amp; strikes</summary>
                           <AttendanceEditor
                             key={`${a.id}-${a.version}`}
                             a={a}
@@ -1575,7 +1562,7 @@ function Workspace({
           })}
           {current === "notices" && !manager && (
             <a href="#attendance/calendar">
-              Open a meeting to submit a notice →
+              Open a meeting to report an attendance issue →
             </a>
           )}
         </>
@@ -1746,14 +1733,8 @@ function NoticeForm({
   if (m.status === "finalized" || Date.now() >= Date.parse(m.ends_at))
     return null;
   return (
-    <details>
-      <summary>
-        {active
-          ? "I need to leave early"
-          : a.notice_at
-            ? "Update attendance request"
-            : "Submit attendance request"}
-      </summary>
+    <details className="att-report-issue">
+      <summary>{a.notice_at ? "Update attendance request" : "Report attendance issue"}</summary>
       <form
         className="att-form"
         onSubmit={(e) => {
@@ -1813,10 +1794,7 @@ function NoticeForm({
           />
         </label>
         <p className="att-muted">
-          Leadership reviews this request separately. It does not excuse you,
-          record an actual departure, or assign strikes. Updating a request
-          records a new submission time; the previous notice remains in audit
-          history.
+          Leadership will review your request. Updates record a new submission time.
         </p>
         <button>Submit attendance request</button>
       </form>

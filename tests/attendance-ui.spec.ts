@@ -113,6 +113,7 @@ async function mock(page: Page, role = "student") {
         }
       } else if (path.endsWith("/team_attendance_request")) {
         calls.push(body);
+        data.attendance[0].version++;
         data.attendance[0].notice_at = "2026-09-09T15:00:00Z";
         data.attendance[0].notice_reason = body.p.reason;
         data.attendance[0].notice_type = body.p.notice_type;
@@ -192,7 +193,7 @@ for (const width of [390, 1440]) {
     expect(calls[1]).toEqual({ meeting_id: "m1", code: "123456" });
     await page
       .locator("summary")
-      .filter({ hasText: /^I need to leave early$/ })
+      .filter({ hasText: /^Report attendance issue$/ })
       .click();
     await page.getByLabel("Expected departure").fill("2026-09-10T12:30");
     await page.getByLabel("Reason", { exact: true }).fill("Family commitment");
@@ -409,7 +410,7 @@ for (const width of [390, 1440]) {
     await page.getByRole("link", { name: /^Attendance Requests/ }).click();
     await expect(page.getByText("Appointment", { exact: true })).toBeVisible();
     await expect(
-      page.getByText("Review notice", { exact: true }),
+      page.getByText("Advanced attendance & strikes", { exact: true }),
     ).toBeVisible();
     await page.getByRole("link", { name: "Strikes", exact: true }).click();
     await expect(page.getByText("No strikes recorded.")).toBeVisible();
@@ -493,9 +494,9 @@ test("student deep links never show team roster or leadership controls", async (
   ).toHaveCount(0);
   await page.getByRole("link", { name: /^Attendance Requests/ }).click();
   await expect(
-    page.getByText("No notices to review in this view."),
+    page.getByText("You’re all caught up. No requests match this view."),
   ).toBeVisible();
-  await expect(page.getByText("Review notice", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Advanced attendance & strikes", { exact: true })).toHaveCount(0);
 });
 
 for (const width of [390, 1440])
@@ -567,7 +568,7 @@ for (const width of [390, 1440])
     await page.getByRole("button", { name: /Preseason build/ }).click();
     await page
       .locator("summary")
-      .filter({ hasText: /^Submit attendance request$/ })
+      .filter({ hasText: /^Report attendance issue$/ })
       .click();
     await page
       .getByLabel("How will your attendance be affected?")
@@ -590,6 +591,8 @@ for (const width of [390, 1440])
         .getByRole("dialog")
         .getByText("Excuse review pending", { exact: true }),
     ).toBeVisible();
+    await expect(page.getByRole("dialog").getByLabel("Reason",{exact:true})).not.toBeVisible();
+    await page.getByRole("dialog").locator("summary").filter({hasText:/^Request pending review$/}).click();
     await expect(
       page.getByRole("dialog").getByText(/26.0 hours in advance/),
     ).toBeVisible();
@@ -610,7 +613,7 @@ test("leadership request filters separate pending, excused and denied", async ({
   await page.locator('.system-card[href="#attendance"]').click();
   await page.getByRole("link", { name: /^Attendance Requests/ }).click();
   await expect(
-    page.getByText("No notices to review in this view."),
+    page.getByText("You’re all caught up. No requests match this view."),
   ).toBeVisible();
   await page.getByLabel("Notice status").selectOption("excused");
   await expect(
@@ -630,7 +633,7 @@ test("leadership request filters separate pending, excused and denied", async ({
 for(const width of [390,1440])test(`future roster sync and active default ${width}`,async({page})=>{
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));await mock(page,'lead');await page.setViewportSize({width,height:900});let synced=0;
  await page.route('**/rpc/team_attendance_sync_future_rosters',async r=>{synced++;await r.fulfill({json:{added:2,promoted:1,skipped:1}});});
- await page.goto('/#attendance/calendar');await page.getByRole('button',{name:'Sync future rosters',exact:true}).click();
+ await page.goto('/#attendance/calendar');await expect(page.getByRole('button',{name:'Sync future rosters',exact:true})).not.toBeVisible();await page.getByText('Roster tools',{exact:true}).click();await page.getByRole('button',{name:'Sync future rosters',exact:true}).click();
  await expect(page.getByText('Added 2; newly required 1; preserved for review 1.',{exact:true})).toBeVisible();expect(synced).toBe(1);
  await page.getByRole('button',{name:'New meeting',exact:true}).click();const d=page.getByRole('dialog');
  await expect(d.getByLabel('Required attendance')).toHaveValue('active');await expect(d.getByRole('option',{name:'Registered students only',exact:true})).toHaveCount(1);
@@ -639,3 +642,13 @@ for(const width of [390,1440])test(`future roster sync and active default ${widt
  await page.screenshot({path:`test-results/roster-sync-${width}.png`,fullPage:true});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);expect(errors).toEqual([]);
 });
 test('students have no future roster sync action',async({page})=>{await mock(page);await page.goto('/#attendance/calendar');await expect(page.getByRole('button',{name:'Sync future rosters'})).toHaveCount(0);});
+
+for(const width of [390,1440])test(`compact request inbox decisions preserve physical attendance ${width}`,async({page})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));await page.setViewportSize({width,height:900});const {data,calls}=await mock(page,'mentor');
+ Object.assign(data.attendance[0],{notice_at:'2026-09-09T15:00:00Z',notice_type:'early',notice_reason:'Appointment',review_status:'pending',physical_status:'left_early',left_at:'2026-09-10T17:05:00Z'});
+ await page.goto('/#attendance/notices');await expect(page.getByRole('button',{name:'Excuse',exact:true})).toBeVisible();await expect(page.getByLabel('Physical attendance',{exact:true})).not.toBeVisible();await expect(page.getByRole('button',{name:'Add / review strikes',exact:true})).not.toBeVisible();
+ await page.getByLabel('Review reason',{exact:true}).fill('Appointment confirmed');await page.screenshot({path:`test-results/request-inbox-${width}.png`,fullPage:true});await page.getByRole('button',{name:'Excuse',exact:true}).click();
+ expect(calls.at(-1)).toEqual({action:'attendance',p:{meeting_id:'m1',attendance_id:'a1',version:1,review_status:'excused',left_at:'2026-09-10T17:05:00Z',explanation:'Appointment confirmed'}});expect(data.attendance[0].physical_status).toBe('left_early');expect(data.strikes).toHaveLength(0);
+ data.attendance[0].review_status='pending';await page.getByRole('button',{name:'Refresh',exact:true}).click();await page.getByLabel('Review reason',{exact:true}).fill('Not approved');await page.getByRole('button',{name:'Deny',exact:true}).click();await expect.poll(()=>calls.at(-1)?.p.review_status).toBe('denied');expect(calls.at(-1).p).not.toHaveProperty('physical_status');
+ await page.getByLabel('Notice status').selectOption('denied');await page.getByText('Advanced attendance & strikes',{exact:true}).click();await expect(page.getByRole('button',{name:'Review excuse / correct attendance',exact:true})).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);expect(errors).toEqual([]);
+});
