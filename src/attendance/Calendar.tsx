@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { label, type Meeting } from "./service";
+import { label, meetingState, type Meeting } from "./service";
 const dateLabel = (date: Date) =>
   date.toLocaleDateString([], {
     weekday: "short",
@@ -139,7 +139,7 @@ export function MeetingCalendar({
                       hour: "numeric",
                       minute: "2-digit",
                     })}{" "}
-                    · {label(m.status)}
+                    · {meetingState(m)}
                   </span>
                 </button>
               ))}

@@ -484,3 +484,5 @@
 .att-request-card{padding:16px!important}.att-request-card h3{font-size:1rem;margin:0}.att-request-reason{white-space:pre-wrap;overflow-wrap:anywhere;margin:12px 0}.att-quick-review{margin-top:12px}.att-quick-review label{display:grid;gap:6px}.att-quick-review textarea{width:100%;box-sizing:border-box}.att-quick-review .att-toolbar{margin-top:10px}
 .att-record>summary{padding:12px!important;display:flex;justify-content:space-between;gap:12px;align-items:center}.att-record>summary>span{font-size:.85rem;text-align:right}
 @media(max-width:600px){.att-request-card>.att-toolbar{align-items:flex-start}.att-record>summary{align-items:flex-start;flex-wrap:wrap}.att-record>summary>span{text-align:left}.att-quick-review .att-toolbar>button{flex:1;min-height:44px}.att-report-issue>summary{box-sizing:border-box;text-align:center;width:100%}}
+
+.att-meeting-tools{margin:12px 0}.att-meeting-tools>summary{cursor:pointer;font-weight:600}.att-meeting-tools .att-toolbar{margin-top:12px}

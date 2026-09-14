@@ -196,3 +196,17 @@ export const strikeAction = (n: number) =>
       : "No strike threshold reached";
 export const label = (s: string) =>
   s.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+// Presentation only: stored lifecycle values and attendance policy stay unchanged.
+export function meetingState(m: Meeting, now = Date.now()): string {
+  if (m.status === "finalized") return "Attendance complete";
+  if (now >= Date.parse(m.ends_at)) return "Meeting ended";
+  if (m.status === "open" && m.check_in_open && m.code_expires_at && now < Date.parse(m.code_expires_at)) return "Check-in open";
+  return "Upcoming";
+}
+export function attendanceDuration(a: Attendance): string | null {
+  if (!a.checked_in_at || !a.left_at) return null;
+  const minutes = Math.floor((Date.parse(a.left_at) - Date.parse(a.checked_in_at)) / 60000);
+  if (!Number.isFinite(minutes) || minutes < 0) return null;
+  return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}

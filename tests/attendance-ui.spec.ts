@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { summary, strikeAction, type Data } from "../src/attendance/service";
+import { summary, strikeAction, meetingState, attendanceDuration, type Data } from "../src/attendance/service";
 const student = "00000000-0000-0000-0000-000000000001";
 const lead = "00000000-0000-0000-0000-000000000003";
 function fixture(): Data {
@@ -111,6 +111,8 @@ async function mock(page: Page, role = "student") {
           data.attendance[0].checked_in_at = "2026-09-10T17:03:00Z";
           result = { message: "Checked in" };
         }
+      } else if (path.endsWith("/team_attendance_check_out")) {
+        calls.push(body);data.attendance[0].left_at="2026-09-10T17:10:00Z";data.attendance[0].physical_status="left_early";data.attendance[0].version++;result={message:"Check-out recorded"};
       } else if (path.endsWith("/team_attendance_request")) {
         calls.push(body);
         data.attendance[0].version++;
@@ -233,6 +235,7 @@ for (const width of [390, 1440]) {
       .poll(() => calls.some((c) => c.action === "create"))
       .toBe(true);
     await page.getByRole("button", { name: /Preseason build/ }).click();
+    await page.getByText("Meeting controls", {exact:true}).click();
     await page.getByRole("button", { name: "Rotate check-in code" }).click();
     await expect(page.getByText("123456", { exact: true })).toBeVisible();
     await page
@@ -457,7 +460,8 @@ test("week time slots prefill optional meetings; expired code and finalized acti
     meeting_type: "other",
   });
   await page.getByRole("button", { name: /Preseason build/ }).click();
-  await page.getByRole("button", { name: "Rotate check-in code" }).click();
+  await page.getByText("Meeting controls", {exact:true}).click();
+    await page.getByRole("button", { name: "Rotate check-in code" }).click();
   await expect(page.getByText("123456", { exact: true })).toBeVisible();
   await page.clock.setFixedTime(new Date("2026-09-10T19:01:00Z"));
   await expect(page.getByText("123456", { exact: true })).toHaveCount(0);
@@ -465,13 +469,13 @@ test("week time slots prefill optional meetings; expired code and finalized acti
     .getByRole("button", { name: "Close check-in", exact: true })
     .click();
   await expect(
-    page.getByLabel("Meeting lifecycle").locator("[aria-current]"),
-  ).toHaveText("Closed");
+    page.getByRole("dialog").getByText("Meeting ended",{exact:true}),
+  ).toBeVisible();
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Finalize meeting" }).click();
   await expect(
-    page.getByLabel("Meeting lifecycle").locator("[aria-current]"),
-  ).toHaveText("Finalized");
+    page.getByRole("dialog").getByText("Attendance complete",{exact:true}),
+  ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Open check-in", exact: true }),
   ).toHaveCount(0);
@@ -584,7 +588,7 @@ for (const width of [390, 1440])
     await page
       .getByRole("button", { name: "Submit attendance request", exact: true })
       .click();
-    expect(calls[0].p.notice_type).toBe("late");
+    await expect.poll(()=>calls[0]?.p.notice_type).toBe("late");
     expect(calls[0].p.expected_at).toBe("2026-09-10T17:45:00.000Z");
     await expect(
       page
@@ -623,6 +627,8 @@ test("leadership request filters separate pending, excused and denied", async ({
   await expect(page.getByRole("button", { name: "Open meeting" })).toHaveCount(
     0,
   );
+  await page.evaluate(async()=>{const {supabase}=await import(/* @vite-ignore */ '/src/attendance/'+'service.ts');const {data:{session}}=await supabase.auth.getSession();await supabase.auth._notifyAllSubscribers('SIGNED_IN',session,false);});
+  await expect(page.getByLabel("Notice status")).toHaveValue("denied");expect(page.url()).toContain('#attendance/notices');
   data.attendance[0].review_status = "denied";
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await expect(
@@ -648,7 +654,34 @@ for(const width of [390,1440])test(`compact request inbox decisions preserve phy
  Object.assign(data.attendance[0],{notice_at:'2026-09-09T15:00:00Z',notice_type:'early',notice_reason:'Appointment',review_status:'pending',physical_status:'left_early',left_at:'2026-09-10T17:05:00Z'});
  await page.goto('/#attendance/notices');await expect(page.getByRole('button',{name:'Excuse',exact:true})).toBeVisible();await expect(page.getByLabel('Physical attendance',{exact:true})).not.toBeVisible();await expect(page.getByRole('button',{name:'Add / review strikes',exact:true})).not.toBeVisible();
  await page.getByLabel('Review reason',{exact:true}).fill('Appointment confirmed');await page.screenshot({path:`test-results/request-inbox-${width}.png`,fullPage:true});await page.getByRole('button',{name:'Excuse',exact:true}).click();
- expect(calls.at(-1)).toEqual({action:'attendance',p:{meeting_id:'m1',attendance_id:'a1',version:1,review_status:'excused',left_at:'2026-09-10T17:05:00Z',explanation:'Appointment confirmed'}});expect(data.attendance[0].physical_status).toBe('left_early');expect(data.strikes).toHaveLength(0);
+ await expect.poll(()=>calls.at(-1)).toEqual({action:'attendance',p:{meeting_id:'m1',attendance_id:'a1',version:1,review_status:'excused',left_at:'2026-09-10T17:05:00Z',explanation:'Appointment confirmed'}});expect(data.attendance[0].physical_status).toBe('left_early');expect(data.strikes).toHaveLength(0);
  data.attendance[0].review_status='pending';await page.getByRole('button',{name:'Refresh',exact:true}).click();await page.getByLabel('Review reason',{exact:true}).fill('Not approved');await page.getByRole('button',{name:'Deny',exact:true}).click();await expect.poll(()=>calls.at(-1)?.p.review_status).toBe('denied');expect(calls.at(-1).p).not.toHaveProperty('physical_status');
  await page.getByLabel('Notice status').selectOption('denied');await page.getByText('Advanced attendance & strikes',{exact:true}).click();await expect(page.getByRole('button',{name:'Review excuse / correct attendance',exact:true})).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);expect(errors).toEqual([]);
+});
+
+for(const width of [390,1440]) test(`same-account auth preserves modal and checkout state ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});const {data,calls}=await mock(page,'student');
+ data.attendance[0].checked_in_at='2026-09-10T17:00:00Z';data.attendance[0].physical_status='present';
+ let reads=0;page.on('request',r=>{if(r.url().includes('/team_meetings'))reads++;});
+ await page.goto('/#attendance/calendar');await page.getByRole('button',{name:/Preseason build/}).click();
+ await page.getByText('Report attendance issue',{exact:true}).click();await page.getByLabel('Reason',{exact:true}).fill('Keep this unsent request');
+ const baseline=reads;
+ await page.evaluate(async()=>{
+  const {supabase}=await import(/* @vite-ignore */ '/src/attendance/' + 'service.ts');const {data:{session}}=await supabase.auth.getSession();
+  await supabase.auth._notifyAllSubscribers('SIGNED_IN',session,false);
+  await supabase.auth._notifyAllSubscribers('TOKEN_REFRESHED',session,false);
+  window.dispatchEvent(new Event('focus'));document.dispatchEvent(new Event('visibilitychange'));
+ });
+ await expect(page.getByRole('dialog')).toBeVisible();await expect(page.getByLabel('Reason',{exact:true})).toHaveValue('Keep this unsent request');expect(reads).toBe(baseline);expect(page.url()).toContain('#attendance/calendar');
+ await expect(page.getByRole('dialog').getByText('Check-in open',{exact:true})).toBeVisible();
+ page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'Check out',exact:true}).click();
+ await expect(page.getByText('Duration: 10 min',{exact:false})).toBeVisible();await expect(page.getByRole('button',{name:'Check out',exact:true})).toHaveCount(0);expect(calls.at(-1)).toEqual({meeting_id:'m1'});expect(data.attendance[0].review_status).toBe('none');expect(data.strikes).toHaveLength(0);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.getByRole('dialog').screenshot({path:`test-results/checkout-${width}.png`});
+ await page.evaluate(async()=>{const {supabase}=await import(/* @vite-ignore */ '/src/attendance/' + 'service.ts');await supabase.auth._notifyAllSubscribers('SIGNED_OUT',null,false);});
+ await expect(page.getByRole('dialog')).toHaveCount(0);await expect(page.getByRole('heading',{name:'Team sign in',exact:true})).toBeVisible();
+});
+test('meeting vocabulary and duration use actual timestamps only',()=>{
+ const m=fixture().meetings[0],a=fixture().attendance[0];const now=Date.parse('2026-09-10T17:10:00Z');
+ expect(meetingState({...m,status:'draft'},now)).toBe('Upcoming');expect(meetingState(m,now)).toBe('Check-in open');expect(meetingState(m,Date.parse(m.ends_at))).toBe('Meeting ended');expect(meetingState({...m,status:'finalized'},now)).toBe('Attendance complete');
+ expect(attendanceDuration(a)).toBeNull();expect(attendanceDuration({...a,checked_in_at:m.starts_at})).toBeNull();expect(attendanceDuration({...a,checked_in_at:m.starts_at,left_at:m.ends_at})).toBe('2h 0m');
 });

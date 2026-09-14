@@ -15,6 +15,8 @@ import {
   summary,
   strikeAction,
   label,
+  meetingState,
+  attendanceDuration,
   type Profile,
   type Data,
   type Meeting,
@@ -85,8 +87,14 @@ export function AttendanceHub({
   useEffect(() => {
     if (!supabase) return;
     let mounted = true;
+    let currentUser: string | null | undefined;
     const { data: subscription } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+      (event, session) => {
+        const nextUser = session?.user.id ?? null;
+        // Focus and token refresh can repeat SIGNED_IN for the same account.
+        // Keep the mounted workspace (modal, filters and loaded data) intact.
+        if (nextUser === currentUser && event !== "USER_UPDATED") return;
+        currentUser = nextUser;
         const gen = ++generation.current;
         setProfile(null);
         setData(null);
@@ -287,6 +295,8 @@ export function AttendanceHub({
 }
 type Run = (work: () => Promise<unknown>, success?: string) => Promise<void>;
 function Student({ data, id, run }: { data: Data; id: string; run: Run }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {const timer = window.setInterval(() => setNow(Date.now()), 1000);return () => clearInterval(timer);}, []);
   const [history, setHistory] = useState<History[] | null>(null);
   return (
     <>
@@ -343,7 +353,11 @@ function Student({ data, id, run }: { data: Data; id: string; run: Run }) {
                   <button>Check in</button>
                 </form>
               )}
-            {a.checked_in_at && <p>Checked in: {time(a.checked_in_at)}</p>}
+            {a.checked_in_at && <p>Arrival: {time(a.checked_in_at)}</p>}
+            {a.left_at && <p>Departure: {time(a.left_at)}{attendanceDuration(a) && <> · Duration: {attendanceDuration(a)}</>}</p>}
+            {a.checked_in_at && !a.left_at && ["present", "late"].includes(a.physical_status) && m.status !== "finalized" && now >= Date.parse(m.starts_at) && now < Date.parse(m.ends_at) && <button className="att-secondary" onClick={() => {
+              if (window.confirm("Check out now? Leaving before the scheduled end records Left Early. It does not submit an excuse request.")) void run(() => rpc("team_attendance_check_out", {meeting_id:m.id}), "Check-out recorded");
+            }}>Check out</button>}
             {a.notice_at && <details className="att-request-summary"><summary>Request {a.review_status === "pending" ? "pending review" : label(a.review_status)}</summary><NoticeDetails a={a} meeting={m} />{a.review_reason && <p>Leadership review: {a.review_reason}</p>}</details>}
             <NoticeForm key={`${a.id}-${a.version}`} a={a} meeting={m} run={run} />
             <StrikeList data={data} attendance={a} />
@@ -370,7 +384,7 @@ function MeetingHeader({ meeting: m }: { meeting: Meeting }) {
     <>
       <div className="att-toolbar">
         <h3>{m.title}</h3>
-        <span className={`att-badge ${m.status}`}>{label(m.status)}</span>
+        <span className={`att-badge ${m.status}`}>{meetingState(m)}</span>
       </div>
       <p>
         {time(m.starts_at)} – {time(m.ends_at)} · {label(m.meeting_type)} ·{" "}
@@ -434,16 +448,6 @@ function Management({
         <>
           <div className="att-panel">
             <MeetingHeader meeting={m} />
-            <ol className="att-lifecycle" aria-label="Meeting lifecycle">
-              {["draft", "open", "closed", "finalized"].map((stage) => (
-                <li
-                  key={stage}
-                  aria-current={m.status === stage ? "step" : undefined}
-                >
-                  {stage === "open" ? "Open check-in" : label(stage)}
-                </li>
-              ))}
-            </ol>
             <p>
               Required roster saved for this meeting ·{" "}
               {
@@ -453,6 +457,7 @@ function Management({
               }{" "}
               required
             </p>
+            <details className="att-meeting-tools"><summary>Meeting controls</summary>
             <div className="att-toolbar">
               {m.status !== "finalized" && (
                 <button
@@ -524,6 +529,7 @@ function Management({
                 View audit history
               </button>
             </div>
+            </details>
             {code &&
               code.meetingId === m.id &&
               m.check_in_open &&
@@ -588,7 +594,7 @@ function Management({
                     (member) => member.student_id === a.student_id,
                   )?.display_name ?? a.student_id}
                   <span>
-                    {label(a.physical_status)}{a.review_status !== "none" && <> · {label(a.review_status)}</>}
+                    {label(a.physical_status)}{attendanceDuration(a) && <> · {attendanceDuration(a)}</>}{a.review_status !== "none" && <> · {label(a.review_status)}</>}
 
                   </span>
                 </summary>
