@@ -29,6 +29,7 @@ test.beforeAll(async()=>{
  await db.exec(readFileSync('supabase/migrations/202609120003_team_management_positions.sql','utf8'));
  await db.exec(`create table auth.users(id uuid primary key,email text,created_at timestamptz default clock_timestamp(),invited_at timestamptz,last_sign_in_at timestamptz,raw_user_meta_data jsonb default '{}');insert into auth.users(id,email) select id,display_name||'@example.test' from profiles;`);
  await db.exec(readFileSync('supabase/migrations/202609120007_team_management_v2.sql','utf8'));
+ await db.exec(readFileSync('supabase/migrations/202609160001_notification_profile_and_role_guards.sql','utf8'));
 });
 test.afterAll(()=>db.close());
 test('only active mentors/admins manage membership, with server actor and history',async()=>{
@@ -148,4 +149,24 @@ for(const scenario of ['matching','status conflict','area conflict','no requeste
  if(conflict)expect(await member(n)).toEqual(profile);else expect(await member(n)).toMatchObject({active:true,role:'student'});
  expect((await db.query<any>('select status from team_private.invitations where id=$1',[invitation])).rows[0].status).toBe(conflict?'review':'pending');
  expect((await db.query("select id from team_private.management_history where user_id=$1 and action='member_invited'",[user])).rows).toHaveLength(conflict?0:1);
+});
+
+test('mentor role edits protect self, allow another mentor, and reject student roles',async()=>{
+ await db.exec(`reset role;insert into profiles(id,display_name,role,active) values('${id(80)}','Other mentor','mentor',true),('${id(81)}','Target','student',true);`);
+ await as(80);const payload={...await patch(81),primary_area_id:null,member_status:null,expected_member_status:null,expected_team_area:null};
+ await manage('member',{...payload,role:'mentor'});expect((await member(81)).role).toBe('mentor');
+ await expect(manage('member',{...payload,user_id:id(80),expected_updated_at:(await member(80)).updated_at,role:'student'})).rejects.toThrow(/another mentor/);
+ await expect(manage('member',{...payload,expected_updated_at:(await member(81)).updated_at,role:'admin'})).rejects.toThrow(/legacy role/);
+ for(const role of ['student','lead','readonly']){
+  await db.exec(`reset role;update profiles set role='${role}' where id='${id(81)}';`);await as(81);
+  await expect(manage('member',{...payload,role:'mentor'})).rejects.toThrow(/mentor or admin/);
+ }
+ await as(80);await manage('member',{...payload,expected_updated_at:(await member(81)).updated_at,role:'mentor'});
+ await as(81);await manage('member',{...payload,user_id:id(80),expected_updated_at:(await member(80)).updated_at,role:'student'});expect((await member(80)).role).toBe('student');
+});
+test('worker can read only its required profile columns',async()=>{
+ await db.exec('reset role;set role service_role;');
+ await expect(db.query('select id,active,role from profiles')).resolves.toBeDefined();
+ await expect(db.query('select display_name from profiles')).rejects.toThrow(/permission denied/);
+ await db.exec('reset role;');
 });

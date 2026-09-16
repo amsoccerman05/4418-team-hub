@@ -1,7 +1,7 @@
 import {test,expect,type Page} from '@playwright/test';
-async function setup(page:Page,role='mentor') {
+async function setup(page:Page,role='mentor',own=true) {
  const id='00000000-0000-0000-0000-000000000001';
- const member={id,email:'mentor@example.test',display_name:'Aiden',role,active:true,primary_area_id:null,updated_at:'2026-09-12T00:00:00Z',member_status:null,team_area:null};
+ const member={id:own?id:'00000000-0000-0000-0000-000000000002',email:'mentor@example.test',display_name:'Aiden',role,active:true,primary_area_id:null,updated_at:'2026-09-12T00:00:00Z',member_status:null,team_area:null};
  const data:any={members:[member],areas:[{id:'area',name:'Finance',active:true}],positions:[{key:'lead_coach_2',name:'Lead Coach 2',active:true},{key:'finance_lead',name:'Finance Lead',active:true}],assignments:[] as any[],history:[]};
  const calls:any[]=[];
  await page.addInitScript(({id})=>localStorage.setItem('4418-team-hub-auth',JSON.stringify({access_token:'fixture-token',refresh_token:'fixture-refresh',expires_at:4000000000,token_type:'bearer',user:{id,aud:'authenticated',app_metadata:{},user_metadata:{},created_at:'2026-01-01T00:00:00Z'}})),{id});
@@ -26,6 +26,8 @@ for(const width of [390,1440])test(`member editor and position add/remove at ${w
  await page.setViewportSize({width,height:900});const calls=await setup(page);
  await page.goto('/#team-management');await page.getByRole('button',{name:'Manage Aiden'}).click();
  const editor=page.getByRole('region',{name:'Member editor'});
+ await expect(editor.getByRole('combobox',{name:'Account role',exact:true})).toBeDisabled();
+ await expect(editor.getByText('Ask another mentor to change your account role.')).toBeVisible();
  await editor.getByLabel('Display name',{exact:true}).fill('Aiden Updated');await editor.getByRole('combobox',{name:'Registration',exact:true}).selectOption('registered');await editor.getByRole('combobox',{name:'Functional area',exact:true}).selectOption('area');await editor.getByLabel('Reason for change').fill('Registration confirmed');await editor.getByRole('button',{name:'Save member'}).click();
  await expect(page.getByRole('status')).toContainText('updated');expect(calls[0].p.expected_updated_at).toBe('2026-09-12T00:00:00Z');
  await editor.getByText('Team positions',{exact:true}).click();
@@ -82,4 +84,12 @@ for(const width of [390,1440])test(`V2 roster, invitation and organization edito
  await page.getByRole('button',{name:'Areas',exact:true}).click();await page.getByRole('button',{name:'Edit Finance',exact:true}).click();d=page.getByRole('dialog',{name:'Edit area',exact:true});await d.getByLabel('Area name',{exact:true}).fill('Business');await d.getByLabel('Area state').selectOption('false');await d.getByLabel('Reason for area change').fill('Reorganization');await page.screenshot({path:`test-results/v2-area-${width}.png`});expect(await d.evaluate(e=>e.scrollWidth<=e.clientWidth)).toBe(true);await d.getByRole('button',{name:'Save area'}).click();await expect(page.getByText('Business',{exact:true})).toBeVisible();
  await page.getByRole('button',{name:'Members',exact:true}).click();await page.getByRole('button',{name:'Manage Aiden'}).click();await page.getByRole('button',{name:'Deactivate member',exact:true}).click();d=page.getByRole('dialog',{name:'Deactivate member',exact:true});await d.getByLabel('Reason for access change').fill('Departed');await d.getByRole('button',{name:'Confirm deactivation'}).click();await expect(d).toHaveCount(0);expect(calls.some(c=>c.action==='member_state'&&c.p.active===false)).toBe(true);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);expect(errors).toEqual([]);
+});
+
+test('mentor can promote another member without legacy Admin option',async({page})=>{
+ const calls=await setup(page,'mentor',false);await page.goto('/#team-management');await page.getByRole('button',{name:'Manage Aiden'}).click();
+ const editor=page.getByRole('region',{name:'Member editor'}),role=editor.getByRole('combobox',{name:'Account role',exact:true});
+ await expect(role).toBeEnabled();await expect(role.locator('option[value="admin"]')).toHaveCount(0);
+ await role.selectOption('mentor');await editor.getByLabel('Reason for change').fill('Approved mentor promotion');await editor.getByRole('button',{name:'Save member'}).click();
+ await expect.poll(()=>calls.length).toBe(1);expect(calls[0].p.role).toBe('mentor');expect(calls[0].p.user_id).toBe('00000000-0000-0000-0000-000000000002');
 });
