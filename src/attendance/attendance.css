@@ -486,3 +486,5 @@
 @media(max-width:600px){.att-request-card>.att-toolbar{align-items:flex-start}.att-record>summary{align-items:flex-start;flex-wrap:wrap}.att-record>summary>span{text-align:left}.att-quick-review .att-toolbar>button{flex:1;min-height:44px}.att-report-issue>summary{box-sizing:border-box;text-align:center;width:100%}}
 
 .att-meeting-tools{margin:12px 0}.att-meeting-tools>summary{cursor:pointer;font-weight:600}.att-meeting-tools .att-toolbar{margin-top:12px}
+
+.att-meeting-time{font-weight:600;margin-bottom:4px}.att-meeting-time+.att-muted{margin-top:0;font-size:.9rem}.att-report-issue[open]{padding-bottom:12px}.att-request-card details{margin-top:10px}

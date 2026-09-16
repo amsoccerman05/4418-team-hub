@@ -200,7 +200,7 @@ for (const width of [390, 1440]) {
     await page.getByLabel("Expected departure").fill("2026-09-10T12:30");
     await page.getByLabel("Reason", { exact: true }).fill("Family commitment");
     await page
-      .getByRole("button", { name: "Submit attendance request", exact: true })
+      .getByRole("button", { name: "Report an attendance issue", exact: true })
       .click();
     await expect(
       page.getByText("Excuse review pending", { exact: true }),
@@ -245,9 +245,9 @@ for (const width of [390, 1440]) {
     await page
       .getByText("Review / correct attendance", { exact: true })
       .click();
-    await page.getByLabel("Physical attendance").selectOption("late");
+    await page.getByRole("combobox", {name:/^Attendance/}).selectOption("late");
     await page
-      .getByLabel("Excuse / requirement review")
+      .getByLabel("Excuse status")
       .selectOption("excused");
     await page
       .getByLabel("Review / correction explanation")
@@ -410,7 +410,7 @@ for (const width of [390, 1440]) {
     data.attendance[0].notice_reason = "Appointment";
     data.attendance[0].review_status = "pending";
     await page.getByRole("button", { name: "Refresh", exact: true }).click();
-    await page.getByRole("link", { name: /^Attendance Requests/ }).click();
+    await page.getByRole("link", { name: /^(Absence & Schedule Requests|My Requests)/ }).click();
     await expect(page.getByText("Appointment", { exact: true })).toBeVisible();
     await expect(
       page.getByText("Advanced attendance & strikes", { exact: true }),
@@ -472,7 +472,7 @@ test("week time slots prefill optional meetings; expired code and finalized acti
     page.getByRole("dialog").getByText("Meeting ended",{exact:true}),
   ).toBeVisible();
   page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "Finalize meeting" }).click();
+  await page.getByRole("button", { name: "Complete attendance" }).click();
   await expect(
     page.getByRole("dialog").getByText("Attendance complete",{exact:true}),
   ).toBeVisible();
@@ -496,7 +496,7 @@ test("student deep links never show team roster or leadership controls", async (
   await expect(
     page.getByRole("button", { name: "New meeting", exact: true }),
   ).toHaveCount(0);
-  await page.getByRole("link", { name: /^Attendance Requests/ }).click();
+  await page.getByRole("link", { name: /^(Absence & Schedule Requests|My Requests)/ }).click();
   await expect(
     page.getByText("You’re all caught up. No requests match this view."),
   ).toBeVisible();
@@ -586,7 +586,7 @@ for (const width of [390, 1440])
     await page.getByLabel("Expected arrival").fill(expected);
     await page.getByLabel("Reason", { exact: true }).fill("Transportation");
     await page
-      .getByRole("button", { name: "Submit attendance request", exact: true })
+      .getByRole("button", { name: "Report an attendance issue", exact: true })
       .click();
     await expect.poll(()=>calls[0]?.p.notice_type).toBe("late");
     expect(calls[0].p.expected_at).toBe("2026-09-10T17:45:00.000Z");
@@ -615,20 +615,20 @@ test("leadership request filters separate pending, excused and denied", async ({
   data.attendance[0].notice_reason = "Transportation";
   data.attendance[0].review_status = "excused";
   await page.locator('.system-card[href="#attendance"]').click();
-  await page.getByRole("link", { name: /^Attendance Requests/ }).click();
+  await page.getByRole("link", { name: /^(Absence & Schedule Requests|My Requests)/ }).click();
   await expect(
     page.getByText("You’re all caught up. No requests match this view."),
   ).toBeVisible();
-  await page.getByLabel("Notice status").selectOption("excused");
+  await page.getByLabel("Request status").selectOption("excused");
   await expect(
     page.getByRole("button", { name: "Open meeting" }),
   ).toBeVisible();
-  await page.getByLabel("Notice status").selectOption("denied");
+  await page.getByLabel("Request status").selectOption("denied");
   await expect(page.getByRole("button", { name: "Open meeting" })).toHaveCount(
     0,
   );
   await page.evaluate(async()=>{const {supabase}=await import(/* @vite-ignore */ '/src/attendance/'+'service.ts');const {data:{session}}=await supabase.auth.getSession();await supabase.auth._notifyAllSubscribers('SIGNED_IN',session,false);});
-  await expect(page.getByLabel("Notice status")).toHaveValue("denied");expect(page.url()).toContain('#attendance/notices');
+  await expect(page.getByLabel("Request status")).toHaveValue("denied");expect(page.url()).toContain('#attendance/notices');
   data.attendance[0].review_status = "denied";
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await expect(
@@ -652,11 +652,11 @@ test('students have no future roster sync action',async({page})=>{await mock(pag
 for(const width of [390,1440])test(`compact request inbox decisions preserve physical attendance ${width}`,async({page})=>{
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));await page.setViewportSize({width,height:900});const {data,calls}=await mock(page,'mentor');
  Object.assign(data.attendance[0],{notice_at:'2026-09-09T15:00:00Z',notice_type:'early',notice_reason:'Appointment',review_status:'pending',physical_status:'left_early',left_at:'2026-09-10T17:05:00Z'});
- await page.goto('/#attendance/notices');await expect(page.getByRole('button',{name:'Excuse',exact:true})).toBeVisible();await expect(page.getByLabel('Physical attendance',{exact:true})).not.toBeVisible();await expect(page.getByRole('button',{name:'Add / review strikes',exact:true})).not.toBeVisible();
+ await page.goto('/#attendance/notices');await expect(page.getByRole('button',{name:'Excuse',exact:true})).toBeVisible();await expect(page.getByRole('combobox',{name:/^Attendance/})).not.toBeVisible();await expect(page.getByRole('button',{name:'Add / review strikes',exact:true})).not.toBeVisible();
  await page.getByLabel('Review reason',{exact:true}).fill('Appointment confirmed');await page.screenshot({path:`test-results/request-inbox-${width}.png`,fullPage:true});await page.getByRole('button',{name:'Excuse',exact:true}).click();
  await expect.poll(()=>calls.at(-1)).toEqual({action:'attendance',p:{meeting_id:'m1',attendance_id:'a1',version:1,review_status:'excused',left_at:'2026-09-10T17:05:00Z',explanation:'Appointment confirmed'}});expect(data.attendance[0].physical_status).toBe('left_early');expect(data.strikes).toHaveLength(0);
  data.attendance[0].review_status='pending';await page.getByRole('button',{name:'Refresh',exact:true}).click();await page.getByLabel('Review reason',{exact:true}).fill('Not approved');await page.getByRole('button',{name:'Deny',exact:true}).click();await expect.poll(()=>calls.at(-1)?.p.review_status).toBe('denied');expect(calls.at(-1).p).not.toHaveProperty('physical_status');
- await page.getByLabel('Notice status').selectOption('denied');await page.getByText('Advanced attendance & strikes',{exact:true}).click();await expect(page.getByRole('button',{name:'Review excuse / correct attendance',exact:true})).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);expect(errors).toEqual([]);
+ await page.getByLabel('Request status').selectOption('denied');await page.getByText('Advanced attendance & strikes',{exact:true}).click();await expect(page.getByRole('button',{name:'Review excuse / correct attendance',exact:true})).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);expect(errors).toEqual([]);
 });
 
 for(const width of [390,1440]) test(`same-account auth preserves modal and checkout state ${width}`,async({page})=>{

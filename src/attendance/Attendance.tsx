@@ -303,7 +303,7 @@ function Student({ data, id, run }: { data: Data; id: string; run: Run }) {
       <h3>My Attendance</h3>
       {!data.meetings.length && (
         <p className="att-panel">
-          No meetings have been added to your attendance record yet.
+          No meetings yet. Your scheduled meetings will appear here.
         </p>
       )}
       {data.meetings.map((m) => {
@@ -386,10 +386,8 @@ function MeetingHeader({ meeting: m }: { meeting: Meeting }) {
         <h3>{m.title}</h3>
         <span className={`att-badge ${m.status}`}>{meetingState(m)}</span>
       </div>
-      <p>
-        {time(m.starts_at)} – {time(m.ends_at)} · {label(m.meeting_type)} ·{" "}
-        {m.late_minutes}-minute grace period
-      </p>
+      <p className="att-meeting-time">{time(m.starts_at)} – {time(m.ends_at)}</p>
+      <p className="att-muted">{label(m.meeting_type)} · {m.late_minutes}-minute check-in grace period</p>
     </>
   );
 }
@@ -418,7 +416,7 @@ function noticeTiming(a: Attendance, m: Meeting) {
       86400000
       ? "At least 24 hours’ notice"
       : "Less than 24 hours’ notice"
-    : "No notice submitted";
+    : "No request submitted";
 }
 function Management({
   data,
@@ -449,7 +447,7 @@ function Management({
           <div className="att-panel">
             <MeetingHeader meeting={m} />
             <p>
-              Required roster saved for this meeting ·{" "}
+              Students expected to attend ·{" "}
               {
                 data.snapshots.filter(
                   (s) => s.meeting_id === m.id && s.required,
@@ -501,7 +499,7 @@ function Management({
                   onClick={() => {
                     if (
                       window.confirm(
-                        "Finalize this meeting? Missing required attendees will be recorded Absent. Leadership can still make audited corrections.",
+                        "Complete attendance? Missing required students will be marked absent. Leadership can still make corrections.",
                       )
                     )
                       void run(
@@ -514,7 +512,7 @@ function Management({
                       );
                   }}
                 >
-                  Finalize meeting
+                  Complete attendance
                 </button>
               )}
               <button
@@ -546,7 +544,7 @@ function Management({
               )}
             <p className="att-muted">
               Open from 30 minutes before start until meeting end. Codes last up
-              to 30 minutes. Finalize after the scheduled end and closing
+              to 30 minutes. Complete attendance after the scheduled end and closing
               check-in.
             </p>
           </div>
@@ -570,7 +568,7 @@ function Management({
                   {v === "pending"
                     ? "Pending / not checked in"
                     : v === "notice"
-                      ? "Notice submitted"
+                      ? "Request submitted"
                       : label(v)}
                 </option>
               ))}
@@ -705,7 +703,7 @@ function MeetingForm({
             });
           form.reset();
           onCreated();
-        }, "Meeting created with required roster snapshot");
+        }, "Meeting created");
       }}
     >
       <div className="att-presets" role="group" aria-label="Meeting presets">
@@ -936,8 +934,7 @@ function MeetingForm({
         </div>
       </details>
       <p className="att-muted">
-        Local times · Required members are snapshotted when this meeting is
-        created.
+        Times use your local time zone. The student list is saved when you create the meeting.
       </p>
       <button>Create meeting</button>
     </form>
@@ -976,7 +973,7 @@ function AttendanceEditor({
       <p>
         {snapshot?.required ? "Required" : "Optional"} ·{" "}
         {label(snapshot?.member_status ?? "prospective")} ·{" "}
-        {snapshot?.team_area || "No area"} (meeting snapshot)
+        {snapshot?.team_area || "No area"} (at meeting creation)
       </p>
 
       <p>
@@ -1044,7 +1041,7 @@ function AttendanceEditor({
         >
           <div className="att-grid">
             <label>
-              Physical attendance
+              Attendance
               <select
                 value={physical}
                 onChange={(e) => setPhysical(e.target.value)}
@@ -1059,7 +1056,7 @@ function AttendanceEditor({
               </select>
             </label>
             <label>
-              Excuse / requirement review
+              Excuse status
               <select name="review" defaultValue={a.review_status}>
                 {["none", "pending", "excused", "denied", "not_required"].map(
                   (s) => (
@@ -1368,7 +1365,7 @@ function Workspace({
             href={`#attendance/${name}`}
             aria-current={current === name ? "page" : undefined}
           >
-            {name === "notices" ? "Attendance Requests" : label(name)}
+            {name === "notices" ? (manager ? "Absence & Schedule Requests" : "My Requests") : label(name)}
             {name === "notices" && (
               <span>
                 {
@@ -1471,17 +1468,17 @@ function Workspace({
         <>
           <h2>
             {current === "notices"
-              ? "Attendance Requests"
+              ? (manager ? "Absence & Schedule Requests" : "My Requests")
               : "Strikes & leadership actions"}
           </h2>
           <p className="att-muted">
             {current === "notices"
-              ? "Review attendance requests. Excusing a request does not change physical attendance."
+              ? (manager ? "Review absences, late arrivals, and early departures. Excuses do not change check-in or check-out times." : "Track your absence, late arrival, and early departure requests here.")
               : "Totals use active strike records. Three strikes require warning / parent contact; five require leadership review. Access is never changed automatically."}
           </p>
           {current === "notices" && (
             <label className="att-select">
-              Notice status
+              Request status
               <select
                 value={noticeFilter}
                 onChange={(e) => setNoticeFilter(e.target.value)}
@@ -1489,7 +1486,7 @@ function Workspace({
                 <option value="pending">Pending review</option>
                 <option value="excused">Approved / excused</option>
                 <option value="denied">Denied / unexcused</option>
-                <option value="all">All notices</option>
+                <option value="all">All requests</option>
               </select>
             </label>
           )}
@@ -1690,7 +1687,7 @@ function NoticeDetails({ a, meeting: m }: { a: Attendance; meeting: Meeting }) {
         <>
           <p>
             <strong>
-              Attendance notice:{" "}
+              Attendance request:{" "}
               {a.notice_type === "late"
                 ? "Arriving late"
                 : a.notice_type === "early"
@@ -1715,7 +1712,7 @@ function NoticeDetails({ a, meeting: m }: { a: Attendance; meeting: Meeting }) {
         Actual check-in: {time(a.checked_in_at)} · Actual departure:{" "}
         {time(a.left_at)}
         <br />
-        Excuse review:{" "}
+        Excuse status:{" "}
         {a.review_status === "denied"
           ? "Denied / unexcused"
           : label(a.review_status)}
@@ -1762,6 +1759,7 @@ function NoticeForm({
           );
         }}
       >
+        <p className="att-muted">{active ? "During the meeting, you can request an early departure. For other changes, contact leadership." : "Tell leadership if you will be absent, arrive late, or leave early."}</p>
         <label>
           How will your attendance be affected?
           <select
@@ -1800,9 +1798,9 @@ function NoticeForm({
           />
         </label>
         <p className="att-muted">
-          Leadership will review your request. Updates record a new submission time.
+          Leadership must approve an excuse. This does not check you in or out. Updates record a new submission time.
         </p>
-        <button>Submit attendance request</button>
+        <button>Report an attendance issue</button>
       </form>
     </details>
   );
