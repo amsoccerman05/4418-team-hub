@@ -426,6 +426,8 @@ for (const width of [390, 1440]) {
     expect(
       await page.evaluate(() => document.body.scrollWidth <= innerWidth),
     ).toBe(true);
+    // Keep the cross-origin Home navigation on the frontend under test.
+    await page.route("https://team.frc4418.org/", route => route.fulfill({status:302,headers:{location:"http://127.0.0.1:4422/"}}));
     await page.getByRole("link", { name: "Team Hub / Home" }).click();
     await expect(
       page.getByRole("heading", { name: "Quick access" }),
