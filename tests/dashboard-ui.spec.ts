@@ -16,8 +16,8 @@ async function setup(page:Page,mentor=false){
  });return c;
 }
 for(const width of [390,1440])for(const mentor of [false,true])test(`My 4418 ${mentor?'leadership':'student'} at ${width}`,async({page})=>{
- await page.setViewportSize({width,height:900});await setup(page,mentor);await page.goto('/');await expect(page.getByRole('heading',{name:'My 4418',exact:true})).toBeVisible();await expect(page.getByText('No required meetings are currently scheduled.')).toBeVisible();await expect(page.getByText('Nothing new from team leadership.')).toBeVisible();
- await expect(page.locator('.system-card')).toHaveCount(4);await expect(page.getByRole('heading',{name:'Needs Attention',exact:true})).toHaveCount(mentor?1:0);await expect(page.getByRole('link',{name:'Manage announcements →'})).toHaveCount(mentor?1:0);
+ await page.setViewportSize({width,height:900});await setup(page,mentor);await page.goto('/');await expect(page.getByRole('heading',{name:'My 4418',exact:true})).toBeVisible();await expect(page.getByText('No required meetings coming up.',{exact:false})).toBeVisible();await expect(page.getByText('You’re up to date. No new announcements.')).toBeVisible();
+ await expect(page.locator('.my-quick a')).toHaveCount(4);await expect(page.getByRole('heading',{name:'Needs your attention',exact:true})).toHaveCount(mentor?1:0);await expect(page.getByRole('link',{name:'Manage announcements →'})).toHaveCount(mentor?1:0);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:`test-results/my-4418-${mentor?'leadership':'student'}-${width}.png`,fullPage:true});
 });
 for(const width of [390,1440])test(`announcement create edit deactivate and mobile modal ${width}`,async({page})=>{
@@ -29,7 +29,7 @@ for(const width of [390,1440])test(`announcement create edit deactivate and mobi
 test('student direct announcement management route is denied',async({page})=>{await setup(page);await page.goto('/#announcements');await expect(page.getByRole('alert')).toHaveText('Only active mentors and admins can manage announcements.');await expect(page.getByRole('button',{name:'Create announcement'})).toHaveCount(0);});
 test('signed out has useful sign-in state',async({page})=>{await page.goto('/');await expect(page.getByRole('heading',{name:'Team sign in'})).toBeVisible();await expect(page.getByRole('button',{name:'Sign in',exact:true})).toBeVisible();});
 for(const code of ['42501','XX000'])test(`dashboard error ${code} leaves loading state`,async({page})=>{await setup(page);await page.route('**/rpc/team_dashboard_context',r=>r.fulfill({status:400,json:{code,message:'Cannot load dashboard'}}));await page.goto('/');await expect(page.getByRole('alert')).toBeVisible();await expect(page.getByText('Loading My 4418…')).toHaveCount(0);if(code==='XX000')await expect(page.getByRole('button',{name:'Try again'})).toBeVisible();});
-test('dashboard clears personal data on sign-out',async({page})=>{await setup(page);await page.goto('/');await expect(page.getByText('Welcome, Aiden.',{exact:false})).toBeVisible();await page.evaluate(()=>{localStorage.removeItem('4418-team-hub-auth');const channel=new BroadcastChannel('4418-team-hub-auth');channel.postMessage({event:'SIGNED_OUT',session:null});channel.close();});await expect(page.getByRole('heading',{name:'Team sign in'})).toBeVisible();});
+test('dashboard clears personal data on sign-out',async({page})=>{await setup(page);await page.goto('/');await expect(page.getByRole('heading',{name:/Good (morning|afternoon|evening), Aiden/})).toBeVisible();await page.evaluate(()=>{localStorage.removeItem('4418-team-hub-auth');const channel=new BroadcastChannel('4418-team-hub-auth');channel.postMessage({event:'SIGNED_OUT',session:null});channel.close();});await expect(page.getByRole('heading',{name:'Team sign in'})).toBeVisible();});
 
 test('populated personal cards and announcement expiration',async({page})=>{
  await page.clock.install();const c=await setup(page);const future=new Date(Date.now()+3600000).toISOString();
@@ -75,4 +75,11 @@ for(const width of [390,1440])test(`canonical gateway privacy and login landing 
 test('canonical password reset and recovery use existing Auth methods',async({page})=>{
  await page.route('**/auth/v1/recover**',async r=>{expect(new URL(r.request().url()).searchParams.get('redirect_to')).toBe('https://team.frc4418.org/?password-reset=1');return r.fulfill({json:{}});});await page.goto('/');await page.getByLabel('Email',{exact:true}).fill('test@example.invalid');await page.getByRole('button',{name:'Forgot password?'}).click();await expect(page.getByRole('status')).toContainText('password reset email');
  await setup(page);await page.route('**/auth/v1/user',r=>r.fulfill({json:{id:'00000000-0000-0000-0000-000000000001',email:'test@example.invalid'}}));await page.goto('/?password-reset=1');await expect(page.getByRole('heading',{name:'Set your password'})).toBeVisible();await expect(page.locator('.suite-header')).toHaveCount(0);await page.getByLabel('New password',{exact:true}).fill('new-test-password');await page.getByLabel('Confirm password',{exact:true}).fill('new-test-password');await page.getByRole('button',{name:'Save password'}).click();await expect(page.getByRole('heading',{name:'My 4418',exact:true})).toBeVisible();expect(new URL(page.url()).search).toBe('');
+});
+
+test('Finance-authorized student sees only their nonzero actions',async({page})=>{
+ const c=await setup(page);c.finance={allowed:true,approvals:2,school:0};await page.goto('/');await expect(page.getByRole('link',{name:'2 purchase orders need your approval'})).toBeVisible();await expect(page.getByText(/ready for school/)).toHaveCount(0);await expect(page.getByRole('heading',{name:'Administration',exact:true})).toHaveCount(0);
+});
+test('empty leadership dashboard suppresses zero-action and empty team-status sections',async({page})=>{
+ const c=await setup(page,true);c.finance={allowed:true,approvals:0,school:0};c.attention={open_meetings:0,requests:0,strike_actions:0};c.robot=null;c.inventory={out:0,low:0};await page.goto('/');await expect(page.getByRole('heading',{name:'Needs your attention'})).toHaveCount(0);await expect(page.getByRole('heading',{name:'Team status'})).toHaveCount(0);await expect(page.getByRole('link',{name:'Team Management →'})).toBeVisible();
 });

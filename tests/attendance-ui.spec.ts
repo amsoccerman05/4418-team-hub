@@ -177,7 +177,7 @@ for (const width of [390, 1440]) {
   }) => {
     await page.setViewportSize({ width, height: 900 });
     const { calls } = await mock(page);
-    await page.locator('.system-card[href="#attendance"]').click();
+    await page.locator('.my-quick a[href="#attendance"]').click();
     await expect(
       page.getByRole("button", { name: "Manage attendance" }),
     ).toHaveCount(0);
@@ -221,7 +221,7 @@ for (const width of [390, 1440]) {
   }) => {
     await page.setViewportSize({ width, height: 900 });
     const { calls } = await mock(page, "lead");
-    await page.locator('.system-card[href="#attendance"]').click();
+    await page.locator('.my-quick a[href="#attendance"]').click();
     await page
       .getByRole("button", { name: "New meeting", exact: true })
       .click();
@@ -335,7 +335,7 @@ for (const width of [390, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     const { calls, data } = await mock(page, "lead");
     await expect(page.locator(".attendance-stats")).toHaveCount(0);
-    await page.locator('.system-card[href="#attendance"]').click();
+    await page.locator('.my-quick a[href="#attendance"]').click();
     await expect(
       page
         .getByRole("navigation", { name: "Attendance views" })
@@ -343,7 +343,7 @@ for (const width of [390, 1440]) {
     ).toHaveAttribute("aria-current", "page");
     await expect(page.locator(".attendance-stats")).toHaveCount(0);
     await expect(
-      page.getByRole("heading", { name: "4418 Systems" }),
+      page.getByRole("heading", { name: "Quick access" }),
     ).toHaveCount(0);
     await page.getByRole("button", { name: "Month", exact: true }).click();
     await page
@@ -428,7 +428,7 @@ for (const width of [390, 1440]) {
     ).toBe(true);
     await page.getByRole("link", { name: "Team Hub / Home" }).click();
     await expect(
-      page.getByRole("heading", { name: "4418 Systems" }),
+      page.getByRole("heading", { name: "Quick access" }),
     ).toBeVisible();
     await expect(page.locator(".attendance-stats")).toHaveCount(0);
   });
@@ -509,7 +509,7 @@ for (const width of [390, 1440])
   }) => {
     await page.setViewportSize({ width, height: 900 });
     const { calls } = await mock(page, "lead");
-    await page.locator('.system-card[href="#attendance"]').click();
+    await page.locator('.my-quick a[href="#attendance"]').click();
     await page
       .getByRole("button", { name: "New meeting", exact: true })
       .click();
@@ -568,7 +568,7 @@ for (const width of [390, 1440])
     await page.setViewportSize({ width, height: 900 });
     const { calls } = await mock(page);
     await page.clock.setFixedTime(new Date("2026-09-09T15:00:00Z"));
-    await page.locator('.system-card[href="#attendance"]').click();
+    await page.locator('.my-quick a[href="#attendance"]').click();
     await page.getByRole("button", { name: /Preseason build/ }).click();
     await page
       .locator("summary")
@@ -614,7 +614,7 @@ test("leadership request filters separate pending, excused and denied", async ({
   data.attendance[0].notice_at = "2026-09-09T15:00:00Z";
   data.attendance[0].notice_reason = "Transportation";
   data.attendance[0].review_status = "excused";
-  await page.locator('.system-card[href="#attendance"]').click();
+  await page.locator('.my-quick a[href="#attendance"]').click();
   await page.getByRole("link", { name: /^(Absence & Schedule Requests|My Requests)/ }).click();
   await expect(
     page.getByText("You’re all caught up. No requests match this view."),

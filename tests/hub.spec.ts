@@ -9,37 +9,29 @@ for (const width of [390, 768, 1280, 1440])
     await session(page);await page.goto("/");
     await page.evaluate(() => document.fonts.ready);
     await expect(
-      page.getByRole("heading", { name: "4418 Systems", exact: true }),
+      page.getByRole("heading", { name: "Quick access", exact: true }),
     ).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "Team Resources", exact: true }),
+      page.getByRole("heading", { name: "Team tools", exact: true }),
     ).toBeVisible();
-    await expect(page.locator(".system-card h3")).toHaveText(["Inventory", "Pit Operations", "Attendance", "Finance"]);
+    await expect(page.locator(".my-quick a")).toHaveText(["Inventory →", "Pit Operations →", "Attendance →", "Finance →"]);
     await expect(page.locator(".attendance-section")).toHaveCount(0);
     await expect(page.getByRole("heading", {name:"Administration",exact:true})).toHaveCount(0);
-    if(width>=768) expect(await page.locator(".systems-grid").evaluate(e=>getComputedStyle(e).gridTemplateColumns.split(" ").length)).toBe(2);
+    if(width>=768) expect(await page.locator(".my-quick>div").evaluate(e=>getComputedStyle(e).gridTemplateColumns.split(" ").length)).toBe(4);
     for (const link of systems) {
-      const a = page
-        .locator(".system-card")
-        .filter({
-          has: page.getByRole("heading", { name: link.name, exact: true }),
-        });
+      const a = page.locator('.my-quick').getByRole('link',{name:link.name,exact:true});
       await expect(a).toHaveAttribute("href", link.url!);
       await expect(a).not.toHaveAttribute("target", "_blank");
     }
     for (const link of resources) {
-      const card = page
-        .locator(".resource-card")
-        .filter({
-          has: page.getByRole("heading", { name: link.name, exact: true }),
-        });
+      const card = page.locator('.my-tools>div').locator(link.url?'a':'span').filter({hasText:link.name});
       if (link.url) {
         await expect(card).toHaveAttribute("href", link.url);
         await expect(card).toHaveAttribute("target", "_blank");
         await expect(card).toHaveAttribute("rel", "noopener noreferrer");
       } else {
         await expect(card).not.toHaveAttribute("href");
-        await expect(card.getByText("Link not configured")).toBeVisible();
+        await expect(card.getByText("Not set up")).toBeVisible();
       }
     }
     expect(
