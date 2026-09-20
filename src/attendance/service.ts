@@ -201,12 +201,17 @@ export const label = (s: string) =>
 export function meetingState(m: Meeting, now = Date.now()): string {
   if (m.status === "finalized") return "Attendance complete";
   if (now >= Date.parse(m.ends_at)) return "Meeting ended";
-  if (m.status === "open" && m.check_in_open && m.code_expires_at && now < Date.parse(m.code_expires_at)) return "Check-in open";
+  if (now >= Date.parse(m.starts_at)) return "In progress";
   return "Upcoming";
 }
-export function attendanceDuration(a: Attendance): string | null {
-  if (!a.checked_in_at || !a.left_at) return null;
-  const minutes = Math.floor((Date.parse(a.left_at) - Date.parse(a.checked_in_at)) / 60000);
+export function attendanceDuration(a: Attendance, meeting?: Meeting, now = Date.now()): string | null {
+  if (!a.checked_in_at) return null;
+  // Live elapsed time is presentation only, never a recorded departure.
+  const live = meeting && meeting.status !== "finalized" && now < Date.parse(meeting.ends_at)
+    && ["present", "late"].includes(a.physical_status);
+  const end = a.left_at ? Date.parse(a.left_at) : live ? now : null;
+  if (end === null) return null;
+  const minutes = Math.floor((end - Date.parse(a.checked_in_at)) / 60000);
   if (!Number.isFinite(minutes) || minutes < 0) return null;
   return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }

@@ -34,6 +34,9 @@ const time = (s: string | null) =>
         timeStyle: "short",
       })
     : "—";
+const clockTime = (value: string) => new Date(value).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"});
+const meetingTime = (m: Meeting) => `${new Date(m.starts_at).toLocaleDateString([], {month:"short",day:"numeric",year:"numeric"})} · ${clockTime(m.starts_at)} – ${new Date(m.starts_at).toDateString()===new Date(m.ends_at).toDateString()?clockTime(m.ends_at):time(m.ends_at)}`;
+const recordTime = (value: string, m: Meeting) => new Date(value).toDateString()===new Date(m.starts_at).toDateString()?clockTime(value):time(value);
 const localTime = (s: string | null) =>
   s
     ? new Date(new Date(s).getTime() - new Date(s).getTimezoneOffset() * 60000)
@@ -57,7 +60,7 @@ function Stats({ data, id }: { data: Data; id: string }) {
     <div className="attendance-stats">
       <span>
         <strong>{s.percent === null ? "—" : `${s.percent}%`}</strong> Attendance
-        · {s.attended}/{s.total} required, finalized meetings
+        · {s.attended}/{s.total} required, completed meetings
       </span>
       <span>
         <strong>{s.late}</strong> Late · {s.early} left early
@@ -294,108 +297,54 @@ export function AttendanceHub({
   );
 }
 type Run = (work: () => Promise<unknown>, success?: string) => Promise<void>;
-function Student({ data, id, run }: { data: Data; id: string; run: Run }) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {const timer = window.setInterval(() => setNow(Date.now()), 1000);return () => clearInterval(timer);}, []);
-  const [history, setHistory] = useState<History[] | null>(null);
-  return (
-    <>
-      <h3>My Attendance</h3>
-      {!data.meetings.length && (
-        <p className="att-panel">
-          No meetings yet. Your scheduled meetings will appear here.
-        </p>
-      )}
-      {data.meetings.map((m) => {
-        const a = data.attendance.find(
-          (a) => a.meeting_id === m.id && a.student_id === id,
-        );
-        if (!a) return null;
-        const required = data.snapshots.find(
-          (s) => s.meeting_id === m.id && s.student_id === id,
-        )?.required;
-        return (
-          <article className="att-panel" key={m.id}>
-            <MeetingHeader meeting={m} />
-            <p>
-              {required ? "Required" : "Optional"} · <Status attendance={a} />
-            </p>
-            {m.check_in_open &&
-              m.status === "open" &&
-              !a.checked_in_at &&
-              a.physical_status === "pending" && (
-                <form
-                  className="att-inline"
-                  onSubmit={(e) => {
-                    const f = fields(e);
-                    void run(
-                      () =>
-                        rpc("team_attendance_check_in", {
-                          meeting_id: m.id,
-                          code: text(f, "code"),
-                        }),
-                      "Check-in recorded",
-                    );
-                  }}
-                >
-                  <label>
-                    6-digit meeting code
-                    <input
-                      name="code"
-                      inputMode="numeric"
-                      pattern="[0-9]{6}"
-                      maxLength={6}
-                      minLength={6}
-                      autoComplete="off"
-                      required
-                    />
-                  </label>
-                  <button>Check in</button>
-                </form>
-              )}
-            {a.checked_in_at && <p>Arrival: {time(a.checked_in_at)}</p>}
-            {a.left_at && <p>Departure: {time(a.left_at)}{attendanceDuration(a) && <> · Duration: {attendanceDuration(a)}</>}</p>}
-            {a.checked_in_at && !a.left_at && ["present", "late"].includes(a.physical_status) && m.status !== "finalized" && now >= Date.parse(m.starts_at) && now < Date.parse(m.ends_at) && <button className="att-secondary" onClick={() => {
-              if (window.confirm("Check out now? Leaving before the scheduled end records Left Early. It does not submit an excuse request.")) void run(() => rpc("team_attendance_check_out", {meeting_id:m.id}), "Check-out recorded");
-            }}>Check out</button>}
-            {a.notice_at && <details className="att-request-summary"><summary>Request {a.review_status === "pending" ? "pending review" : label(a.review_status)}</summary><NoticeDetails a={a} meeting={m} />{a.review_reason && <p>Leadership review: {a.review_reason}</p>}</details>}
-            <NoticeForm key={`${a.id}-${a.version}`} a={a} meeting={m} run={run} />
-            <StrikeList data={data} attendance={a} />
-            <button
-              className="att-secondary"
-              onClick={() =>
-                void run(
-                  async () => setHistory(await loadHistory(m.id)),
-                  "History loaded",
-                )
-              }
-            >
-              View my history · {m.title}
-            </button>
-          </article>
-        );
-      })}
-      {history && <HistoryList history={history} />}
-    </>
-  );
+function AttendanceTimes({a,m,now}:{a:Attendance;m:Meeting;now:number}) {
+ const duration=attendanceDuration(a,m,now);
+ return <span className="att-times">
+  {a.checked_in_at&&<span>Arrived <strong>{recordTime(a.checked_in_at,m)}</strong></span>}
+  {a.left_at&&<span>Left <strong>{recordTime(a.left_at,m)}</strong></span>}
+  {duration&&<span>{a.left_at?'Duration:':'Here for'} <strong>{duration}</strong></span>}
+  {a.checked_in_at&&!a.left_at&&(now>=Date.parse(m.ends_at)||m.status==='finalized')&&<span>Departure not recorded · duration unavailable</span>}
+ </span>;
 }
-function MeetingHeader({ meeting: m }: { meeting: Meeting }) {
-  return (
-    <>
-      <div className="att-toolbar">
-        <h3>{m.title}</h3>
-        <span className={`att-badge ${m.status}`}>{meetingState(m)}</span>
-      </div>
-      <p className="att-meeting-time">{time(m.starts_at)} – {time(m.ends_at)}</p>
-      <p className="att-muted">{label(m.meeting_type)} · {m.late_minutes}-minute check-in grace period</p>
-    </>
-  );
+function Student({ data, id, run }: { data: Data; id: string; run: Run }) {
+ const [now,setNow]=useState(Date.now());
+ useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer);},[]);
+ const [history,setHistory]=useState<History[]|null>(null);
+ return <>
+ {!data.meetings.length&&<p className="att-panel">No meetings yet. Your scheduled meetings will appear here.</p>}
+ {data.meetings.map(m=>{
+  const a=data.attendance.find(a=>a.meeting_id===m.id&&a.student_id===id);if(!a)return null;
+  const required=data.snapshots.find(s=>s.meeting_id===m.id&&s.student_id===id)?.required;
+  const ended=now>=Date.parse(m.ends_at)||m.status==='finalized';
+  const checkedIn=!!a.checked_in_at&&!a.left_at&&['present','late'].includes(a.physical_status);
+  const checkInOpen=m.status==='open'&&m.check_in_open&&!!m.code_expires_at&&now<Date.parse(m.code_expires_at)&&now>=Date.parse(m.starts_at)-1800000&&!ended;
+  const canCheckOut=checkedIn&&!ended&&now>=Date.parse(m.starts_at);
+  return <article className="att-panel att-student-meeting" key={m.id}>
+   <MeetingHeader meeting={m} now={now}/>
+   <p className="att-expectation">{a.review_status==='not_required'?"You are not required at this meeting":a.review_status==='excused'?"Your attendance request is excused":required?"You're expected at this meeting":"Attendance is optional"}</p>
+   <section className="att-presence" aria-label="Your attendance">
+    <h4>{a.left_at?'Checked out':checkedIn&&!ended?"You're checked in":ended?'Your attendance':'Check in when you arrive'}</h4>
+    <Status attendance={a}/><AttendanceTimes a={a} m={m} now={now}/>
+    {checkInOpen&&!a.checked_in_at&&a.physical_status==='pending'&&<form className="att-inline" onSubmit={e=>{const f=fields(e);void run(()=>rpc('team_attendance_check_in',{meeting_id:m.id,code:text(f,'code')}),'Check-in recorded');}}>
+     <label>6-digit meeting code<input name="code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} minLength={6} autoComplete="off" required/></label><button>Check in</button>
+    </form>}
+    {!ended&&!checkedIn&&!a.left_at&&!checkInOpen&&<p className="att-muted">{now<Date.parse(m.starts_at)-1800000?`Leadership can open check-in from ${time(new Date(Date.parse(m.starts_at)-1800000).toISOString())}.`:'Check-in is not open. Ask leadership for a current code.'}</p>}
+    {canCheckOut&&<button onClick={()=>{if(window.confirm('Check out now? Leaving before the scheduled end records Left Early. It does not submit an excuse request.'))void run(()=>rpc('team_attendance_check_out',{meeting_id:m.id}),'Check-out recorded');}}>Check out</button>}
+   </section>
+   {a.notice_at&&<section className="att-request-summary"><h4>{a.notice_type==='late'?'Late arrival':a.notice_type==='early'?'Early departure':'Absence'} requested · {a.review_status==='pending'?'Pending':label(a.review_status)}</h4><p>{noticeTiming(a,m)} · Submitted {Math.abs((Date.parse(m.starts_at)-Date.parse(a.notice_at))/3600000).toFixed(1)} hours {Date.parse(a.notice_at)<=Date.parse(m.starts_at)?'before the meeting':'after start'}</p>{a.expected_at&&<p>Expected {a.notice_type==='early'?'departure':'arrival'}: {time(a.expected_at)}</p>}<p className="att-request-reason">{a.notice_reason}</p>{a.review_reason&&<p>Leadership review: {a.review_reason}</p>}</section>}
+   <NoticeForm key={`${a.id}-${a.version}`} a={a} meeting={m} run={run}/>
+   <details className="att-meeting-tools"><summary>History &amp; strikes</summary><StrikeList data={data} attendance={a}/><button className="att-secondary" onClick={()=>void run(async()=>setHistory(await loadHistory(m.id)),'History loaded')}>View my history · {m.title}</button></details>
+  </article>;
+ })}{history&&<HistoryList history={history}/>}</>;
+}
+function MeetingHeader({meeting:m,now=Date.now()}:{meeting:Meeting;now?:number}) {
+ return <><div className="att-toolbar"><h3>{m.title}</h3><span className={`att-badge ${m.status}`}>{meetingState(m,now)}</span></div><p className="att-meeting-time">{meetingTime(m)}</p></>;
 }
 function Status({ attendance: a }: { attendance: Attendance }) {
   return (
     <>
       <span className={`att-badge ${a.physical_status}`}>
-        {label(a.physical_status)}
+        {a.physical_status === "pending" ? "Not checked in" : a.physical_status === "left_early" ? "Left early" : label(a.physical_status)}
       </span>
       {a.review_status !== "none" && (
         <>
@@ -418,198 +367,43 @@ function noticeTiming(a: Attendance, m: Meeting) {
       : "Less than 24 hours’ notice"
     : "No request submitted";
 }
-function Management({
-  data,
-  run,
-  selected,
-}: {
-  data: Data;
-  run: Run;
-  selected: string;
-}) {
-  const [code, setCode] = useState<{
-      meetingId: string;
-      code: string;
-      expires: string;
-    } | null>(null),
-    [history, setHistory] = useState<History[] | null>(null);
-  const [rosterFilter, setRosterFilter] = useState("all");
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-  const m = data.meetings.find((m) => m.id === selected);
-  return (
-    <>
-      {m && (
-        <>
-          <div className="att-panel">
-            <MeetingHeader meeting={m} />
-            <p>
-              Students expected to attend ·{" "}
-              {
-                data.snapshots.filter(
-                  (s) => s.meeting_id === m.id && s.required,
-                ).length
-              }{" "}
-              required
-            </p>
-            <details className="att-meeting-tools"><summary>Meeting controls</summary>
-            <div className="att-toolbar">
-              {m.status !== "finalized" && (
-                <button
-                  onClick={() =>
-                    void run(async () => {
-                      const r = await manage("open", {
-                        meeting_id: m.id,
-                        version: m.version,
-                      });
-                      setCode({
-                        meetingId: m.id,
-                        code: r.code,
-                        expires: r.expires_at,
-                      });
-                    }, "Temporary code opened")
-                  }
-                >
-                  {m.status === "open"
-                    ? "Rotate check-in code"
-                    : "Open check-in"}
-                </button>
-              )}
-              {["draft", "open"].includes(m.status) && (
-                <button
-                  className="att-secondary"
-                  onClick={() =>
-                    void run(async () => {
-                      await manage("close", {
-                        meeting_id: m.id,
-                        version: m.version,
-                      });
-                      setCode(null);
-                    }, "Check-in closed")
-                  }
-                >
-                  Close check-in
-                </button>
-              )}
-              {m.status === "closed" && (
-                <button
-                  onClick={() => {
-                    if (
-                      window.confirm(
-                        "Complete attendance? Missing required students will be marked absent. Leadership can still make corrections.",
-                      )
-                    )
-                      void run(
-                        () =>
-                          manage("finalize", {
-                            meeting_id: m.id,
-                            version: m.version,
-                          }),
-                        "Meeting finalized",
-                      );
-                  }}
-                >
-                  Complete attendance
-                </button>
-              )}
-              <button
-                className="att-secondary"
-                onClick={() =>
-                  void run(
-                    async () => setHistory(await loadHistory(m.id)),
-                    "History loaded",
-                  )
-                }
-              >
-                View audit history
-              </button>
-            </div>
-            </details>
-            {code &&
-              code.meetingId === m.id &&
-              m.check_in_open &&
-              m.status === "open" &&
-              now < Date.parse(code.expires) &&
-              now < Date.parse(m.ends_at) && (
-                <p className="att-code">
-                  Meeting code: <strong>{code.code}</strong>
-                  <small>
-                    Expires {time(code.expires)}. Share only with attendees.
-                    Rotation invalidates the previous code.
-                  </small>
-                </p>
-              )}
-            <p className="att-muted">
-              Open from 30 minutes before start until meeting end. Codes last up
-              to 30 minutes. Complete attendance after the scheduled end and closing
-              check-in.
-            </p>
-          </div>
-          <label className="att-select">
-            Live roster filter
-            <select
-              value={rosterFilter}
-              onChange={(e) => setRosterFilter(e.target.value)}
-            >
-              {[
-                "all",
-                "present",
-                "late",
-                "left_early",
-                "excused",
-                "absent",
-                "pending",
-                "notice",
-              ].map((v) => (
-                <option key={v} value={v}>
-                  {v === "pending"
-                    ? "Pending / not checked in"
-                    : v === "notice"
-                      ? "Request submitted"
-                      : label(v)}
-                </option>
-              ))}
-            </select>
-          </label>
-          {data.attendance
-            .filter(
-              (a) =>
-                a.meeting_id === m.id &&
-                (rosterFilter === "all" ||
-                  (rosterFilter === "excused"
-                    ? a.review_status === "excused"
-                    : rosterFilter === "notice"
-                      ? !!a.notice_at
-                      : a.physical_status === rosterFilter)),
-            )
-            .map((a) => (
-              <details className="att-record" key={a.id}>
-                <summary>
-                  {data.members.find(
-                    (member) => member.student_id === a.student_id,
-                  )?.display_name ?? a.student_id}
-                  <span>
-                    {label(a.physical_status)}{attendanceDuration(a) && <> · {attendanceDuration(a)}</>}{a.review_status !== "none" && <> · {label(a.review_status)}</>}
-
-                  </span>
-                </summary>
-                <AttendanceEditor
-                  key={`${a.id}-${a.version}`}
-                  a={a}
-                  meeting={m}
-                  data={data}
-                  run={run}
-                />
-              </details>
-            ))}
-          {history && <HistoryList history={history} />}
-        </>
-      )}
-    </>
-  );
+function Management({data,run,selected}:{data:Data;run:Run;selected:string}) {
+ const [code,setCode]=useState<{meetingId:string;code:string;expires:string}|null>(null);
+ const [history,setHistory]=useState<History[]|null>(null),[rosterFilter,setRosterFilter]=useState('all'),[now,setNow]=useState(Date.now());
+ useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer);},[]);
+ const m=data.meetings.find(m=>m.id===selected);if(!m)return null;
+ const records=data.attendance.filter(a=>a.meeting_id===m.id);
+ const required=new Set(data.snapshots.filter(s=>s.meeting_id===m.id&&s.required).map(s=>s.student_id));
+ const here=(a:Attendance)=>['present','late'].includes(a.physical_status)&&!a.left_at;
+ const missing=(a:Attendance)=>required.has(a.student_id)&&['pending','absent'].includes(a.physical_status)&&!['excused','not_required'].includes(a.review_status);
+ const attention=(a:Attendance)=>a.review_status==='pending'||(now>=Date.parse(m.starts_at)&&m.status!=='finalized'&&missing(a))||(a.physical_status==='left_early'&&!a.left_at);
+ const needs=records.filter(attention),ended=now>=Date.parse(m.ends_at),complete=m.status==='finalized';
+ const canOpen=!complete&&now>=Date.parse(m.starts_at)-1800000&&!ended;
+ const open=m.status==='open'&&m.check_in_open&&!!m.code_expires_at&&now<Date.parse(m.code_expires_at)&&now>=Date.parse(m.starts_at)-1800000&&!ended;
+ const closeCheckIn=()=>void run(async()=>{await manage('close',{meeting_id:m.id,version:m.version});setCode(null);},'Check-in closed');
+ const openCode=()=>void run(async()=>{const r=await manage('open',{meeting_id:m.id,version:m.version});setCode({meetingId:m.id,code:r.code,expires:r.expires_at});},'Temporary code opened');
+ const visible=records.filter(a=>rosterFilter==='all'||(rosterFilter==='here'?here(a):rosterFilter==='pending'?missing(a):rosterFilter==='notice'?!!a.notice_at:rosterFilter==='attention'?attention(a):rosterFilter==='excused'?a.review_status==='excused':a.physical_status===rosterFilter));
+ return <>
+  <div className="att-panel att-meeting-overview"><MeetingHeader meeting={m} now={now}/>
+   <p className="att-roster-counts">{required.size} expected · {records.filter(a=>ended?['present','late','left_early'].includes(a.physical_status):here(a)).length} {ended?'attended':'here'} · {records.filter(missing).length} {complete?'absent':'not checked in'} · {records.filter(a=>a.review_status==='excused').length} excused</p>
+   <div className="att-toolbar">
+    {canOpen&&!open&&m.status!=='closed'&&<button onClick={openCode}>Open check-in</button>}
+    {!complete&&['draft','open'].includes(m.status)&&(open||ended)&&<button className="att-secondary" onClick={closeCheckIn}>Close check-in</button>}
+    {!complete&&ended&&<button className="att-secondary" onClick={()=>{setRosterFilter(needs.length?'attention':'all');document.getElementById('live-roster-heading')?.scrollIntoView({block:'nearest'});}}>Review attendance</button>}
+    {m.status==='closed'&&ended&&<button onClick={()=>{if(window.confirm('Complete attendance? Missing required students will be marked absent. Leadership can still make corrections.'))void run(()=>manage('finalize',{meeting_id:m.id,version:m.version}),'Attendance complete');}}>Complete attendance</button>}
+   </div>
+   {code&&code.meetingId===m.id&&open&&now<Date.parse(code.expires)&&<div className="att-code">Meeting code: <strong>{code.code}</strong><small>Expires {time(code.expires)}. Share only with attendees.</small><button className="att-secondary" onClick={()=>void run(()=>navigator.clipboard.writeText(code.code),'Check-in code copied')}>Copy check-in code</button></div>}
+   {open&&!code&&<p className="att-muted">Check-in open. Rotate the code in Meeting controls to show a new one.</p>}
+   {ended&&!complete&&<p className="att-muted">Review requests and missing check-ins, then {m.status==='closed'?'complete attendance.':'close check-in to complete attendance.'}</p>}
+   {!ended&&!open&&<p className="att-muted">Check-in can open 30 minutes before start. Codes last up to 30 minutes.</p>}
+   <details className="att-meeting-tools"><summary>Meeting controls</summary><div className="att-toolbar">{canOpen&&m.status==='closed'&&<button className="att-secondary" onClick={openCode}>Reopen check-in</button>}{!complete&&!open&&!ended&&['draft','open'].includes(m.status)&&<button className="att-secondary" onClick={closeCheckIn}>Close check-in</button>}{canOpen&&open&&<button className="att-secondary" onClick={openCode}>Rotate check-in code</button>}<button className="att-secondary" onClick={()=>void run(async()=>setHistory(await loadHistory(m.id)),'History loaded')}>View audit history</button></div><p className="att-muted">{m.late_minutes}-minute check-in grace period. Rotating invalidates the previous code.</p></details>
+  </div>
+  {needs.length>0&&<section className="att-attention" aria-label="Needs attention"><h3>Needs attention</h3><p>{needs.length} {needs.length===1?'record needs':'records need'} review{records.some(a=>a.review_status==='pending')?' · Attendance requests awaiting a decision':''}.</p><div className="att-toolbar"><button className="att-secondary" onClick={()=>setRosterFilter('attention')}>Review {needs.length} {needs.length===1?'record':'records'}</button>{records.some(a=>a.review_status==='pending')&&<a href="#attendance/notices">Review attendance requests →</a>}</div></section>}
+  <div className="att-roster-heading"><h3 id="live-roster-heading">{ended?'Attendance roster':'Live roster'}</h3><div className="att-roster-filters" role="group" aria-label="Live roster filter">{[['all','All'],['here','Here'],['pending','Not checked in'],['notice','Requests']].map(([value,title])=><button key={value} className="att-secondary" aria-pressed={rosterFilter===value} onClick={()=>setRosterFilter(value)}>{title}</button>)}</div></div>
+  {rosterFilter==='attention'&&<p className="att-muted">Showing records needing attention. Choose All to return to the full roster.</p>}
+  {!visible.length&&<p className="att-empty">{records.length?'No students match this view.':'No students on this meeting roster.'}</p>}
+  {visible.map(a=><details className="att-record" key={a.id}><summary><strong>{data.members.find(s=>s.student_id===a.student_id)?.display_name??a.student_id}</strong><span>{a.left_at?'Checked out':here(a)?'Here':a.physical_status==='pending'?'Not checked in':label(a.physical_status)}{a.physical_status==='left_early'&&' · Left early'}{a.review_status!=='none'&&<> · {a.review_status==='pending'?'Request pending':label(a.review_status)}</>}{a.notice_type==='early'&&a.expected_at&&!a.left_at&&<> · Leaving early at {time(a.expected_at)}</>}<AttendanceTimes a={a} m={m} now={now}/></span></summary><AttendanceEditor key={`${a.id}-${a.version}`} a={a} meeting={m} data={data} run={run}/></details>)}
+  {history&&<HistoryList history={history}/>}</>;
 }
 function MemberForm({ member: m, run }: { member: Member; run: Run }) {
   return (
@@ -1405,6 +1199,7 @@ function Workspace({
             const result = await rpc("team_attendance_sync_future_rosters", {}) as {added:number;promoted:number;skipped:number};
             setRosterSync(`Added ${result.added}; newly required ${result.promoted}; preserved for review ${result.skipped}.`);
           }, "Future rosters synced")}>Sync future rosters</button><p>Updates future All active students and Registered students only meetings. Existing attendance decisions are preserved.</p>{rosterSync && <p role="status">{rosterSync}</p>}</details>}
+          {!manager&&(()=>{const next=[...data.meetings].filter(m=>Date.parse(m.ends_at)>Date.now()&&data.snapshots.some(s=>s.meeting_id===m.id&&s.student_id===profile.id&&s.required)).sort((a,b)=>Date.parse(a.starts_at)-Date.parse(b.starts_at))[0];return next?<section className="att-next-meeting"><div><small>Next required meeting</small><h3>{next.title}</h3><p>{time(next.starts_at)}</p></div><button onClick={()=>setSelected(next.id)}>{data.attendance.some(a=>a.meeting_id===next.id&&a.student_id===profile.id&&a.checked_in_at&&!a.left_at&&['present','late'].includes(a.physical_status))?'View meeting / check out':'View meeting / check in'}</button></section>:<p className="att-muted">No upcoming required meetings. Your other meetings and records are below.</p>;})()}
           <MeetingCalendar
             meetings={data.meetings}
             onOpen={setSelected}
@@ -1737,7 +1532,7 @@ function NoticeForm({
     return null;
   return (
     <details className="att-report-issue">
-      <summary>{a.notice_at ? "Update attendance request" : "Report attendance issue"}</summary>
+      <summary>{a.notice_at ? "Edit request" : "Report attendance issue"}</summary>
       <form
         className="att-form"
         onSubmit={(e) => {
@@ -1759,7 +1554,7 @@ function NoticeForm({
           );
         }}
       >
-        <p className="att-muted">{active ? "During the meeting, you can request an early departure. For other changes, contact leadership." : "Tell leadership if you will be absent, arrive late, or leave early."}</p>
+        <p className="att-muted">{active ? "During the meeting, you can request an early departure. For other changes, contact leadership." : "Tell leadership if you will be absent, arrive late, or leave early. If both late arrival and early departure apply, contact leadership."}</p>
         <label>
           How will your attendance be affected?
           <select

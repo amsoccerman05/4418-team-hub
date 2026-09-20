@@ -476,7 +476,7 @@ test("week time slots prefill optional meetings; expired code and finalized acti
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Complete attendance" }).click();
   await expect(
-    page.getByRole("dialog").getByText("Attendance complete",{exact:true}),
+    page.getByRole("dialog").locator(".att-badge.finalized"),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Open check-in", exact: true }),
@@ -553,7 +553,7 @@ for (const width of [390, 1440])
       "excused",
     );
     expect(calls.some((c) => c.action === "strike")).toBe(false);
-    await page.getByLabel("Live roster filter").selectOption("left_early");
+    await page.getByRole("group",{name:"Live roster filter"}).getByRole("button",{name:"All",exact:true}).click();
     await expect(page.locator(".att-record > summary")).toHaveCount(1);
     await page
       .getByRole("dialog")
@@ -598,12 +598,12 @@ for (const width of [390, 1440])
         .getByText("Excuse review pending", { exact: true }),
     ).toBeVisible();
     await expect(page.getByRole("dialog").getByLabel("Reason",{exact:true})).not.toBeVisible();
-    await page.getByRole("dialog").locator("summary").filter({hasText:/^Request pending review$/}).click();
+    await expect(page.getByRole("dialog").getByText("Late arrival requested · Pending")).toBeVisible();
     await expect(
-      page.getByRole("dialog").getByText(/26.0 hours in advance/),
+      page.getByRole("dialog").getByText(/26.0 hours before the meeting/),
     ).toBeVisible();
     await expect(
-      page.getByRole("dialog").getByText("Pending", { exact: true }),
+      page.getByRole("dialog").getByText("Late arrival requested · Pending", { exact: true }),
     ).toBeVisible();
     await page
       .getByRole("dialog")
@@ -675,15 +675,48 @@ for(const width of [390,1440]) test(`same-account auth preserves modal and check
   window.dispatchEvent(new Event('focus'));document.dispatchEvent(new Event('visibilitychange'));
  });
  await expect(page.getByRole('dialog')).toBeVisible();await expect(page.getByLabel('Reason',{exact:true})).toHaveValue('Keep this unsent request');expect(reads).toBe(baseline);expect(page.url()).toContain('#attendance/calendar');
- await expect(page.getByRole('dialog').getByText('Check-in open',{exact:true})).toBeVisible();
+ await expect(page.getByRole('dialog').getByText('In progress',{exact:true})).toBeVisible();
  page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'Check out',exact:true}).click();
- await expect(page.getByText('Duration: 10 min',{exact:false})).toBeVisible();await expect(page.getByRole('button',{name:'Check out',exact:true})).toHaveCount(0);expect(calls.at(-1)).toEqual({meeting_id:'m1'});expect(data.attendance[0].review_status).toBe('none');expect(data.strikes).toHaveLength(0);
+ await expect(page.getByText('Checked out',{exact:true})).toBeVisible();await expect(page.getByText('Left early',{exact:true})).toBeVisible();await expect(page.getByText('Duration: 10 min',{exact:false})).toBeVisible();await expect(page.getByRole('button',{name:'Check out',exact:true})).toHaveCount(0);expect(calls.at(-1)).toEqual({meeting_id:'m1'});expect(data.attendance[0].review_status).toBe('none');expect(data.strikes).toHaveLength(0);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.getByRole('dialog').screenshot({path:`test-results/checkout-${width}.png`});
  await page.evaluate(async()=>{const {supabase}=await import(/* @vite-ignore */ '/src/attendance/' + 'service.ts');await supabase.auth._notifyAllSubscribers('SIGNED_OUT',null,false);});
  await expect(page.getByRole('dialog')).toHaveCount(0);await expect(page.getByRole('heading',{name:'Team sign in',exact:true})).toBeVisible();
 });
 test('meeting vocabulary and duration use actual timestamps only',()=>{
  const m=fixture().meetings[0],a=fixture().attendance[0];const now=Date.parse('2026-09-10T17:10:00Z');
- expect(meetingState({...m,status:'draft'},now)).toBe('Upcoming');expect(meetingState(m,now)).toBe('Check-in open');expect(meetingState(m,Date.parse(m.ends_at))).toBe('Meeting ended');expect(meetingState({...m,status:'finalized'},now)).toBe('Attendance complete');
- expect(attendanceDuration(a)).toBeNull();expect(attendanceDuration({...a,checked_in_at:m.starts_at})).toBeNull();expect(attendanceDuration({...a,checked_in_at:m.starts_at,left_at:m.ends_at})).toBe('2h 0m');
+ expect(meetingState({...m,status:'draft'},Date.parse(m.starts_at)-1)).toBe('Upcoming');expect(meetingState(m,now)).toBe('In progress');expect(meetingState(m,Date.parse(m.ends_at))).toBe('Meeting ended');expect(meetingState({...m,status:'finalized'},now)).toBe('Attendance complete');
+ expect(attendanceDuration({...a,checked_in_at:m.starts_at,physical_status:'present'},m,now)).toBe('10 min');expect(attendanceDuration({...a,checked_in_at:m.starts_at,physical_status:'present'},m,Date.parse(m.ends_at))).toBeNull();expect(attendanceDuration(a)).toBeNull();expect(attendanceDuration({...a,checked_in_at:m.starts_at})).toBeNull();expect(attendanceDuration({...a,checked_in_at:m.starts_at,left_at:m.ends_at})).toBe('2h 0m');
+});
+
+for(const width of [390,1440])test(`V3 arrival, live time and missing departure ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});const {data}=await mock(page);const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto('/#attendance/calendar');await page.getByRole('button',{name:'View meeting / check in',exact:true}).click();const dialog=page.getByRole('dialog');
+ await expect(dialog.getByText("You're expected at this meeting",{exact:true})).toBeVisible();await expect(dialog.getByRole('button',{name:'Check out',exact:true})).toHaveCount(0);
+ await dialog.getByLabel('6-digit meeting code').fill('123456');await dialog.getByRole('button',{name:'Check in',exact:true}).click();
+ await expect(dialog.getByText("You're checked in",{exact:true})).toBeVisible();await expect(dialog.getByText('Here for 7 min',{exact:true})).toBeVisible();await expect(dialog.getByRole('button',{name:'Check out',exact:true})).toBeVisible();
+ await page.clock.setFixedTime(new Date('2026-09-10T18:03:00Z'));await expect(dialog.getByText('Here for 1h 0m',{exact:true})).toBeVisible();
+ await dialog.screenshot({path:`test-results/v3-checked-in-${width}.png`});
+ await page.clock.setFixedTime(new Date('2026-09-10T19:01:00Z'));await expect(dialog.getByText('Meeting ended',{exact:true})).toBeVisible();await expect(dialog.getByRole('button',{name:'Check out',exact:true})).toHaveCount(0);await expect(dialog.getByText('Departure not recorded · duration unavailable')).toBeVisible();expect(data.attendance[0].left_at).toBeNull();await expect(dialog.getByText(/Here for/)).toHaveCount(0);
+ await expect(dialog.getByRole('button',{name:'Complete attendance',exact:true})).toHaveCount(0);expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);expect(errors).toEqual([]);
+});
+for(const width of [390,1440])test(`V3 compact roster attention and completion ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});const {data,calls}=await mock(page,'mentor');
+ data.members.push({student_id:'other',display_name:'Jordan Here',member_status:'registered',team_area:'Build'});
+ data.snapshots.push({...data.snapshots[0],student_id:'other'});data.attendance.push({...data.attendance[0],id:'a2',student_id:'other',physical_status:'present',checked_in_at:'2026-09-10T17:00:00Z'});
+ await page.goto('/#attendance/calendar');await page.getByRole('button',{name:/Preseason build/}).click();const dialog=page.getByRole('dialog');
+ await expect(dialog.getByText('2 expected · 1 here · 1 not checked in · 0 excused')).toBeVisible();await expect(dialog.getByRole('region',{name:'Needs attention'})).toBeVisible();
+ const filters=dialog.getByRole('group',{name:'Live roster filter'});
+ await filters.getByRole('button',{name:'Here',exact:true}).click();await expect(dialog.locator('.att-record')).toHaveCount(1);await expect(dialog.locator('.att-record')).toContainText('Jordan Here');
+ await filters.getByRole('button',{name:'Not checked in',exact:true}).click();await expect(dialog.locator('.att-record')).toHaveCount(1);await expect(dialog.locator('.att-record')).toContainText('Alex Student');
+ await filters.getByRole('button',{name:'Requests',exact:true}).click();await expect(dialog.getByText('No students match this view.')).toBeVisible();
+ await filters.getByRole('button',{name:'All',exact:true}).click();await dialog.locator('.att-record > summary').first().click();await expect(dialog.getByRole('button',{name:'Review excuse / correct attendance'})).toBeVisible();await dialog.locator('.att-record > summary').first().click();
+ await dialog.screenshot({path:`test-results/v3-roster-${width}.png`});
+ await page.clock.setFixedTime(new Date('2026-09-10T19:01:00Z'));await expect(dialog.getByText('Meeting ended',{exact:true})).toBeVisible();await expect(dialog.getByRole('button',{name:'Open check-in',exact:true})).toHaveCount(0);await expect(dialog.getByRole('button',{name:'Complete attendance',exact:true})).toHaveCount(0);
+ await dialog.getByRole('button',{name:'Close check-in',exact:true}).click();await expect(dialog.getByRole('button',{name:'Complete attendance',exact:true})).toBeVisible();page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'Complete attendance',exact:true}).click();await expect.poll(()=>calls.at(-1)?.action).toBe('finalize');await expect(dialog.locator('.att-badge.finalized')).toHaveText('Attendance complete');expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+});
+
+test('V3 future check-in availability and editable collapsed absence summary',async({page})=>{
+ const {data,calls}=await mock(page);await page.clock.setFixedTime(new Date('2026-09-09T15:00:00Z'));data.meetings[0].check_in_open=false;await page.goto('/#attendance/calendar');await page.getByRole('button',{name:'View meeting / check in',exact:true}).click();const dialog=page.getByRole('dialog');
+ await expect(dialog.getByText('Upcoming',{exact:true})).toBeVisible();await expect(dialog.getByText(/Leadership can open check-in from/)).toBeVisible();await expect(dialog.getByRole('button',{name:'Check in',exact:true})).toHaveCount(0);
+ await dialog.getByText('Report attendance issue',{exact:true}).click();await expect(dialog.getByLabel('Expected arrival')).toHaveCount(0);await expect(dialog.getByLabel('Expected departure')).toHaveCount(0);await dialog.getByLabel('Reason',{exact:true}).fill('School activity');await dialog.getByRole('button',{name:'Report an attendance issue',exact:true}).click();await expect(dialog.getByText('Absence requested · Pending')).toBeVisible();await expect(dialog.getByLabel('Reason',{exact:true})).not.toBeVisible();await dialog.getByText('Edit request',{exact:true}).click();await expect(dialog.getByRole('textbox',{name:'Reason',exact:true})).toHaveValue('School activity');await dialog.getByRole('textbox',{name:'Reason',exact:true}).fill('Updated school activity');await dialog.getByRole('button',{name:'Report an attendance issue',exact:true}).click();await expect(dialog.locator('.att-request-reason').getByText('Updated school activity',{exact:true})).toBeVisible();await expect(dialog.getByRole('textbox',{name:'Reason',exact:true})).not.toBeVisible();expect(calls.at(-1).p.notice_type).toBe('absent');expect(calls.at(-1).p.reason).toBe('Updated school activity');
 });

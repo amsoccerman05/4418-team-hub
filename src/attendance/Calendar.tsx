@@ -91,7 +91,7 @@ export function MeetingCalendar({
       <p className="att-muted">
         {onCreate
           ? "Select a date to create a meeting, or open a meeting to manage attendance."
-          : "Open a meeting to check in or send a notice."}{" "}
+          : "Open a meeting to check in, check out, or report an attendance issue."}{" "}
         Times shown in your local time zone.
       </p>
       <div className={`att-calendar-grid ${mode}`}>
