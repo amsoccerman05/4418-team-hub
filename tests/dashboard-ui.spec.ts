@@ -17,7 +17,7 @@ async function setup(page:Page,mentor=false){
 }
 for(const width of [390,1440])for(const mentor of [false,true])test(`My 4418 ${mentor?'leadership':'student'} at ${width}`,async({page})=>{
  await page.setViewportSize({width,height:900});await setup(page,mentor);await page.goto('/');await expect(page.getByRole('heading',{name:'My 4418',exact:true})).toBeVisible();await expect(page.getByText('No required meetings coming up.',{exact:false})).toBeVisible();await expect(page.getByText('You’re up to date. No new announcements.')).toBeVisible();
- await expect(page.locator('.my-quick a')).toHaveCount(4);await expect(page.getByRole('heading',{name:'Needs your attention',exact:true})).toHaveCount(mentor?1:0);await expect(page.getByRole('link',{name:'Manage announcements →'})).toHaveCount(mentor?1:0);
+ await expect(page.locator('.my-quick')).toHaveCount(0);await expect(page.getByRole('heading',{name:'Needs your attention',exact:true})).toHaveCount(mentor?1:0);await expect(page.locator('.hub-nav a[href="#team-management"]')).toHaveCount(mentor?1:0);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:`test-results/my-4418-${mentor?'leadership':'student'}-${width}.png`,fullPage:true});
 });
 for(const width of [390,1440])test(`announcement create edit deactivate and mobile modal ${width}`,async({page})=>{

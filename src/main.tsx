@@ -1,3 +1,4 @@
+import { HubNav } from './HubNav';
 import { SuiteHeader } from './SuiteHeader';
 import {useHubAuth} from './HubAuth';
 import { StrictMode, useEffect, useState } from "react";
@@ -25,7 +26,7 @@ function App() {
       </a>
       <SuiteHeader app="Team Hub" context={management?'Team Management':announcements?'Announcements':workspace?'Attendance':'My 4418'} name={auth.name} onSignOut={auth.signOut} busy={auth.busy}/>
 
-      <main id="main">
+      <div className="hub-shell"><HubNav route={route}/><main id="main">
         {auth.error&&<p role="alert">{auth.error}</p>}
         {auth.signed && !workspace && !management && <My4418 management={announcements} />}
         {auth.signed && workspace && <AttendanceHub
@@ -41,7 +42,7 @@ function App() {
           </span>
           <span>Your team, in one place.</span>
         </footer>
-      </main>
+      </main></div>
     </>
   );
 }
@@ -50,3 +51,5 @@ createRoot(document.getElementById("root")!).render(
     <App />
   </StrictMode>,
 );
+
+import "./design-system.css";

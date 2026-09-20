@@ -115,7 +115,8 @@ for(const width of [390,1440])for(const logout of ['hub','pit'])test(`first-part
  for(const label of ['Pit Operations','Inventory','Finance']){
   await page.bringToFront();
   const opened=context.waitForEvent('page');
-  const link=page.locator('.my-quick').getByRole('link',{name:label,exact:true});
+  if(width===390)await page.getByRole('button',{name:'Hub menu'}).click();
+  const link=page.locator('.hub-nav').getByRole('link',{name:label,exact:true});
   if(width===390)await link.tap();else await link.click();
   const destination=await opened;pages.push(destination);await destination.bringToFront();
   await expect(destination.locator('.suite-header')).toBeVisible();
@@ -127,7 +128,8 @@ for(const width of [390,1440])for(const logout of ['hub','pit'])test(`first-part
   expect(await destination.evaluate(()=>Object.keys(localStorage).filter(k=>/auth|token/i.test(k)))).toEqual([]);
  }
  await page.bringToFront();
- await page.locator('.my-quick').getByRole('link',{name:'Attendance',exact:true}).click();
+ if(width===390)await page.getByRole('button',{name:'Hub menu'}).click();
+ await page.locator('.hub-nav').getByRole('link',{name:'Attendance',exact:true}).click();
  await expect(page).toHaveURL(/#attendance/);await expect(page.locator('.suite-header')).toBeVisible();
  await page.goto('https://team.frc4418.org/');
  // Reloading Hub would discard its opened-window registry, so the PO check uses

@@ -62,10 +62,10 @@ for(const width of [390,1440])test(`focused management views and keyboard dismis
 
 for(const role of ['mentor','admin','student'])test(`homepage administration visibility for ${role}`,async({page})=>{
  await setup(page,role);await page.goto('/');
- if(role==='student')await expect(page.getByRole('heading',{name:'Administration',exact:true})).toHaveCount(0);
- else await expect(page.getByRole('heading',{name:'Administration',exact:true})).toBeVisible();
+ if(role==='student')await expect(page.locator('.hub-nav a[href="#team-management"]')).toHaveCount(0);
+ else await expect(page.locator('.hub-nav a[href="#team-management"]')).toBeVisible();
  await expect(page.locator('.attendance-section')).toHaveCount(0);
- await page.locator('.my-quick a[href="#attendance"]').click();await expect(page.locator('.att-workspace')).toBeVisible();
+ await page.locator('.hub-nav a[href="#attendance"]').click();await expect(page.locator('.att-workspace')).toBeVisible();
 });
 
 for(const width of [390,1440])test(`leadership directory grouping and vacancies ${width}`,async({page})=>{
