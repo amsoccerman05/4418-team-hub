@@ -335,7 +335,7 @@ function Student({ data, id, run }: { data: Data; id: string; run: Run }) {
    <NoticeForm key={`${a.id}-${a.version}`} a={a} meeting={m} run={run}/>
    <details className="att-meeting-tools"><summary>History &amp; strikes</summary><StrikeList data={data} attendance={a}/><button className="att-secondary" onClick={()=>void run(async()=>setHistory(await loadHistory(m.id)),'History loaded')}>View my history · {m.title}</button></details>
   </article>;
- })}{history&&<HistoryList history={history}/>}</>;
+ })}{history&&<HistoryList members={data.members} history={history}/>}</>;
 }
 function MeetingHeader({meeting:m,now=Date.now()}:{meeting:Meeting;now?:number}) {
  return <><div className="att-toolbar"><h3>{m.title}</h3><span className={`att-badge ${m.status}`}>{meetingState(m,now)}</span></div><p className="att-meeting-time">{meetingTime(m)}</p></>;
@@ -402,8 +402,8 @@ function Management({data,run,selected}:{data:Data;run:Run;selected:string}) {
   <div className="att-roster-heading"><h3 id="live-roster-heading">{ended?'Attendance roster':'Live roster'}</h3><div className="att-roster-filters" role="group" aria-label="Live roster filter">{[['all','All'],['here','Here'],['pending','Not checked in'],['notice','Requests']].map(([value,title])=><button key={value} className="att-secondary" aria-pressed={rosterFilter===value} onClick={()=>setRosterFilter(value)}>{title}</button>)}</div></div>
   {rosterFilter==='attention'&&<p className="att-muted">Showing records needing attention. Choose All to return to the full roster.</p>}
   {!visible.length&&<p className="att-empty">{records.length?'No students match this view.':'No students on this meeting roster.'}</p>}
-  {visible.map(a=><details className="att-record" key={a.id}><summary><strong>{data.members.find(s=>s.student_id===a.student_id)?.display_name??a.student_id}</strong><span>{a.left_at?'Checked out':here(a)?'Here':a.physical_status==='pending'?'Not checked in':label(a.physical_status)}{a.physical_status==='left_early'&&' · Left early'}{a.review_status!=='none'&&<> · {a.review_status==='pending'?'Request pending':label(a.review_status)}</>}{a.notice_type==='early'&&a.expected_at&&!a.left_at&&<> · Leaving early at {time(a.expected_at)}</>}<AttendanceTimes a={a} m={m} now={now}/></span></summary><AttendanceEditor key={`${a.id}-${a.version}`} a={a} meeting={m} data={data} run={run}/></details>)}
-  {history&&<HistoryList history={history}/>}</>;
+  {visible.map(a=><details className="att-record" key={a.id}><summary><strong>{data.members.find(s=>s.student_id===a.student_id)?.display_name??"Team member"}</strong><span>{a.left_at?'Checked out':here(a)?'Here':a.physical_status==='pending'?'Not checked in':label(a.physical_status)}{a.physical_status==='left_early'&&' · Left early'}{a.review_status!=='none'&&<> · {a.review_status==='pending'?'Request pending':label(a.review_status)}</>}{a.notice_type==='early'&&a.expected_at&&!a.left_at&&<> · Leaving early at {time(a.expected_at)}</>}<AttendanceTimes a={a} m={m} now={now}/></span></summary><AttendanceEditor key={`${a.id}-${a.version}`} a={a} meeting={m} data={data} run={run}/></details>)}
+  {history&&<HistoryList members={data.members} history={history}/>}</>;
 }
 function MemberForm({ member: m, run }: { member: Member; run: Run }) {
   return (
@@ -761,7 +761,7 @@ function AttendanceEditor({
   return (
     <article className="att-panel">
       <div className="att-toolbar">
-        <h4>{member?.display_name ?? a.student_id}</h4>
+        <h4>{member?.display_name ?? "Team member"}</h4>
         <Status attendance={a} />
       </div>
       <p>
@@ -961,7 +961,7 @@ function StrikeList({
               <small>
                 Assigned {time(s.assigned_at)} by{" "}
                 {data.members.find((m) => m.student_id === s.assigned_by)
-                  ?.display_name ?? s.assigned_by}
+                  ?.display_name ?? "Name unavailable"}
               </small>
               {s.rescinded_at && (
                 <small>
@@ -998,7 +998,7 @@ function StrikeList({
     </div>
   );
 }
-function HistoryList({ history }: { history: History[] }) {
+function HistoryList({ history, members }: { history: History[]; members: Data["members"] }) {
   return (
     <section className="att-panel">
       <h3>Audit history</h3>
@@ -1013,7 +1013,7 @@ function HistoryList({ history }: { history: History[] }) {
             {time(h.performed_at)} ·{" "}
             {h.entity.replace("team_", "").replaceAll("_", " ")} · {h.action}
           </summary>
-          <p>Actor: {h.performed_by}</p>
+          <p>Changed by {members.find(m=>m.student_id===h.performed_by)?.display_name || "Name unavailable"}</p>
           <pre>
             {JSON.stringify(
               { before: h.before_data, after: h.after_data },
@@ -1400,7 +1400,7 @@ function Workspace({
             Load history
           </button>
           {history ? (
-            <HistoryList history={history} />
+            <HistoryList members={data.members} history={history} />
           ) : (
             <p className="att-empty">
               History appears here after you select a meeting and load it.

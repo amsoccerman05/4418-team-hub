@@ -9,3 +9,10 @@
 @media(max-width:760px){.my-dashboard{display:flex;flex-direction:column;gap:20px}.my-dashboard .my-welcome{align-items:flex-start}.my-next-content{flex-direction:column}.my-grid,.my-team-status,.my-announcements{grid-template-columns:1fr}.my-announcement-section.is-empty{flex-wrap:wrap;gap:4px}.my-card,.my-next{padding:16px}.my-dashboard .my-welcome h1{font-size:12px}.my-dashboard .my-welcome h2{font-size:28px}}
 
 .my-dashboard.my-management{display:block}.my-card:not(:has(.my-rows)) .system-action:after{content:"";position:absolute;inset:0;border-radius:var(--radius-card)}.my-card:focus-within{outline:2px solid var(--suite-primary);outline-offset:3px}
+
+/* Compact quiet states without removing useful navigation or manual refresh. */
+.my-dashboard .my-refresh{background:transparent;border-color:transparent;padding:6px 8px;font-size:13px;color:var(--suite-muted);box-shadow:none;min-height:44px;width:auto}
+.my-next.is-empty{padding:12px 16px}.my-next.is-empty p:last-child{margin-bottom:0}
+.my-card:not(:has(.my-rows)):not(:has(.my-number)){gap:6px;padding-block:14px}.my-card:not(:has(.my-rows)):not(:has(.my-number)) .my-card-body{flex:0}
+.my-announcement-section.is-empty{padding:8px 0;border:0}.my-announcement-section.is-empty h2{font-size:13px}
+@media(max-width:760px){.my-dashboard .my-welcome{position:relative;padding-right:58px}.my-dashboard .my-refresh{position:absolute;right:0;top:0}}

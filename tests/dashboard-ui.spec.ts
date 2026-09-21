@@ -83,3 +83,11 @@ test('Finance-authorized student sees only their nonzero actions',async({page})=
 test('empty leadership dashboard suppresses zero-action and empty team-status sections',async({page})=>{
  const c=await setup(page,true);c.finance={allowed:true,approvals:0,school:0};c.attention={open_meetings:0,requests:0,strike_actions:0};c.robot=null;c.inventory={out:0,low:0};await page.goto('/');await expect(page.getByRole('heading',{name:'Needs your attention'})).toHaveCount(0);await expect(page.getByRole('heading',{name:'Team status'})).toHaveCount(0);await expect(page.getByRole('navigation',{name:'Hub workspace'}).getByRole('link',{name:'Team Management',exact:true})).toBeVisible();
 });
+
+test('quiet Home stays compact on phone with a subtle usable refresh',async({page})=>{
+ await page.setViewportSize({width:390,height:844});const c=await setup(page);c.personal={percent:null,strikes:0,pending:0};c.orders=[];await page.goto('/');await expect(page.getByText('No purchase orders yet.')).toBeVisible();
+ expect((await page.getByRole('button',{name:'Refresh',exact:true}).boundingBox())!.width).toBeLessThan(100);
+ expect((await page.locator('.my-next').boundingBox())!.height).toBeLessThan(150);
+ for(const card of await page.locator('.my-activity .my-card').all())expect((await card.boundingBox())!.height).toBeLessThan(200);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
