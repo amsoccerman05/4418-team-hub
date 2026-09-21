@@ -130,8 +130,10 @@ async function mock(page: Page, role = "student") {
       } else if (path.endsWith("/team_attendance_manage")) {
         calls.push(body);
         result = {};
-        if (body.action === "open")
+        if (body.action === "open") {
           result = { code: "123456", expires_at: "2026-09-10T18:00:00Z" };
+          data.meetings[0].status="open";data.meetings[0].check_in_open=true;data.meetings[0].code_expires_at=result.expires_at;
+        }
         if (body.action === "close" || body.action === "finalize") {
           data.meetings[0].status =
             body.action === "close" ? "closed" : "finalized";
@@ -709,7 +711,7 @@ for(const width of [390,1440])test(`V3 compact roster attention and completion $
  data.members.push({student_id:'other',display_name:'Jordan Here',member_status:'registered',team_area:'Build'});
  data.snapshots.push({...data.snapshots[0],student_id:'other'});data.attendance.push({...data.attendance[0],id:'a2',student_id:'other',physical_status:'present',checked_in_at:'2026-09-10T17:00:00Z'});
  await page.goto('/#attendance/calendar');await page.getByRole('button',{name:/Preseason build/}).click();const dialog=page.getByRole('dialog');
- await expect(dialog.getByText('2 expected · 1 here · 1 not checked in · 0 excused')).toBeVisible();await expect(dialog.getByRole('region',{name:'Needs attention'})).toBeVisible();
+ await expect(dialog.getByText('2 expected · 1 here · 0 checked out · 1 not checked in · 0 excused')).toBeVisible();await expect(dialog.getByRole('region',{name:'Needs attention'})).toBeVisible();
  const filters=dialog.getByRole('group',{name:'Live roster filter'});
  await filters.getByRole('button',{name:'Here',exact:true}).click();await expect(dialog.locator('.att-record')).toHaveCount(1);await expect(dialog.locator('.att-record')).toContainText('Jordan Here');
  await filters.getByRole('button',{name:'Not checked in',exact:true}).click();await expect(dialog.locator('.att-record')).toHaveCount(1);await expect(dialog.locator('.att-record')).toContainText('Alex Student');
@@ -739,4 +741,13 @@ for(const role of ['student','lead'])test(`checkout visible on calendar with clo
  if(role==='lead'){await page.getByRole('button',{name:/Preseason build/}).click();await expect(page.getByRole('dialog').getByRole('button',{name:'Check out',exact:true})).toBeVisible();await page.getByRole('dialog').getByRole('button',{name:'Close',exact:true}).click();}
  await current.screenshot({path:`test-results/checkout-calendar-${role}.png`});
  page.once('dialog',d=>d.accept());await current.getByRole('button',{name:'Check out',exact:true}).click();await expect(current).toContainText('Checked out');await expect(current).toContainText('Duration: 10 min');await expect(current).toContainText('Left early');await expect(current.getByRole('button',{name:'Check out',exact:true})).toHaveCount(0);expect(calls.at(-1)).toEqual({meeting_id:'m1'});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+
+test('expected lead explicitly checks self in without changing another attendee',async({page})=>{
+ const {data,calls}=await mock(page,'lead');data.attendance[0].student_id=lead;data.snapshots[0].student_id=lead;data.members.push({student_id:lead,display_name:'Alex Lead',member_status:'registered',team_area:'Build'});
+ data.attendance.push({...data.attendance[0],id:'other-attendance',student_id:student});data.meetings[0].check_in_open=false;data.meetings[0].status='draft';
+ await page.goto('/#attendance/calendar');await page.getByRole('button',{name:/Preseason build/}).click();const dialog=page.getByRole('dialog');await dialog.getByRole('button',{name:'Open check-in',exact:true}).click();
+ expect(data.attendance[0].checked_in_at).toBeNull();expect(calls).toHaveLength(1);
+ await dialog.getByRole('button',{name:'Check myself in',exact:true}).click();expect(calls.at(-1)).toEqual({meeting_id:'m1',code:'123456'});expect(data.attendance[1].checked_in_at).toBeNull();await expect(dialog.getByRole('button',{name:'Close check-in',exact:true})).toBeVisible();
+ page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'Check out',exact:true}).click();await expect(dialog.locator('.att-roster-counts')).toContainText('1 checked out');await dialog.getByRole('group',{name:'Live roster filter'}).getByRole('button',{name:'Checked out',exact:true}).click();await expect(dialog.locator('.att-record')).toHaveCount(1);await expect(dialog.locator('.att-record')).toContainText('Alex Lead');await expect(dialog.locator('.att-record')).toContainText('Duration: 7 min');await expect(dialog.locator('.att-record')).toContainText('Left early');
 });

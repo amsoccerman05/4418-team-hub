@@ -306,7 +306,7 @@ function AttendanceTimes({a,m,now}:{a:Attendance;m:Meeting;now:number}) {
   {a.checked_in_at&&!a.left_at&&(now>=Date.parse(m.ends_at)||m.status==='finalized')&&<span>Departure not recorded · duration unavailable</span>}
  </span>;
 }
-function Student({ data, id, run, presenceOnly=false }: { data: Data; id: string; run: Run; presenceOnly?: boolean }) {
+function Student({ data, id, run, presenceOnly=false, selfCheckIn=false, meetingCode }: { data: Data; id: string; run: Run; presenceOnly?: boolean; selfCheckIn?:boolean; meetingCode?:string }) {
  const [now,setNow]=useState(Date.now());
  useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer);},[]);
  const [history,setHistory]=useState<History[]|null>(null);
@@ -320,13 +320,13 @@ function Student({ data, id, run, presenceOnly=false }: { data: Data; id: string
   const checkInOpen=m.status==='open'&&m.check_in_open&&!!m.code_expires_at&&now<Date.parse(m.code_expires_at)&&now>=Date.parse(m.starts_at)-1800000&&!ended;
   const canCheckOut=checkedIn&&!ended&&now>=Date.parse(m.starts_at);
   return <article className="att-panel att-student-meeting" key={m.id}>
-   <MeetingHeader meeting={m} now={now}/>
+   {selfCheckIn?<h3>My attendance</h3>:<MeetingHeader meeting={m} now={now}/>}
    <p className="att-expectation">{a.review_status==='not_required'?"You are not required at this meeting":a.review_status==='excused'?"Your attendance request is excused":required?"You're expected at this meeting":"Attendance is optional"}</p>
    <section className="att-presence" aria-label="Your attendance">
     <h4>{a.left_at?'Checked out':checkedIn&&!ended?"You're checked in":ended?'Your attendance':'Check in when you arrive'}</h4>
     <Status attendance={a}/><AttendanceTimes a={a} m={m} now={now}/>
-    {checkInOpen&&!a.checked_in_at&&a.physical_status==='pending'&&<form className="att-inline" onSubmit={e=>{const f=fields(e);void run(()=>rpc('team_attendance_check_in',{meeting_id:m.id,code:text(f,'code')}),'Check-in recorded');}}>
-     <label>6-digit meeting code<input name="code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} minLength={6} autoComplete="off" required/></label><button>Check in</button>
+    {checkInOpen&&!a.checked_in_at&&a.physical_status==='pending'&&<form className="att-inline" onSubmit={e=>{const f=fields(e);void run(()=>rpc('team_attendance_check_in',{meeting_id:m.id,code:meetingCode || text(f,'code')}),'Check-in recorded');}}>
+     <label hidden={!!meetingCode}>6-digit meeting code<input name="code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} minLength={6} autoComplete="off" required={!meetingCode}/></label><button>{selfCheckIn?"Check myself in":"Check in"}</button>
     </form>}
     {!ended&&!checkedIn&&!a.left_at&&!checkInOpen&&<p className="att-muted">{now<Date.parse(m.starts_at)-1800000?`Leadership can open check-in from ${time(new Date(Date.parse(m.starts_at)-1800000).toISOString())}.`:'Check-in is not open. Ask leadership for a current code.'}</p>}
     {canCheckOut&&<button className="att-checkout" onClick={()=>{if(window.confirm('Check out now? Leaving before the scheduled end records Left Early. It does not submit an excuse request.'))void run(()=>rpc('team_attendance_check_out',{meeting_id:m.id}),'Check-out recorded');}}>Check out</button>}
@@ -368,7 +368,7 @@ function noticeTiming(a: Attendance, m: Meeting) {
       : "Less than 24 hours’ notice"
     : "No request submitted";
 }
-function Management({data,run,selected}:{data:Data;run:Run;selected:string}) {
+function Management({data,run,selected,selfId}:{data:Data;run:Run;selected:string;selfId?:string}) {
  const [code,setCode]=useState<{meetingId:string;code:string;expires:string}|null>(null);
  const [history,setHistory]=useState<History[]|null>(null),[rosterFilter,setRosterFilter]=useState('all'),[now,setNow]=useState(Date.now());
  useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer);},[]);
@@ -383,10 +383,10 @@ function Management({data,run,selected}:{data:Data;run:Run;selected:string}) {
  const open=m.status==='open'&&m.check_in_open&&!!m.code_expires_at&&now<Date.parse(m.code_expires_at)&&now>=Date.parse(m.starts_at)-1800000&&!ended;
  const closeCheckIn=()=>void run(async()=>{await manage('close',{meeting_id:m.id,version:m.version});setCode(null);},'Check-in closed');
  const openCode=()=>void run(async()=>{const r=await manage('open',{meeting_id:m.id,version:m.version});setCode({meetingId:m.id,code:r.code,expires:r.expires_at});},'Temporary code opened');
- const visible=records.filter(a=>rosterFilter==='all'||(rosterFilter==='here'?here(a):rosterFilter==='pending'?missing(a):rosterFilter==='notice'?!!a.notice_at:rosterFilter==='attention'?attention(a):rosterFilter==='excused'?a.review_status==='excused':a.physical_status===rosterFilter));
+ const visible=records.filter(a=>rosterFilter==='all'||(rosterFilter==='here'?here(a):rosterFilter==='out'?!!a.left_at:rosterFilter==='pending'?missing(a):rosterFilter==='notice'?!!a.notice_at:rosterFilter==='attention'?attention(a):rosterFilter==='excused'?a.review_status==='excused':a.physical_status===rosterFilter));
  return <>
   <div className="att-panel att-meeting-overview"><MeetingHeader meeting={m} now={now}/>
-   <p className="att-roster-counts">{required.size} expected · {records.filter(a=>ended?['present','late','left_early'].includes(a.physical_status):here(a)).length} {ended?'attended':'here'} · {records.filter(missing).length} {complete?'absent':'not checked in'} · {records.filter(a=>a.review_status==='excused').length} excused</p>
+   <p className="att-roster-counts">{required.size} expected · {records.filter(a=>ended?['present','late','left_early'].includes(a.physical_status):here(a)).length} {ended?'attended':'here'} · {records.filter(a=>!!a.left_at).length} checked out · {records.filter(missing).length} {complete?'absent':'not checked in'} · {records.filter(a=>a.review_status==='excused').length} excused</p>
    <div className="att-toolbar">
     {canOpen&&!open&&m.status!=='closed'&&<button onClick={openCode}>Open check-in</button>}
     {!complete&&['draft','open'].includes(m.status)&&(open||ended)&&<button className="att-secondary" onClick={closeCheckIn}>Close check-in</button>}
@@ -399,8 +399,9 @@ function Management({data,run,selected}:{data:Data;run:Run;selected:string}) {
    {!ended&&!open&&<p className="att-muted">Check-in can open 30 minutes before start. Codes last up to 30 minutes.</p>}
    <details className="att-meeting-tools"><summary>Meeting controls</summary><div className="att-toolbar">{canOpen&&m.status==='closed'&&<button className="att-secondary" onClick={openCode}>Reopen check-in</button>}{!complete&&!open&&!ended&&['draft','open'].includes(m.status)&&<button className="att-secondary" onClick={closeCheckIn}>Close check-in</button>}{canOpen&&open&&<button className="att-secondary" onClick={openCode}>Rotate check-in code</button>}<button className="att-secondary" onClick={()=>void run(async()=>setHistory(await loadHistory(m.id)),'History loaded')}>View audit history</button></div><p className="att-muted">{m.late_minutes}-minute check-in grace period. Rotating invalidates the previous code.</p></details>
   </div>
+  {selfId && records.some(a=>a.student_id===selfId) && <Student data={{...data,meetings:[m]}} id={selfId} run={run} presenceOnly selfCheckIn meetingCode={code?.meetingId===m.id&&now<Date.parse(code.expires)?code.code:undefined}/>}
   {needs.length>0&&<section className="att-attention" aria-label="Needs attention"><h3>Needs attention</h3><p>{needs.length} {needs.length===1?'record needs':'records need'} review{records.some(a=>a.review_status==='pending')?' · Attendance requests awaiting a decision':''}.</p><div className="att-toolbar"><button className="att-secondary" onClick={()=>setRosterFilter('attention')}>Review {needs.length} {needs.length===1?'record':'records'}</button>{records.some(a=>a.review_status==='pending')&&<a href="#attendance/notices">Review attendance requests →</a>}</div></section>}
-  <div className="att-roster-heading"><h3 id="live-roster-heading">{ended?'Attendance roster':'Live roster'}</h3><div className="att-roster-filters" role="group" aria-label="Live roster filter">{[['all','All'],['here','Here'],['pending','Not checked in'],['notice','Requests']].map(([value,title])=><button key={value} className="att-secondary" aria-pressed={rosterFilter===value} onClick={()=>setRosterFilter(value)}>{title}</button>)}</div></div>
+  <div className="att-roster-heading"><h3 id="live-roster-heading">{ended?'Attendance roster':'Live roster'}</h3><div className="att-roster-filters" role="group" aria-label="Live roster filter">{[['all','All'],['here','Here'],['out','Checked out'],['pending','Not checked in'],['notice','Requests']].map(([value,title])=><button key={value} className="att-secondary" aria-pressed={rosterFilter===value} onClick={()=>setRosterFilter(value)}>{title}</button>)}</div></div>
   {rosterFilter==='attention'&&<p className="att-muted">Showing records needing attention. Choose All to return to the full roster.</p>}
   {!visible.length&&<p className="att-empty">{records.length?'No students match this view.':'No students on this meeting roster.'}</p>}
   {visible.map(a=><details className="att-record" key={a.id}><summary><strong>{data.members.find(s=>s.student_id===a.student_id)?.display_name??"Team member"}</strong><span>{a.left_at?'Checked out':here(a)?'Checked in':a.physical_status==='pending'?'Not checked in':label(a.physical_status)}{a.physical_status==='left_early'&&' · Left early'}{a.review_status!=='none'&&<> · {a.review_status==='pending'?'Request pending':label(a.review_status)}</>}{a.notice_type==='early'&&a.expected_at&&!a.left_at&&<> · Leaving early at {time(a.expected_at)}</>}<AttendanceTimes a={a} m={m} now={now}/></span></summary><AttendanceEditor key={`${a.id}-${a.version}`} a={a} meeting={m} data={data} run={run}/></details>)}
@@ -1454,11 +1455,11 @@ function Workspace({
             </p>
           )}
           {message && <p role="status">{message}</p>}
-          {manager && profile.role==='lead' && data.attendance.some(a=>a.meeting_id===selectedMeeting.id&&a.student_id===profile.id) && <Student data={{...data,meetings:[selectedMeeting]}} id={profile.id} run={run} presenceOnly/>}
           {manager ? (
             <Management
               key={selectedMeeting.id}
               selected={selectedMeeting.id}
+              selfId={profile.role==='lead'?profile.id:undefined}
               data={data}
               run={run}
             />
