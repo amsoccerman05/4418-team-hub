@@ -306,7 +306,7 @@ function AttendanceTimes({a,m,now}:{a:Attendance;m:Meeting;now:number}) {
   {a.checked_in_at&&!a.left_at&&(now>=Date.parse(m.ends_at)||m.status==='finalized')&&<span>Departure not recorded · duration unavailable</span>}
  </span>;
 }
-function Student({ data, id, run }: { data: Data; id: string; run: Run }) {
+function Student({ data, id, run, presenceOnly=false }: { data: Data; id: string; run: Run; presenceOnly?: boolean }) {
  const [now,setNow]=useState(Date.now());
  useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer);},[]);
  const [history,setHistory]=useState<History[]|null>(null);
@@ -329,11 +329,12 @@ function Student({ data, id, run }: { data: Data; id: string; run: Run }) {
      <label>6-digit meeting code<input name="code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} minLength={6} autoComplete="off" required/></label><button>Check in</button>
     </form>}
     {!ended&&!checkedIn&&!a.left_at&&!checkInOpen&&<p className="att-muted">{now<Date.parse(m.starts_at)-1800000?`Leadership can open check-in from ${time(new Date(Date.parse(m.starts_at)-1800000).toISOString())}.`:'Check-in is not open. Ask leadership for a current code.'}</p>}
-    {canCheckOut&&<button onClick={()=>{if(window.confirm('Check out now? Leaving before the scheduled end records Left Early. It does not submit an excuse request.'))void run(()=>rpc('team_attendance_check_out',{meeting_id:m.id}),'Check-out recorded');}}>Check out</button>}
+    {canCheckOut&&<button className="att-checkout" onClick={()=>{if(window.confirm('Check out now? Leaving before the scheduled end records Left Early. It does not submit an excuse request.'))void run(()=>rpc('team_attendance_check_out',{meeting_id:m.id}),'Check-out recorded');}}>Check out</button>}
    </section>
+   {!presenceOnly&&<>
    {a.notice_at&&<section className="att-request-summary"><h4>{a.notice_type==='late'?'Late arrival':a.notice_type==='early'?'Early departure':'Absence'} requested · {a.review_status==='pending'?'Pending':label(a.review_status)}</h4><p>{noticeTiming(a,m)} · Submitted {Math.abs((Date.parse(m.starts_at)-Date.parse(a.notice_at))/3600000).toFixed(1)} hours {Date.parse(a.notice_at)<=Date.parse(m.starts_at)?'before the meeting':'after start'}</p>{a.expected_at&&<p>Expected {a.notice_type==='early'?'departure':'arrival'}: {time(a.expected_at)}</p>}<p className="att-request-reason">{a.notice_reason}</p>{a.review_reason&&<p>Leadership review: {a.review_reason}</p>}</section>}
    <NoticeForm key={`${a.id}-${a.version}`} a={a} meeting={m} run={run}/>
-   <details className="att-meeting-tools"><summary>History &amp; strikes</summary><StrikeList data={data} attendance={a}/><button className="att-secondary" onClick={()=>void run(async()=>setHistory(await loadHistory(m.id)),'History loaded')}>View my history · {m.title}</button></details>
+   <details className="att-meeting-tools"><summary>History &amp; strikes</summary><StrikeList data={data} attendance={a}/><button className="att-secondary" onClick={()=>void run(async()=>setHistory(await loadHistory(m.id)),'History loaded')}>View my history · {m.title}</button></details></>}
   </article>;
  })}{history&&<HistoryList members={data.members} history={history}/>}</>;
 }
@@ -402,7 +403,7 @@ function Management({data,run,selected}:{data:Data;run:Run;selected:string}) {
   <div className="att-roster-heading"><h3 id="live-roster-heading">{ended?'Attendance roster':'Live roster'}</h3><div className="att-roster-filters" role="group" aria-label="Live roster filter">{[['all','All'],['here','Here'],['pending','Not checked in'],['notice','Requests']].map(([value,title])=><button key={value} className="att-secondary" aria-pressed={rosterFilter===value} onClick={()=>setRosterFilter(value)}>{title}</button>)}</div></div>
   {rosterFilter==='attention'&&<p className="att-muted">Showing records needing attention. Choose All to return to the full roster.</p>}
   {!visible.length&&<p className="att-empty">{records.length?'No students match this view.':'No students on this meeting roster.'}</p>}
-  {visible.map(a=><details className="att-record" key={a.id}><summary><strong>{data.members.find(s=>s.student_id===a.student_id)?.display_name??"Team member"}</strong><span>{a.left_at?'Checked out':here(a)?'Here':a.physical_status==='pending'?'Not checked in':label(a.physical_status)}{a.physical_status==='left_early'&&' · Left early'}{a.review_status!=='none'&&<> · {a.review_status==='pending'?'Request pending':label(a.review_status)}</>}{a.notice_type==='early'&&a.expected_at&&!a.left_at&&<> · Leaving early at {time(a.expected_at)}</>}<AttendanceTimes a={a} m={m} now={now}/></span></summary><AttendanceEditor key={`${a.id}-${a.version}`} a={a} meeting={m} data={data} run={run}/></details>)}
+  {visible.map(a=><details className="att-record" key={a.id}><summary><strong>{data.members.find(s=>s.student_id===a.student_id)?.display_name??"Team member"}</strong><span>{a.left_at?'Checked out':here(a)?'Checked in':a.physical_status==='pending'?'Not checked in':label(a.physical_status)}{a.physical_status==='left_early'&&' · Left early'}{a.review_status!=='none'&&<> · {a.review_status==='pending'?'Request pending':label(a.review_status)}</>}{a.notice_type==='early'&&a.expected_at&&!a.left_at&&<> · Leaving early at {time(a.expected_at)}</>}<AttendanceTimes a={a} m={m} now={now}/></span></summary><AttendanceEditor key={`${a.id}-${a.version}`} a={a} meeting={m} data={data} run={run}/></details>)}
   {history&&<HistoryList members={data.members} history={history}/>}</>;
 }
 function MemberForm({ member: m, run }: { member: Member; run: Run }) {
@@ -1138,6 +1139,7 @@ function Workspace({
         attendance: data.attendance.filter((a) => a.student_id === profile.id),
         strikes: data.strikes.filter((s) => s.student_id === profile.id),
       };
+  const currentAttendanceMeetings = data.meetings.filter(m => m.status !== 'finalized' && Date.parse(m.ends_at)>Date.now() && data.attendance.some(a=>a.meeting_id===m.id&&a.student_id===profile.id&&a.checked_in_at));
   const selectedMeeting = data.meetings.find((m) => m.id === selected);
   const notices = ownData.attendance.filter(
     (a) =>
@@ -1200,6 +1202,7 @@ function Workspace({
             setRosterSync(`Added ${result.added}; newly required ${result.promoted}; preserved for review ${result.skipped}.`);
           }, "Future rosters synced")}>Sync future rosters</button><p>Updates future All active students and Registered students only meetings. Existing attendance decisions are preserved.</p>{rosterSync && <p role="status">{rosterSync}</p>}</details>}
           {!manager&&(()=>{const next=[...data.meetings].filter(m=>Date.parse(m.ends_at)>Date.now()&&data.snapshots.some(s=>s.meeting_id===m.id&&s.student_id===profile.id&&s.required)).sort((a,b)=>Date.parse(a.starts_at)-Date.parse(b.starts_at))[0];return next?<section className="att-next-meeting"><div><small>Next required meeting</small><h3>{next.title}</h3><p>{time(next.starts_at)}</p></div><button onClick={()=>setSelected(next.id)}>{data.attendance.some(a=>a.meeting_id===next.id&&a.student_id===profile.id&&a.checked_in_at&&!a.left_at&&['present','late'].includes(a.physical_status))?'View meeting / check out':'View meeting / check in'}</button></section>:<p className="att-muted">No upcoming required meetings. Your other meetings and records are below.</p>;})()}
+          {!selectedMeeting && ['student','lead'].includes(profile.role) && currentAttendanceMeetings.length>0 && <section aria-label="Your current attendance"><Student data={{...ownData,meetings:currentAttendanceMeetings}} id={profile.id} run={run} presenceOnly/></section>}
           <MeetingCalendar
             meetings={data.meetings}
             onOpen={setSelected}
@@ -1208,7 +1211,7 @@ function Workspace({
           {profile.role === "lead" && (
             <details className="att-panel">
               <summary>My Attendance (lead)</summary>
-              <Student data={data} id={profile.id} run={run} />
+              <Student data={{...data,meetings:data.meetings.filter(m=>!currentAttendanceMeetings.some(current=>current.id===m.id))}} id={profile.id} run={run} />
             </details>
           )}
         </>
@@ -1451,6 +1454,7 @@ function Workspace({
             </p>
           )}
           {message && <p role="status">{message}</p>}
+          {manager && profile.role==='lead' && data.attendance.some(a=>a.meeting_id===selectedMeeting.id&&a.student_id===profile.id) && <Student data={{...data,meetings:[selectedMeeting]}} id={profile.id} run={run} presenceOnly/>}
           {manager ? (
             <Management
               key={selectedMeeting.id}

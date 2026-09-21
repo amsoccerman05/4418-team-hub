@@ -731,3 +731,12 @@ test('strike cards use available names and safe labels instead of raw actor IDs'
  await page.goto('/#attendance/strikes');await expect(page.locator('.att-strikes')).toContainText('Name unavailable');await expect(page.locator('.att-strikes')).not.toContainText(lead);
  data.members.push({student_id:lead,display_name:'Coach Morgan',member_status:'registered',team_area:''});await page.reload();await expect(page.locator('.att-strikes')).toContainText('Coach Morgan');
 });
+
+for(const role of ['student','lead'])test(`checkout visible on calendar with closed check-in for ${role}`,async({page})=>{
+ await page.setViewportSize({width:390,height:844});const {data,calls}=await mock(page,role);
+ const uid=role==='lead'?lead:student;data.attendance[0].student_id=uid;data.attendance[0].checked_in_at='2026-09-10T17:00:00Z';data.attendance[0].physical_status='late';data.snapshots[0].student_id=uid;data.meetings[0].status='closed';data.meetings[0].check_in_open=false;data.meetings[0].code_expires_at='2026-09-10T17:01:00Z';
+ await page.goto('/#attendance/calendar');const current=page.getByRole('region',{name:'Your current attendance'});await expect(current.getByRole('button',{name:'Check out',exact:true})).toBeVisible();await expect(current).toContainText('Arrived');await expect(current).toContainText('Here for 10 min');
+ if(role==='lead'){await page.getByRole('button',{name:/Preseason build/}).click();await expect(page.getByRole('dialog').getByRole('button',{name:'Check out',exact:true})).toBeVisible();await page.getByRole('dialog').getByRole('button',{name:'Close',exact:true}).click();}
+ await current.screenshot({path:`test-results/checkout-calendar-${role}.png`});
+ page.once('dialog',d=>d.accept());await current.getByRole('button',{name:'Check out',exact:true}).click();await expect(current).toContainText('Checked out');await expect(current).toContainText('Duration: 10 min');await expect(current).toContainText('Left early');await expect(current.getByRole('button',{name:'Check out',exact:true})).toHaveCount(0);expect(calls.at(-1)).toEqual({meeting_id:'m1'});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
