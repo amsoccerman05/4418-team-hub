@@ -94,3 +94,13 @@ test('mentor can promote another member without legacy Admin option',async({page
  await role.selectOption('mentor');await editor.getByLabel('Reason for change').fill('Approved mentor promotion');await editor.getByRole('button',{name:'Save member'}).click();
  await expect.poll(()=>calls.length).toBe(1);expect(calls[0].p.role).toBe('mentor');expect(calls[0].p.user_id).toBe('00000000-0000-0000-0000-000000000002');
 });
+
+test('invitation failure stays visible and retry preserves request identity',async({page})=>{
+ await setup(page);const ids:string[]=[];
+ await page.route('**/functions/v1/team-invitations',async r=>{ids.push(r.request().postDataJSON().id);await r.fulfill({status:409,json:{status:'review',error:'Invitation needs review. Ask a mentor to check Activity; do not resend.'}});});
+ await page.goto('/#team-management');await page.getByRole('button',{name:'+ Invite member',exact:true}).click();
+ const d=page.getByRole('dialog',{name:'Invite member',exact:true});
+ await d.getByLabel('Email',{exact:true}).fill('new@example.test');await d.getByLabel('Display name',{exact:true}).fill('New Member');await d.getByLabel('Invitation reason').fill('Joining team');
+ await d.getByRole('button',{name:'Send invitation'}).click();await expect(d.getByRole('alert')).toContainText('needs review');
+ await d.getByRole('button',{name:'Send invitation'}).click();await expect.poll(()=>ids.length).toBe(2);expect(ids[1]).toBe(ids[0]);await expect(d).toBeVisible();
+});

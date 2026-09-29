@@ -1,5 +1,5 @@
 import {test,expect} from '@playwright/test';
-import {handle,type Services} from '../supabase/functions/team-invitations/handler';
+import {handle,InvitationError,type Services} from '../supabase/functions/team-invitations/handler';
 import {readFileSync} from 'node:fs';
 const id='00000000-0000-0000-0000-000000000001';
 const request=(body:unknown={id},token='user-session')=>new Request('https://edge.test',{method:'POST',headers:{Origin:'https://team.frc4418.org',Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -8,3 +8,25 @@ for(const role of ['mentor','admin'])test(`${role} authorized reservation invite
 test('invalid session, non-manager and untrusted origin never invoke privileged invite',async()=>{const {s,calls}=fixture();s.verify=async()=>{throw Error();};expect((await handle(request(),s)).status).toBe(401);s.verify=async()=>{};s.reserve=async()=>{throw Error('42501');};expect((await handle(request(),s)).status).toBe(403);expect((await handle(new Request('https://edge.test',{method:'POST',headers:{Origin:'https://evil.test'}}),s)).status).toBe(403);expect(calls).not.toContain('invite');});
 test('uncertain invite and profile completion failures persist review and never resend',async()=>{for(const stage of ['invite','finish']){const {s,calls}=fixture();if(stage==='invite')s.invite=async()=>{calls.push('invite');throw Error('Provider secret must not leak');};else s.finish=async(_id,user)=>{calls.push(user?'finish':'review');if(user)throw Error('DB unavailable');};const r=await handle(request(),s);expect(r.status).toBe(502);expect(await r.text()).not.toContain('secret');expect(calls).toContain('review');await handle(request(),s);expect(calls.filter(c=>c==='invite')).toHaveLength(1);}});
 test('browser source contains no privileged invite credentials; server callback is fixed',()=>{const ui=readFileSync('src/team/TeamManagement.tsx','utf8')+readFileSync('src/team/ManagementForms.tsx','utf8');expect(ui).not.toMatch(/SERVICE_ROLE|auth\.admin|\/auth\/v1\/invite/);const server=readFileSync('supabase/functions/team-invitations/index.ts','utf8');expect(server).toContain('https://team.frc4418.org/?password-reset=1');expect(server).toContain("'/auth/v1/user'");});
+test('review and processing retries are actionable failures, never success or another email',async()=>{
+ for(const status of ['review','processing']){
+  const {s,calls}=fixture();s.reserve=async()=>({id,send:false,status});
+  const r=await handle(request(),s);expect(r.status).toBe(409);
+  expect((await r.json()).error).toContain('do not resend');expect(calls).not.toContain('invite');
+ }
+});
+test('known Auth identity retries completion once without another email',async()=>{
+ const {s,calls}=fixture();let completions=0;
+ s.finish=async(_id,user)=>{expect(user).toBe('new-user');completions++;if(completions===1)throw Error('lost response');};
+ const r=await handle(request(),s);expect(r.status).toBe(202);expect(completions).toBe(2);
+ expect(calls.filter(c=>c==='invite')).toHaveLength(1);
+});
+test('duplicate completed request is explicitly already invited',async()=>{
+ const {s}=fixture();await handle(request(),s);
+ expect(await (await handle(request(),s)).json()).toEqual({id,status:'pending',already_invited:true});
+});
+
+test('existing account failure is clear and does not invoke Auth',async()=>{
+ const {s,calls}=fixture();s.reserve=async()=>{throw new InvitationError('existing_account',409,'Account already exists. Manage the existing member.');};
+ const r=await handle(request(),s);expect(r.status).toBe(409);expect((await r.json()).code).toBe('existing_account');expect(calls).not.toContain('invite');
+});

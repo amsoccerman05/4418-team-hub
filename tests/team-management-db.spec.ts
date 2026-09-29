@@ -134,7 +134,7 @@ for(const scenario of ['matching','status conflict','area conflict','no requeste
  await db.exec('reset role');
  await db.query("insert into auth.users(id,email,invited_at,raw_user_meta_data) values($1,$2,clock_timestamp(),jsonb_build_object('team_invitation_id',$3::text))",[user,email,invitation]);
  await db.query("insert into profiles(id,display_name,role,active) values($1,'New','readonly',true)",[user]);
- await db.query('insert into team_attendance_members values($1,$2,$3)',[user,scenario==='status conflict'?'registered':'prospective',scenario==='area conflict'?'Other area':'Manufacturing']);
+ await db.query('insert into team_attendance_members values($1,$2,$3)',[user,scenario==='status conflict'?'registered':'prospective',scenario==='area conflict'?'Other area':(await db.query<{name:string}>('select name from areas where id=$1',[id(101)])).rows[0].name]);
  const before=(await db.query('select * from team_attendance_members where student_id=$1',[user])).rows;
  const profile=await member(n);
  await db.exec('set role service_role');await db.query('select team_invitation_finish($1,null)',[invitation]);
