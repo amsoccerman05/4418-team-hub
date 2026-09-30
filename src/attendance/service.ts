@@ -80,7 +80,13 @@ export type History = {
   before_data: unknown;
   after_data: unknown;
 };
+export type PolicyContext = {
+ user_id: string; can_review: boolean; can_read_team: boolean; can_manage_meetings: boolean; strike_year_start: string|null;
+ people: {id:string;name:string;role:string;positions:string[]}[];
+ warnings: {student_id:string;at:string;actor:string;note:string}[];
+};
 export type Data = {
+  policy?: PolicyContext;
   meetings: Meeting[];
   attendance: Attendance[];
   snapshots: Snapshot[];
@@ -117,6 +123,7 @@ async function allRows<T>(
 }
 export async function loadData(manager: boolean): Promise<Data> {
   if (!supabase) throw new Error("Attendance is not configured.");
+  const policy = await rpc("team_attendance_policy_context", {}) as PolicyContext;
   const [meetings, attendance, snapshots, strikes, members] = await Promise.all(
     [
       allRows<Meeting>(
@@ -131,12 +138,13 @@ export async function loadData(manager: boolean): Promise<Data> {
         "student_id",
       ),
       allRows<Strike>("team_attendance_strikes"),
-      manager
+      (manager || policy.can_read_team)
         ? (rpc("team_attendance_roster", {}) as Promise<Member[]>)
         : Promise.resolve([] as Member[]),
     ],
   );
   return {
+    policy,
     meetings: meetings.reverse(),
     attendance,
     snapshots,
@@ -175,7 +183,7 @@ export function summary(data: Data, studentId: string) {
     ["present", "late", "left_early"].includes(a.physical_status),
   ).length;
   const strikes = data.strikes
-    .filter((s) => s.student_id === studentId && !s.rescinded_at)
+    .filter((s) => s.student_id === studentId && !s.rescinded_at && inStrikeYear(data,s))
     .reduce((n, s) => n + s.quantity, 0);
   return {
     total: records.length,
@@ -188,12 +196,19 @@ export function summary(data: Data, studentId: string) {
     strikes,
   };
 }
+export const inStrikeYear = (data:Data,s:Strike) => !data.policy?.strike_year_start || Date.parse(s.assigned_at)>=Date.parse(data.policy.strike_year_start);
+export const canReview = (data:Data,a?:Attendance) => !!data.policy?.can_review && (!a || a.student_id!==data.policy.user_id);
 export const strikeAction = (n: number) =>
-  n >= 5
-    ? "Leadership review for possible removal required"
-    : n >= 3
-      ? "Warning / parent contact required"
-      : "No strike threshold reached";
+ n>=5 ? "Removal threshold reached" : n>=3 ? "Warning / parent contact previously required · monitor" : n>=2 ? "Warning / parent contact required" : "No strike threshold reached";
+export function checkInControls(m:Meeting,now=Date.now()){
+ const ended=now>=Date.parse(m.ends_at),complete=m.status==='finalized';
+ const inWindow=!complete&&now>=Date.parse(m.starts_at)-1800000&&!ended;
+ const open=inWindow&&m.status==='open'&&m.check_in_open&&!!m.code_expires_at&&now<Date.parse(m.code_expires_at);
+ return {ended,complete,canOpen:inWindow,open,canClose:!complete&&['draft','open'].includes(m.status)&&(open||ended)};
+}
+export function noticeTiming(a:Attendance,m:Meeting){
+ return !a.notice_at ? 'No request submitted' : Date.parse(m.starts_at)-Date.parse(a.notice_at)>=86400000 ? 'At least 24 hours’ notice' : 'Emergency / late notice · excused reason requires review';
+}
 export const label = (s: string) =>
   s.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
 

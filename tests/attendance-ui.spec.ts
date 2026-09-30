@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { summary, strikeAction, meetingState, attendanceDuration, type Data } from "../src/attendance/service";
+import { summary, strikeAction, meetingState, attendanceDuration, checkInControls, noticeTiming, type Data } from "../src/attendance/service";
 const student = "00000000-0000-0000-0000-000000000001";
 const lead = "00000000-0000-0000-0000-000000000003";
 function fixture(): Data {
@@ -97,6 +97,7 @@ async function mock(page: Page, role = "student") {
           active: true,
         };
       else if (path.endsWith("/team_dashboard_context")) result = {name:'Team member',role,admin:false,personal:{percent:null,strikes:0,pending:0},next_meeting:null,orders:[],finance:{allowed:false,approvals:0,school:0},attention:null,robot:null,inventory:null,announcements:[]};
+      else if (path.endsWith("/team_attendance_policy_context")) result = data.policy || {user_id:user.id,can_review:role==="mentor",can_read_team:role!=="student",can_manage_meetings:role!=="student",can_start_year:role==="mentor",strike_year_start:null,people:[],warnings:[]};
       else if (path.endsWith("/team_meetings")) result = data.meetings;
       else if (path.endsWith("/team_attendance")) result = data.attendance;
       else if (path.endsWith("/team_meeting_members")) result = data.snapshots;
@@ -219,13 +220,14 @@ for (const width of [390, 1440]) {
       path: `test-results/attendance-student-${width}.png`,
     });
   });
-  test(`lead controls, separate reviews/strikes, and layout ${width}`, async ({
+  test(`mentor controls, separate reviews/strikes, and layout ${width}`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height: 900 });
-    const { calls } = await mock(page, "lead");
+    const { calls } = await mock(page, "mentor");
     if (width < 761) await page.getByRole('button', { name: 'Hub menu' }).click();
     await page.locator('.hub-nav a[href="#attendance"]').click();
+    await page.locator('.att-tabs a[href="#attendance/calendar"]').click();
     await page
       .getByRole("button", { name: "New meeting", exact: true })
       .click();
@@ -328,8 +330,11 @@ test("percentages exclude excuses/not-required, count late/early, and derive act
   ] as Data["strikes"];
   expect(summary(d, student).strikes).toBe(5);
   expect(strikeAction(3)).toContain("parent contact");
-  expect(strikeAction(5)).toContain("possible removal");
+  expect(strikeAction(5)).toContain("Removal threshold");
   expect(summary(fixture(), student).percent).toBeNull();
+  d.policy={user_id:student,can_review:false,can_read_team:false,can_manage_meetings:false,strike_year_start:'2026-01-01T00:00:00Z',people:[],warnings:[]};
+  d.strikes[0].assigned_at='2025-12-31T23:59:59Z';d.strikes[1].assigned_at='2026-01-01T00:00:00Z';
+  expect(summary(d,student).strikes).toBe(2);expect(d.strikes).toHaveLength(3);
 });
 
 for (const width of [390, 1440]) {
@@ -341,6 +346,7 @@ for (const width of [390, 1440]) {
     await expect(page.locator(".attendance-stats")).toHaveCount(0);
     if (width < 761) await page.getByRole('button', { name: 'Hub menu' }).click();
     await page.locator('.hub-nav a[href="#attendance"]').click();
+    await page.locator('.att-tabs a[href="#attendance/calendar"]').click();
     await expect(
       page
         .getByRole("navigation", { name: "Attendance views" })
@@ -397,7 +403,7 @@ for (const width of [390, 1440]) {
     expect(calls.find((c) => c.action === "create").p).toMatchObject({
       title: "Competition",
       meeting_type: "other",
-      late_minutes: 10,
+      late_minutes: 5,
       requirement: "selected",
       selected_students: [student],
     });
@@ -421,7 +427,7 @@ for (const width of [390, 1440]) {
       page.getByText("Advanced attendance & strikes", { exact: true }),
     ).toBeVisible();
     await page.getByRole("link", { name: "Strikes", exact: true }).click();
-    await expect(page.getByText("No strikes recorded.")).toBeVisible();
+    await expect(page.getByText("No strikes match this view.")).toBeVisible();
     await page.getByRole("link", { name: "History", exact: true }).click();
     await page.getByLabel("History meeting").selectOption("m1");
     await page.getByRole("button", { name: "Load history" }).click();
@@ -518,6 +524,7 @@ for (const width of [390, 1440])
     const { calls } = await mock(page, "lead");
     if (width < 761) await page.getByRole('button', { name: 'Hub menu' }).click();
     await page.locator('.hub-nav a[href="#attendance"]').click();
+    await page.locator('.att-tabs a[href="#attendance/calendar"]').click();
     await page
       .getByRole("button", { name: "New meeting", exact: true })
       .click();
@@ -545,7 +552,7 @@ for (const width of [390, 1440])
       .locator("summary")
       .filter({ hasText: /^Mark left early$/ })
       .click();
-    await page.getByLabel("Departure excuse decision").selectOption("excused");
+    await expect(page.getByLabel("Departure excuse decision")).toHaveCount(0);
     await page.getByRole("button", { name: "Confirm left early" }).click();
     await expect
       .poll(() =>
@@ -555,9 +562,7 @@ for (const width of [390, 1440])
         ),
       )
       .toBe(true);
-    expect(calls.find((c) => c.action === "attendance").p.review_status).toBe(
-      "excused",
-    );
+    expect(calls.find((c) => c.action === "attendance").p.review_status).toBeUndefined();
     expect(calls.some((c) => c.action === "strike")).toBe(false);
     await page.getByRole("group",{name:"Live roster filter"}).getByRole("button",{name:"All",exact:true}).click();
     await expect(page.locator(".att-record > summary")).toHaveCount(1);
@@ -730,8 +735,8 @@ test('V3 future check-in availability and editable collapsed absence summary',as
 
 test('strike cards use available names and safe labels instead of raw actor IDs',async({page})=>{
  const {data}=await mock(page,'mentor');data.strikes=[{id:'strike',attendance_id:'a1',meeting_id:'m1',student_id:student,category:'attendance',quantity:1,explanation:'Missed required meeting',assigned_by:lead,assigned_at:'2026-09-10T17:00:00Z',rescinded_at:null,rescind_reason:null}];
- await page.goto('/#attendance/strikes');await expect(page.locator('.att-strikes')).toContainText('Name unavailable');await expect(page.locator('.att-strikes')).not.toContainText(lead);
- data.members.push({student_id:lead,display_name:'Coach Morgan',member_status:'registered',team_area:''});await page.reload();await expect(page.locator('.att-strikes')).toContainText('Coach Morgan');
+ await page.goto('/#attendance/strikes');await expect(page.locator('.att-fieldset')).toContainText('Name unavailable');await expect(page.locator('.att-fieldset')).not.toContainText(lead);
+ data.members.push({student_id:lead,display_name:'Coach Morgan',member_status:'registered',team_area:''});await page.reload();await expect(page.locator('.att-fieldset')).toContainText('Coach Morgan');
 });
 
 for(const role of ['student','lead'])test(`checkout visible on calendar with closed check-in for ${role}`,async({page})=>{
@@ -750,4 +755,60 @@ test('expected lead explicitly checks self in without changing another attendee'
  expect(data.attendance[0].checked_in_at).toBeNull();expect(calls).toHaveLength(1);
  await dialog.getByRole('button',{name:'Check myself in',exact:true}).click();expect(calls.at(-1)).toEqual({meeting_id:'m1',code:'123456'});expect(data.attendance[1].checked_in_at).toBeNull();await expect(dialog.getByRole('button',{name:'Close check-in',exact:true})).toBeVisible();
  page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'Check out',exact:true}).click();await expect(dialog.locator('.att-roster-counts')).toContainText('1 checked out');await dialog.getByRole('group',{name:'Live roster filter'}).getByRole('button',{name:'Checked out',exact:true}).click();await expect(dialog.locator('.att-record')).toHaveCount(1);await expect(dialog.locator('.att-record')).toContainText('Alex Lead');await expect(dialog.locator('.att-record')).toContainText('Duration: 7 min');await expect(dialog.locator('.att-record')).toContainText('Left early');
+});
+
+test('policy check-in controls and notice thresholds share exact boundaries',()=>{
+ const m=fixture().meetings[0],start=Date.parse(m.starts_at);
+ expect(checkInControls(m,start-7*86400000)).toMatchObject({canOpen:false,canClose:false,open:false});
+ expect(checkInControls(m,start-1800000)).toMatchObject({canOpen:true,open:true,canClose:true});
+ expect(checkInControls({...m,status:'finalized'},start)).toMatchObject({canOpen:false,canClose:false});
+ const a=fixture().attendance[0];
+ for(const notice_type of ['absent','late','early'] as const){
+  expect(noticeTiming({...a,notice_type,notice_at:new Date(start-86400000).toISOString()},m)).toContain('At least 24');
+  expect(noticeTiming({...a,notice_type,notice_at:new Date(start-86400000+1).toISOString()},m)).toContain('Emergency');
+ }
+ expect(strikeAction(2)).toContain('Warning / parent contact required');
+ expect(strikeAction(5)).toContain('Removal threshold');
+});
+for(const width of [390,1440])test(`policy lead personal requests and future controls ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});const {data,calls}=await mock(page,'lead');
+ await page.clock.setFixedTime(new Date('2026-09-09T15:00:00Z'));
+ data.attendance[0].student_id=lead;data.snapshots[0].student_id=lead;data.meetings[0].status='draft';data.meetings[0].check_in_open=false;
+ await page.goto('/#attendance/calendar');await page.getByRole('button',{name:/Preseason build/}).click();const d=page.getByRole('dialog');
+ await d.getByText('Meeting controls',{exact:true}).click();await expect(d.getByRole('button',{name:'Close check-in',exact:true})).toHaveCount(0);await expect(d.getByRole('button',{name:'Open check-in',exact:true})).toHaveCount(0);
+ for(const kind of ['absent','late','early']){
+  await d.getByText(calls.length?'Edit request':'Report attendance issue',{exact:true}).click();
+  await d.getByLabel('How will your attendance be affected?').selectOption(kind);
+  if(kind!=='absent')await d.getByLabel(kind==='late'?'Expected arrival':'Expected departure',{exact:true}).fill('2026-09-10T18:00');
+  await d.getByRole('textbox',{name:'Reason',exact:true}).fill('Confirmed school activity');await d.getByRole('button',{name:'Report an attendance issue',exact:true}).click();
+  await expect.poll(()=>calls.at(-1)?.p.notice_type).toBe(kind);
+  expect(calls.at(-1).p.student_id).toBeUndefined();
+  await expect(d.getByRole('textbox',{name:'Reason',exact:true})).not.toBeVisible();
+ }
+ await expect(d.getByRole('button',{name:'Excuse',exact:true})).toHaveCount(0);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+for(const width of [390,1440])test(`policy dashboard search strike thresholds and privacy ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});const {data}=await mock(page,'mentor');const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ data.policy={user_id:lead,can_review:true,can_read_team:true,can_manage_meetings:true,strike_year_start:'2026-01-01T00:00:00Z',people:[{id:student,name:'Alex Student',role:'student',positions:['Software Lead']}],warnings:[]};
+ data.members.push({student_id:'other',display_name:'Jordan Five',member_status:'registered',team_area:'Build'});
+ data.strikes=[{id:'s1',attendance_id:'a1',meeting_id:'m1',student_id:student,category:'Other',quantity:2,explanation:'Reviewed',assigned_by:lead,assigned_at:'2026-09-10T17:00:00Z',rescinded_at:null,rescind_reason:null},{id:'s2',attendance_id:'a2',meeting_id:'m1',student_id:'other',category:'Other',quantity:5,explanation:'Reviewed',assigned_by:lead,assigned_at:'2026-09-10T17:00:00Z',rescinded_at:null,rescind_reason:null}];
+ await page.goto('/#attendance');await expect(page.getByRole('heading',{name:'Attendance · needs attention'})).toBeVisible();
+ await expect(page.getByText('Warning / parent contact required',{exact:true})).toBeVisible();await expect(page.getByText('Removal threshold reached',{exact:true})).toBeVisible();
+ await page.getByLabel('Member name').fill('Alex');await page.locator('.att-record > summary').filter({hasText:'Alex Student'}).click();
+ await expect(page.getByRole('region',{name:'Alex Student attendance summary'})).toContainText('Software Lead');await expect(page.getByRole('region',{name:'Alex Student attendance summary'})).not.toContainText('Jordan Five');
+ await page.screenshot({path:`test-results/policy-dashboard-${width}.png`,fullPage:true});
+ await page.locator('.att-tabs a[href="#attendance/strikes"]').click();await page.getByLabel('Find strike member').fill('Jordan');
+ await expect(page.getByRole('heading',{name:'Jordan Five · 5 active strikes'})).toBeVisible();await expect(page.getByRole('heading',{name:'Alex Student · 2 active strikes'})).toHaveCount(0);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);expect(errors).toEqual([]);
+});
+
+test('Program Manager student can review another member without meeting-management controls',async({page})=>{
+ const {data,calls}=await mock(page,'student');
+ data.policy={user_id:student,can_review:true,can_read_team:true,can_manage_meetings:false,strike_year_start:'2026-01-01T00:00:00Z',people:[],warnings:[]};
+ data.attendance[0].student_id=lead;data.attendance[0].notice_at='2026-09-09T12:00:00Z';data.attendance[0].notice_reason='School activity';data.attendance[0].review_status='pending';
+ data.members.push({student_id:lead,display_name:'Lee Lead',member_status:'registered',team_area:''});
+ await page.goto('/#attendance/calendar');await expect(page.getByRole('button',{name:'New meeting',exact:true})).toHaveCount(0);await expect(page.getByText('Roster tools',{exact:true})).toHaveCount(0);
+ await page.locator('.att-tabs a[href="#attendance/notices"]').click();await page.getByLabel('Review reason').fill('School confirmation checked');await page.getByRole('button',{name:'Excuse',exact:true}).click();
+ await expect.poll(()=>calls.at(-1)?.p.review_status).toBe('excused');expect(calls.at(-1).p.physical_status).toBeUndefined();expect(calls.at(-1).p.attendance_id).toBe('a1');
 });

@@ -1,3 +1,4 @@
+import { PolicyHelp, LeadershipDashboard, MemberAttendance, StrikeWorkspace } from "./PolicyDashboard";
 import {
   useEffect,
   useRef,
@@ -13,7 +14,7 @@ import {
   manage,
   rpc,
   summary,
-  strikeAction,
+  strikeAction, canReview, checkInControls, noticeTiming, inStrikeYear,
   label,
   meetingState,
   attendanceDuration,
@@ -252,7 +253,7 @@ export function AttendanceHub({
                           <strong>
                             {
                               data.members.filter(
-                                (m) => summary(data, m.student_id).strikes >= 3,
+                                (m) => summary(data, m.student_id).strikes >= 2,
                               ).length
                             }
                           </strong>{" "}
@@ -360,14 +361,6 @@ function Status({ attendance: a }: { attendance: Attendance }) {
     </>
   );
 }
-function noticeTiming(a: Attendance, m: Meeting) {
-  return a.notice_at
-    ? new Date(m.starts_at).getTime() - new Date(a.notice_at).getTime() >=
-      86400000
-      ? "At least 24 hours’ notice"
-      : "Less than 24 hours’ notice"
-    : "No request submitted";
-}
 function Management({data,run,selected,selfId}:{data:Data;run:Run;selected:string;selfId?:string}) {
  const [code,setCode]=useState<{meetingId:string;code:string;expires:string}|null>(null);
  const [history,setHistory]=useState<History[]|null>(null),[rosterFilter,setRosterFilter]=useState('all'),[now,setNow]=useState(Date.now());
@@ -378,9 +371,8 @@ function Management({data,run,selected,selfId}:{data:Data;run:Run;selected:strin
  const here=(a:Attendance)=>['present','late'].includes(a.physical_status)&&!a.left_at;
  const missing=(a:Attendance)=>required.has(a.student_id)&&['pending','absent'].includes(a.physical_status)&&!['excused','not_required'].includes(a.review_status);
  const attention=(a:Attendance)=>a.review_status==='pending'||(now>=Date.parse(m.starts_at)&&m.status!=='finalized'&&missing(a))||(a.physical_status==='left_early'&&!a.left_at);
- const needs=records.filter(attention),ended=now>=Date.parse(m.ends_at),complete=m.status==='finalized';
- const canOpen=!complete&&now>=Date.parse(m.starts_at)-1800000&&!ended;
- const open=m.status==='open'&&m.check_in_open&&!!m.code_expires_at&&now<Date.parse(m.code_expires_at)&&now>=Date.parse(m.starts_at)-1800000&&!ended;
+ const needs=records.filter(attention);
+ const {ended,complete,canOpen,open,canClose}=checkInControls(m,now);
  const closeCheckIn=()=>void run(async()=>{await manage('close',{meeting_id:m.id,version:m.version});setCode(null);},'Check-in closed');
  const openCode=()=>void run(async()=>{const r=await manage('open',{meeting_id:m.id,version:m.version});setCode({meetingId:m.id,code:r.code,expires:r.expires_at});},'Temporary code opened');
  const visible=records.filter(a=>rosterFilter==='all'||(rosterFilter==='here'?here(a):rosterFilter==='out'?!!a.left_at:rosterFilter==='pending'?missing(a):rosterFilter==='notice'?!!a.notice_at:rosterFilter==='attention'?attention(a):rosterFilter==='excused'?a.review_status==='excused':a.physical_status===rosterFilter));
@@ -388,18 +380,18 @@ function Management({data,run,selected,selfId}:{data:Data;run:Run;selected:strin
   <div className="att-panel att-meeting-overview"><MeetingHeader meeting={m} now={now}/>
    <p className="att-roster-counts">{required.size} expected · {records.filter(a=>ended?['present','late','left_early'].includes(a.physical_status):here(a)).length} {ended?'attended':'here'} · {records.filter(a=>!!a.left_at).length} checked out · {records.filter(missing).length} {complete?'absent':'not checked in'} · {records.filter(a=>a.review_status==='excused').length} excused</p>
    <div className="att-toolbar">
-    {canOpen&&!open&&m.status!=='closed'&&<button onClick={openCode}>Open check-in</button>}
-    {!complete&&['draft','open'].includes(m.status)&&(open||ended)&&<button className="att-secondary" onClick={closeCheckIn}>Close check-in</button>}
+    {data.policy?.can_manage_meetings&&canOpen&&!open&&m.status!=='closed'&&<button onClick={openCode}>Open check-in</button>}
+    {data.policy?.can_manage_meetings&&canClose&&<button className="att-secondary" onClick={closeCheckIn}>Close check-in</button>}
     {!complete&&ended&&<button className="att-secondary" onClick={()=>{setRosterFilter(needs.length?'attention':'all');document.getElementById('live-roster-heading')?.scrollIntoView({block:'nearest'});}}>Review attendance</button>}
-    {m.status==='closed'&&ended&&<button onClick={()=>{if(window.confirm('Complete attendance? Missing required students will be marked absent. Leadership can still make corrections.'))void run(()=>manage('finalize',{meeting_id:m.id,version:m.version}),'Attendance complete');}}>Complete attendance</button>}
+    {data.policy?.can_manage_meetings&&m.status==='closed'&&ended&&<button onClick={()=>{if(window.confirm('Complete attendance? Missing required students will be marked absent. Leadership can still make corrections.'))void run(()=>manage('finalize',{meeting_id:m.id,version:m.version}),'Attendance complete');}}>Complete attendance</button>}
    </div>
    {code&&code.meetingId===m.id&&open&&now<Date.parse(code.expires)&&<div className="att-code">Meeting code: <strong>{code.code}</strong><small>Expires {time(code.expires)}. Share only with attendees.</small><button className="att-secondary" onClick={()=>void run(()=>navigator.clipboard.writeText(code.code),'Check-in code copied')}>Copy check-in code</button></div>}
    {open&&!code&&<p className="att-muted">Check-in open. Rotate the code in Meeting controls to show a new one.</p>}
    {ended&&!complete&&<p className="att-muted">Review requests and missing check-ins, then {m.status==='closed'?'complete attendance.':'close check-in to complete attendance.'}</p>}
    {!ended&&!open&&<p className="att-muted">Check-in can open 30 minutes before start. Codes last up to 30 minutes.</p>}
-   <details className="att-meeting-tools"><summary>Meeting controls</summary><div className="att-toolbar">{canOpen&&m.status==='closed'&&<button className="att-secondary" onClick={openCode}>Reopen check-in</button>}{!complete&&!open&&!ended&&['draft','open'].includes(m.status)&&<button className="att-secondary" onClick={closeCheckIn}>Close check-in</button>}{canOpen&&open&&<button className="att-secondary" onClick={openCode}>Rotate check-in code</button>}<button className="att-secondary" onClick={()=>void run(async()=>setHistory(await loadHistory(m.id)),'History loaded')}>View audit history</button></div><p className="att-muted">{m.late_minutes}-minute check-in grace period. Rotating invalidates the previous code.</p></details>
+   <details className="att-meeting-tools"><summary>Meeting controls</summary><div className="att-toolbar">{data.policy?.can_manage_meetings&&canOpen&&m.status==='closed'&&<button className="att-secondary" onClick={openCode}>Reopen check-in</button>}{data.policy?.can_manage_meetings&&canOpen&&open&&<button className="att-secondary" onClick={openCode}>Rotate check-in code</button>}<button className="att-secondary" onClick={()=>void run(async()=>setHistory(await loadHistory(m.id)),'History loaded')}>View audit history</button></div><p className="att-muted">5-minute check-in grace period. Rotating invalidates the previous code.</p></details>
   </div>
-  {selfId && records.some(a=>a.student_id===selfId) && <Student data={{...data,meetings:[m]}} id={selfId} run={run} presenceOnly selfCheckIn meetingCode={code?.meetingId===m.id&&now<Date.parse(code.expires)?code.code:undefined}/>}
+  {selfId && records.some(a=>a.student_id===selfId) && <Student data={{...data,meetings:[m]}} id={selfId} run={run} selfCheckIn meetingCode={code?.meetingId===m.id&&now<Date.parse(code.expires)?code.code:undefined}/>}
   {needs.length>0&&<section className="att-attention" aria-label="Needs attention"><h3>Needs attention</h3><p>{needs.length} {needs.length===1?'record needs':'records need'} review{records.some(a=>a.review_status==='pending')?' · Attendance requests awaiting a decision':''}.</p><div className="att-toolbar"><button className="att-secondary" onClick={()=>setRosterFilter('attention')}>Review {needs.length} {needs.length===1?'record':'records'}</button>{records.some(a=>a.review_status==='pending')&&<a href="#attendance/notices">Review attendance requests →</a>}</div></section>}
   <div className="att-roster-heading"><h3 id="live-roster-heading">{ended?'Attendance roster':'Live roster'}</h3><div className="att-roster-filters" role="group" aria-label="Live roster filter">{[['all','All'],['here','Here'],['out','Checked out'],['pending','Not checked in'],['notice','Requests']].map(([value,title])=><button key={value} className="att-secondary" aria-pressed={rosterFilter===value} onClick={()=>setRosterFilter(value)}>{title}</button>)}</div></div>
   {rosterFilter==='attention'&&<p className="att-muted">Showing records needing attention. Choose All to return to the full roster.</p>}
@@ -479,7 +471,7 @@ function MeetingForm({
             meeting_type: text(f, "type"),
             starts_at: new Date(text(f, "start")).toISOString(),
             ends_at: new Date(text(f, "end")).toISOString(),
-            late_minutes: Number(f.get("late")),
+            late_minutes: 5,
             requirement,
             areas: f.getAll("areas"),
             selected_students: f.getAll("students"),
@@ -701,7 +693,7 @@ function MeetingForm({
         </fieldset>
       )}
       <details>
-        <summary>Advanced settings · 10-minute grace by default</summary>
+        <summary>Meeting type · 5-minute arrival grace</summary>
         <div className="att-grid">
           {" "}
           <label>
@@ -716,17 +708,7 @@ function MeetingForm({
               <option value="other">Other</option>
             </select>
           </label>
-          <label>
-            Late threshold (minutes)
-            <input
-              name="late"
-              type="number"
-              min={0}
-              max={120}
-              defaultValue={10}
-              required
-            />
-          </label>
+
         </div>
       </details>
       <p className="att-muted">
@@ -742,7 +724,7 @@ function RequestReview({a,meeting,run}:{a:Attendance;meeting:Meeting;run:Run}) {
   if(!decision || !["excused","denied"].includes(decision.value))return;
   const explanation=String(new FormData(form).get("explanation")||"").trim();
   void run(()=>manage("attendance",{meeting_id:meeting.id,attendance_id:a.id,version:a.version,review_status:decision.value,left_at:a.left_at,explanation}),"Request reviewed");
- }}><label>Review reason<textarea name="explanation" required maxLength={2000} rows={2} placeholder="Briefly explain the decision"/></label><div className="att-toolbar"><button value="excused">Excuse</button><button className="att-secondary" value="denied">Deny</button></div></form>;
+ }}><p>Check the excused reasons in Attendance Policy. Family events need parent confirmation; extracurricular activities need school confirmation. Educational needs require Mentor discretion. Mental health days follow the policy’s honor system.</p><label>Review reason<textarea name="explanation" required maxLength={2000} rows={2} placeholder="Briefly explain the decision"/></label><div className="att-toolbar"><button value="excused">Excuse</button><button className="att-secondary" value="denied">Deny</button></div></form>;
 }
 function AttendanceEditor({
   a,
@@ -776,14 +758,14 @@ function AttendanceEditor({
         Check-in: {time(a.checked_in_at)} · {noticeTiming(a, m)}
       </p>
       <NoticeDetails a={a} meeting={m} />
-      <DepartureForm a={a} meeting={m} run={run} />
+      {data.policy?.can_manage_meetings&&<DepartureForm a={a} meeting={m} run={run} mayReview={canReview(data,a)} />}
       {a.review_reason && (
         <p>
           Latest review: {a.review_reason} · {time(a.reviewed_at)}
         </p>
       )}
       <div className="att-toolbar">
-        <button
+        {(data.policy?.can_manage_meetings||canReview(data,a))&&<button
           type="button"
           className="att-secondary"
           onClick={(e) => {
@@ -797,8 +779,8 @@ function AttendanceEditor({
           }}
         >
           Review excuse / correct attendance
-        </button>
-        <button
+        </button>}
+        {canReview(data)&&<button
           type="button"
           className="att-secondary"
           onClick={(e) => {
@@ -812,9 +794,9 @@ function AttendanceEditor({
           }}
         >
           Add / review strikes
-        </button>
+        </button>}
       </div>
-      <details data-review>
+      {(data.policy?.can_manage_meetings||canReview(data,a))&&<details data-review>
         <summary>Review / correct attendance</summary>
         <form
           className="att-form"
@@ -825,18 +807,18 @@ function AttendanceEditor({
                 meeting_id: m.id,
                 attendance_id: a.id,
                 version: a.version,
-                physical_status: physical,
-                review_status: text(f, "review"),
-                left_at: text(f, "left")
+                ...(data.policy?.can_manage_meetings?{physical_status: physical}:{}),
+                ...(canReview(data,a)?{review_status: text(f, "review")}:{}),
+                left_at: data.policy?.can_manage_meetings ? (text(f, "left")
                   ? new Date(text(f, "left")).toISOString()
-                  : null,
+                  : null) : a.left_at,
                 explanation: text(f, "explanation"),
               }),
             );
           }}
         >
           <div className="att-grid">
-            <label>
+            {data.policy?.can_manage_meetings&&<label>
               Attendance
               <select
                 value={physical}
@@ -850,8 +832,8 @@ function AttendanceEditor({
                   ),
                 )}
               </select>
-            </label>
-            <label>
+            </label>}
+            {canReview(data,a)&&<label>
               Excuse status
               <select name="review" defaultValue={a.review_status}>
                 {["none", "pending", "excused", "denied", "not_required"].map(
@@ -862,9 +844,9 @@ function AttendanceEditor({
                   ),
                 )}
               </select>
-            </label>
+            </label>}
           </div>
-          {physical === "left_early" && (
+          {data.policy?.can_manage_meetings && physical === "left_early" && (
             <label>
               Left at (your local time)
               <input
@@ -881,9 +863,9 @@ function AttendanceEditor({
           </label>
           <button>Save attendance review</button>
         </form>
-      </details>
+      </details>}
       <StrikeList data={data} attendance={a} run={run} />
-      <details data-strike>
+      {canReview(data)&&<details data-strike>
         <summary>Assign strike</summary>
         <form
           className="att-form"
@@ -935,7 +917,7 @@ function AttendanceEditor({
           </label>
           <button>Assign strike</button>
         </form>
-      </details>
+      </details>}
     </article>
   );
 }
@@ -971,7 +953,7 @@ function StrikeList({
                 </small>
               )}
             </p>
-            {run && !s.rescinded_at && (
+            {run && canReview(data) && !s.rescinded_at && (
               <form
                 className="att-inline"
                 onSubmit={(e) => {
@@ -1117,11 +1099,11 @@ function Workspace({
   message: string;
 }) {
   const [rosterSync, setRosterSync] = useState("");
-  const manager = isManager(profile);
+  const manager = isManager(profile) || !!data.policy?.can_read_team;
   const tabs = manager
-    ? ["calendar", "roster", "notices", "strikes", "history"]
+    ? ["dashboard", "calendar", "roster", "notices", "strikes", "history"]
     : ["calendar", "notices", "strikes", "history"];
-  const current = tabs.includes(tab) ? tab : "calendar";
+  const current = tabs.includes(tab) ? tab : manager ? "dashboard" : "calendar";
   const [selected, setSelected] = useState<string | null>(null),
     [creating, setCreating] = useState<Date | null>(null),
     [search, setSearch] = useState("");
@@ -1175,6 +1157,8 @@ function Workspace({
           </a>
         ))}
       </nav>
+      <PolicyHelp/>
+      {current === "dashboard" && manager && <LeadershipDashboard data={data} run={run} openMeeting={setSelected}/>}
       {current === "calendar" && (
         <>
           <div className="att-toolbar att-view-heading">
@@ -1186,7 +1170,7 @@ function Workspace({
                   : "Your meetings, check-ins, and attendance record."}
               </p>
             </div>
-            {manager && (
+            {data.policy?.can_manage_meetings && (
               <button
                 onClick={() => {
                   const date = new Date();
@@ -1198,7 +1182,7 @@ function Workspace({
               </button>
             )}
           </div>
-          {manager && <details className="att-roster-tools"><summary>Roster tools</summary><button className="att-secondary" disabled={busy} onClick={() => void run(async () => {
+          {data.policy?.can_manage_meetings && <details className="att-roster-tools"><summary>Roster tools</summary><button className="att-secondary" disabled={busy} onClick={() => void run(async () => {
             const result = await rpc("team_attendance_sync_future_rosters", {}) as {added:number;promoted:number;skipped:number};
             setRosterSync(`Added ${result.added}; newly required ${result.promoted}; preserved for review ${result.skipped}.`);
           }, "Future rosters synced")}>Sync future rosters</button><p>Updates future All active students and Registered students only meetings. Existing attendance decisions are preserved.</p>{rosterSync && <p role="status">{rosterSync}</p>}</details>}
@@ -1207,7 +1191,7 @@ function Workspace({
           <MeetingCalendar
             meetings={data.meetings}
             onOpen={setSelected}
-            onCreate={manager ? setCreating : undefined}
+            onCreate={data.policy?.can_manage_meetings ? setCreating : undefined}
           />
           {profile.role === "lead" && (
             <details className="att-panel">
@@ -1247,7 +1231,7 @@ function Workspace({
                     {label(m.member_status)} · {m.team_area || "No team area"}
                   </span>
                 </summary>
-                <MemberForm member={m} run={run} />
+                <MemberAttendance data={data} member={m}/>{data.policy?.can_manage_meetings&&<MemberForm member={m} run={run} />}
               </details>
             ))}
           {!data.members.filter((m) =>
@@ -1263,7 +1247,8 @@ function Workspace({
           )}
         </>
       )}
-      {(current === "notices" || current === "strikes") && (
+      {current === "strikes" && <StrikeWorkspace data={ownData} run={run}/> }
+      {current === "notices" && (
         <>
           <h2>
             {current === "notices"
@@ -1273,7 +1258,7 @@ function Workspace({
           <p className="att-muted">
             {current === "notices"
               ? (manager ? "Review absences, late arrivals, and early departures. Excuses do not change check-in or check-out times." : "Track your absence, late arrival, and early departure requests here.")
-              : "Totals use active strike records. Three strikes require warning / parent contact; five require leadership review. Access is never changed automatically."}
+              : "Totals use active strike records. Two strikes require warning / parent contact; five reach the removal threshold. Access is never changed automatically."}
           </p>
           {current === "notices" && (
             <label className="att-select">
@@ -1289,21 +1274,6 @@ function Workspace({
               </select>
             </label>
           )}
-          {current === "strikes" &&
-            manager &&
-            data.members
-              .filter((m) => summary(data, m.student_id).strikes >= 3)
-              .map((m) => (
-                <p className="att-panel" key={m.student_id}>
-                  <strong>
-                    {m.display_name} · {summary(data, m.student_id).strikes}{" "}
-                    active strikes
-                  </strong>
-                  <small>
-                    {strikeAction(summary(data, m.student_id).strikes)}
-                  </small>
-                </p>
-              ))}
           {!incidentRows.length && (
             <p className="att-empty">
               {current === "notices"
@@ -1336,7 +1306,7 @@ function Workspace({
                       <p className="att-muted">{time(meeting.starts_at)} · {a.notice_type ? label(a.notice_type) : "Attendance issue"}{a.expected_at && <> · Expected {time(a.expected_at)}</>}</p>
                       <p className="att-request-reason">{a.notice_reason || "Excuse review requested"}</p>
                       <details><summary>Submission details</summary><p>{time(a.notice_at)} · {noticeTiming(a, meeting)}</p></details>
-                      {manager && a.review_status === "pending" && <RequestReview key={`${a.id}-${a.version}`} a={a} meeting={meeting} run={run} />}
+                      {canReview(data,a) && a.review_status === "pending" && <RequestReview key={`${a.id}-${a.version}`} a={a} meeting={meeting} run={run} />}
                       {a.review_reason && <p>{a.review_reason}</p>}
                       {manager && (
                         <details>
@@ -1412,16 +1382,7 @@ function Workspace({
           )}
         </>
       )}
-      <details className="att-policy">
-        <summary>Attendance policy</summary>
-        <p>
-          Notify leadership at least 24 hours in advance. The default late
-          threshold is 10 minutes. Excused and Not Required meetings are
-          excluded from percentages. Late and Left Early count as attended.
-          Strikes are reviewed separately and never automatically remove members
-          or change access.
-        </p>
-      </details>
+
       {creating && (
         <Modal
           title="New meeting"
@@ -1459,7 +1420,7 @@ function Workspace({
             <Management
               key={selectedMeeting.id}
               selected={selectedMeeting.id}
-              selfId={profile.role==='lead'?profile.id:undefined}
+              selfId={['lead','student'].includes(profile.role)?profile.id:undefined}
               data={data}
               run={run}
             />
@@ -1598,7 +1559,7 @@ function NoticeForm({
           />
         </label>
         <p className="att-muted">
-          Leadership must approve an excuse. This does not check you in or out. Updates record a new submission time.
+          A Mentor or Program Manager reviews excuses; you cannot approve your own. Give 24 hours’ notice when possible. Shorter notice requires review against an excused reason and is not automatically denied. This does not check you in or out. Updates record a new submission time.
         </p>
         <button>Report an attendance issue</button>
       </form>
@@ -1609,10 +1570,12 @@ function DepartureForm({
   a,
   meeting: m,
   run,
+  mayReview,
 }: {
   a: Attendance;
   meeting: Meeting;
   run: Run;
+  mayReview: boolean;
 }) {
   const [departure, setDeparture] = useState("");
   if (Date.now() < Date.parse(m.starts_at) || m.status === "finalized")
@@ -1637,7 +1600,7 @@ function DepartureForm({
                 version: a.version,
                 physical_status: "left_early",
                 left_at: new Date(text(f, "departure")).toISOString(),
-                review_status: text(f, "decision"),
+                ...(mayReview?{review_status: text(f, "decision")}:{}),
                 explanation:
                   text(f, "departure_reason").trim() ||
                   "Leadership recorded early departure.",
@@ -1660,7 +1623,7 @@ function DepartureForm({
           Departure reason (optional)
           <textarea name="departure_reason" maxLength={2000} />
         </label>
-        <label>
+        {mayReview&&<label>
           Departure excuse decision
           <select name="decision" defaultValue={a.review_status}>
             {["none", "pending", "excused", "denied", "not_required"].map(
@@ -1671,7 +1634,7 @@ function DepartureForm({
               ),
             )}
           </select>
-        </label>
+        </label>}
         <button>Confirm left early</button>
       </form>
     </details>

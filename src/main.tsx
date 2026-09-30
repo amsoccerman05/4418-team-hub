@@ -31,7 +31,7 @@ function App() {
         {auth.signed && !workspace && !management && <My4418 management={announcements} />}
         {auth.signed && workspace && <AttendanceHub
           workspace={workspace}
-          tab={route.split("/")[1] || "calendar"}
+          tab={route.split("/")[1] || ""}
         />}
         {auth.signed && management && <TeamManagement workspace /> }
 
