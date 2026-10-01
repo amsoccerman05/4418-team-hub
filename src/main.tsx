@@ -7,6 +7,7 @@ import "./style.css";
 import { My4418 } from "./dashboard/Dashboard";
 import { TeamManagement } from "./team/TeamManagement";
 import { AttendanceHub } from "./attendance/Attendance";
+import { PlanningNav } from "./planning/PlanningNav";
 import { Planning } from "./planning/Planning";
 function App() {
   const auth=useHubAuth();
@@ -26,9 +27,9 @@ function App() {
       <a className="skip-link" href="#main">
         Skip to content
       </a>
-      <SuiteHeader app="Team Hub" context={planning?'Planning':management?'Team Management':announcements?'Announcements':workspace?'Attendance':'My 4418'} name={auth.name} onSignOut={auth.signOut} busy={auth.busy}/>
+      <SuiteHeader app={planning?'Planning':'Team Hub'} context={planning?({'plan':'Season Plan','boards':'Boards','my-work':'My Work'}[route.split('/')[1]]||'Dashboard'):management?'Team Management':announcements?'Announcements':workspace?'Attendance':'My 4418'} name={auth.name} onSignOut={auth.signOut} busy={auth.busy}/>
 
-      <div className="hub-shell"><HubNav route={route}/><main id="main">
+      <div className={`hub-shell${planning?' planning-shell':''}`}>{planning?<PlanningNav route={route}/>:<HubNav route={route}/>}<main id="main">
         {auth.error&&<p role="alert">{auth.error}</p>}
         {auth.signed && !workspace && !management && !planning && <My4418 management={announcements} />}
         {auth.signed && workspace && <AttendanceHub

@@ -3,6 +3,7 @@ import './SuiteSwitcher.css';
 import { LayoutGrid, ChevronDown } from 'lucide-react';
 const apps = [
  {name:'Team Hub / Home',url:'https://team.frc4418.org/'},
+ {name:'Planning',url:'https://team.frc4418.org/#planning'},
  {name:'Inventory',url:'https://inventory.frc4418.org/'},
  {name:'Competition Operations',url:'https://pit.frc4418.org/'},
  {name:'Finance',url:'https://finance.frc4418.org/'},

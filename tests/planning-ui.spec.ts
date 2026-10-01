@@ -12,15 +12,15 @@ async function setup(page:Page,manager=true){
 }
 for(const width of [390,1440])test(`Planning Gantt, board, task and My Work at ${width}`,async({page})=>{
  await page.setViewportSize({width,height:900});const {calls}=await setup(page);const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
- await page.goto('/#planning');await expect(page.getByRole('heading',{name:'Planning',exact:true})).toBeVisible();await expect(page.getByRole('region',{name:/Season Gantt/})).toBeVisible();
+ await page.goto('/#planning/plan');await expect(page.getByRole('heading',{name:'Season Plan',exact:true})).toBeVisible();await expect(page.getByRole('region',{name:/Season Gantt/})).toBeVisible();
  await page.getByRole('button',{name:'Edit Intake CAD',exact:true}).click();let d=page.getByRole('dialog');await d.getByLabel('Title',{exact:true}).fill('Intake design');await d.getByRole('button',{name:'Save',exact:true}).click();await expect(d).toHaveCount(0);expect(calls[0].entity).toBe('item');
  await page.getByRole('button',{name:'Edit Design freeze'}).click();d=page.getByRole('dialog');await expect(d.getByLabel('Milestone date')).toHaveValue('2027-02-16');await expect(d.getByLabel('Starts after')).toHaveValue('item');await d.getByRole('button',{name:'Close',exact:true}).click();
  await page.screenshot({path:`test-results/planning-gantt-${width}.png`,fullPage:true});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
- await page.getByRole('navigation',{name:'Planning workspace'}).getByRole('link',{name:'Boards',exact:true}).click();await page.getByRole('button',{name:'Intake',exact:true}).click();await page.getByLabel('Status for Cut shafts').selectOption('in_progress');await expect(page.getByLabel('Status for Cut shafts')).toHaveValue('in_progress');
+ if(width===390)await page.getByRole('button',{name:'Planning menu'}).click();await page.getByRole('navigation',{name:'Planning workspace'}).getByRole('link',{name:'Boards',exact:true}).click();await page.getByRole('button',{name:'Intake',exact:true}).click();await page.getByLabel('Status for Cut shafts').selectOption('in_progress');await expect(page.getByLabel('Status for Cut shafts')).toHaveValue('in_progress');
  await page.getByRole('button',{name:'List view'}).click();await page.getByLabel('Search tasks').fill('shafts');await expect(page.getByRole('button',{name:'Fit bearing',exact:true})).toHaveCount(0);
  await page.getByRole('button',{name:'Cut shafts',exact:true}).click();d=page.getByRole('dialog');await d.getByRole('combobox',{name:'Owner',exact:true}).selectOption('other');await d.getByRole('button',{name:'Save',exact:true}).click();await expect(d).toHaveCount(0);
  await page.getByRole('button',{name:'Cut shafts',exact:true}).click();d=page.getByRole('dialog');await d.getByLabel('New checklist step').fill('Measure twice');await d.getByRole('button',{name:'Add step'}).click();await expect(d.getByRole('checkbox',{name:'Measure twice'})).toBeVisible();await d.getByRole('checkbox',{name:'Measure twice'}).check();await d.getByLabel('Add a comment').fill('Ready for review');await d.getByRole('button',{name:'Post comment'}).click();await expect(d.getByText('Ready for review',{exact:true})).toBeVisible();await d.getByRole('combobox',{name:'Owner',exact:true}).selectOption(uid);await d.getByRole('button',{name:'Save',exact:true}).click();await expect(d).toHaveCount(0);
- await page.getByRole('navigation',{name:'Planning workspace'}).getByRole('link',{name:'My Work'}).click();await expect(page.getByRole('heading',{name:'My Work',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'Cut shafts',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'Fit bearing',exact:true})).toHaveCount(0);
+ if(width===390)await page.getByRole('button',{name:'Planning menu'}).click();await page.getByRole('navigation',{name:'Planning workspace'}).getByRole('link',{name:'My Work'}).click();await expect(page.getByRole('heading',{name:'My Work',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'Cut shafts',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'Fit bearing',exact:true})).toHaveCount(0);
  await page.screenshot({path:`test-results/planning-my-work-${width}.png`,fullPage:true});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);expect(errors).toEqual([]);
 });
 test('normal member has assigned status fallback without project administration',async({page})=>{
@@ -38,10 +38,40 @@ test('draft season creation, board types and signed-out privacy',async({page})=>
 for(const timezoneId of ['America/Los_Angeles','Pacific/Auckland'])test(`Planning calendar-date round trip in ${timezoneId}`,async({browser})=>{
  const context=await browser.newContext({timezoneId});const page=await context.newPage();const {c,calls}=await setup(page);
  Object.assign(c.items[0],{start_date:'2027-03-13',end_date:'2027-03-15'});
- await page.goto('http://127.0.0.1:4422/#planning');
+ await page.goto('http://127.0.0.1:4422/#planning/plan');
  await expect(page.getByRole('button',{name:'Edit Intake CAD',exact:true})).toHaveAttribute('title',/2027-03-13 – 2027-03-15/);
  await page.getByRole('button',{name:'Edit Intake CAD',exact:true}).click();const d=page.getByRole('dialog');
  await expect(d.getByLabel('Start date',{exact:true})).toHaveValue('2027-03-13');await expect(d.getByLabel('End date',{exact:true})).toHaveValue('2027-03-15');
  await d.getByRole('button',{name:'Save',exact:true}).click();await expect(d).toHaveCount(0);
  expect(calls[0].p.start_date).toBe('2027-03-13');expect(calls[0].p.end_date).toBe('2027-03-15');await context.close();
+});
+
+for(const width of [390,1440])test(`dedicated Planning shell and Dashboard ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});await page.clock.install({time:new Date('2027-01-06T12:00:00')});
+ const {c,calls}=await setup(page);const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ Object.assign(c.seasons[0],{start_date:'2027-01-01',end_date:'2027-03-15'});
+ c.tasks=[
+ {...c.tasks[0],id:'late',title:'Overdue fabrication',due_date:'2027-01-05',status:'todo'},
+ {...c.tasks[0],id:'today',title:'Integrate today',due_date:'2027-01-06',status:'in_progress'},
+ {...c.tasks[0],id:'week',title:'Test this week',due_date:'2027-01-08',status:'todo'},
+ {...c.tasks[0],id:'blocked',title:'Waiting on CAD',due_date:'2027-01-20',status:'blocked',owner_id:'other'},
+ {...c.tasks[0],id:'done',title:'Complete',due_date:'2027-01-01',status:'done'}];
+ c.items.push({...c.items[1],id:'old',title:'Old milestone',start_date:'2026-12-01'}, {...c.items[1],id:'complete',title:'Finished milestone',status:'done'});
+ c.boards.push({id:'archived',name:'Archived board',active:false});c.tasks.push({...c.tasks[0],id:'hidden',board_id:'archived'});
+ await page.goto('/#planning');await expect(page.locator('.suite-brand strong')).toHaveText('Planning');await expect(page.locator('.suite-picker summary')).toContainText('Planning');
+ const dash=page.locator('.planning-dashboard');await expect(dash.getByRole('heading',{name:'Active season'})).toBeVisible();await expect(dash.getByText('2027-01-01 → 2027-03-15')).toBeVisible();
+ const counts=dash.locator('.planning-counts');for(const [label,n] of [['To Do','2'],['In Progress','1'],['Blocked','1'],['Done','1']])await expect(counts.locator('div').filter({has:page.getByText(label,{exact:true})}).locator('dd')).toHaveText(n);
+ await expect(dash.getByText('1 overdue · 1 blocked')).toBeVisible();await expect(dash.getByText('1 overdue · 1 due today · 1 due this week')).toBeVisible();await expect(dash.getByText('Design freeze',{exact:true})).toBeVisible();await expect(dash.getByText('Old milestone')).toHaveCount(0);await expect(dash.getByText('Finished milestone')).toHaveCount(0);
+ await expect(dash.getByText('1 / 5 tasks complete')).toBeVisible();await expect(dash.getByText('Archived board')).toHaveCount(0);
+ if(width===390)await page.getByRole('button',{name:'Planning menu'}).click();
+ const nav=page.getByRole('navigation',{name:'Planning workspace'});await expect(nav.getByRole('link')).toHaveCount(4);await expect(nav.getByRole('link',{name:'Dashboard',exact:true})).toHaveAttribute('aria-current','page');await expect(page.getByRole('navigation',{name:'Hub workspace'})).toHaveCount(0);
+ if(width===390)await page.keyboard.press('Escape');
+ await page.locator('.suite-picker summary').click();await expect(page.getByRole('navigation',{name:'Team 4418 apps'}).getByRole('link',{name:'Planning',exact:true})).toHaveAttribute('aria-current','page');await page.keyboard.press('Escape');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:`test-results/planning-dashboard-shell-${width}.png`,fullPage:true});
+ await dash.getByRole('button',{name:'Intake',exact:true}).click();await expect(page.getByRole('heading',{name:'Intake',exact:true})).toBeVisible();expect(calls).toHaveLength(0);expect(errors).toEqual([]);
+});
+test('Planning empty Dashboard, attention omission, and Hub Systems entry',async({page})=>{
+ const {c}=await setup(page);await page.goto('/#planning');await expect(page.getByRole('heading',{name:'Needs attention'})).toHaveCount(0);
+ c.seasons=[];c.season_id=null;await page.getByRole('button',{name:'Refresh',exact:true}).click();await expect(page.getByRole('heading',{name:'No active planning season'})).toBeVisible();await expect(page.getByText('Create a season to start building the team plan.')).toBeVisible();await expect(page.locator('.planning-dashboard')).toHaveCount(0);
+ await page.goto('/#attendance');const link=page.locator('.hub-nav a[href="#planning"]');await expect(link).toBeVisible();expect(await link.evaluate(e=>e.previousElementSibling?.textContent)).toBe('Systems');await link.click();await expect(page.locator('.suite-brand strong')).toHaveText('Planning');
 });
