@@ -7,6 +7,7 @@ import "./style.css";
 import { My4418 } from "./dashboard/Dashboard";
 import { TeamManagement } from "./team/TeamManagement";
 import { AttendanceHub } from "./attendance/Attendance";
+import { Planning } from "./planning/Planning";
 function App() {
   const auth=useHubAuth();
   const [route, setRoute] = useState(location.hash);
@@ -15,6 +16,7 @@ function App() {
     window.addEventListener("hashchange", update);
     return () => window.removeEventListener("hashchange", update);
   }, []);
+  const planning = route === '#planning' || route.startsWith('#planning/');
   const management = route === "#team-management";
   const announcements = route === "#announcements";
   const workspace = route === "#attendance" || route.startsWith("#attendance/");
@@ -24,15 +26,16 @@ function App() {
       <a className="skip-link" href="#main">
         Skip to content
       </a>
-      <SuiteHeader app="Team Hub" context={management?'Team Management':announcements?'Announcements':workspace?'Attendance':'My 4418'} name={auth.name} onSignOut={auth.signOut} busy={auth.busy}/>
+      <SuiteHeader app="Team Hub" context={planning?'Planning':management?'Team Management':announcements?'Announcements':workspace?'Attendance':'My 4418'} name={auth.name} onSignOut={auth.signOut} busy={auth.busy}/>
 
       <div className="hub-shell"><HubNav route={route}/><main id="main">
         {auth.error&&<p role="alert">{auth.error}</p>}
-        {auth.signed && !workspace && !management && <My4418 management={announcements} />}
+        {auth.signed && !workspace && !management && !planning && <My4418 management={announcements} />}
         {auth.signed && workspace && <AttendanceHub
           workspace={workspace}
           tab={route.split("/")[1] || ""}
         />}
+        {auth.signed && planning && <Planning route={route}/> }
         {auth.signed && management && <TeamManagement workspace /> }
 
         <footer>
