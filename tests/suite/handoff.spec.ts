@@ -112,7 +112,7 @@ for(const width of [390,1440])for(const logout of ['hub','pit'])test(`first-part
  const context=await browser.newContext({viewport:{width,height:844},isMobile:width===390,hasTouch:width===390});await setup(context);await isolate(context);
  const page=await context.newPage();await login(page);
  const pages:any[]=[];
- for(const label of ['Pit Operations','Inventory','Finance']){
+ for(const label of ['Competition Operations','Inventory','Finance']){
   await page.bringToFront();
   const opened=context.waitForEvent('page');
   if(width===390)await page.getByRole('button',{name:'Hub menu'}).click();

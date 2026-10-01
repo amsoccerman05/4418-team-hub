@@ -18,7 +18,7 @@ export const systems: HubLink[] = [
   },
   {
     id: "pit",
-    name: "Pit Operations",
+    name: "Competition Operations",
     description:
       "Track robot issues and batteries. Keep the robot match-ready.",
     url: "https://pit.frc4418.org",
