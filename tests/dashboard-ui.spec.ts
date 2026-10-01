@@ -16,7 +16,7 @@ async function setup(page:Page,mentor=false){
  });return c;
 }
 for(const width of [390,1440])for(const mentor of [false,true])test(`My 4418 ${mentor?'leadership':'student'} at ${width}`,async({page})=>{
- await page.setViewportSize({width,height:900});await setup(page,mentor);await page.goto('/');await expect(page.getByRole('heading',{name:'My 4418',exact:true})).toBeVisible();await expect(page.getByText('No required meetings coming up.',{exact:false})).toBeVisible();await expect(page.getByText('You’re up to date. No new announcements.')).toBeVisible();
+ await page.setViewportSize({width,height:900});await setup(page,mentor);await page.goto('/');await expect(page.getByRole('heading',{name:'My 4418',exact:true})).toBeVisible();await expect(page.getByText('No required meetings scheduled.',{exact:false})).toBeVisible();await expect(page.locator('#home-announcements')).toHaveCount(0);
  await expect(page.locator('.my-quick')).toHaveCount(0);await expect(page.getByRole('heading',{name:'Needs your attention',exact:true})).toHaveCount(mentor?1:0);await expect(page.locator('.hub-nav a[href="#team-management"]')).toHaveCount(mentor?1:0);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:`test-results/my-4418-${mentor?'leadership':'student'}-${width}.png`,fullPage:true});
 });
@@ -90,4 +90,9 @@ test('quiet Home stays compact on phone with a subtle usable refresh',async({pag
  expect((await page.locator('.my-next').boundingBox())!.height).toBeLessThan(150);
  for(const card of await page.locator('.my-activity .my-card').all())expect((await card.boundingBox())!.height).toBeLessThan(200);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+
+for(const width of [390,1440])test(`adaptive dashboard priority ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});const c=await setup(page,true);await page.goto('/');await expect(page.locator('.my-attention')).toBeVisible();const attention=await page.locator('.my-attention').boundingBox(),next=await page.locator('.my-next').boundingBox();expect(attention!.y).toBeLessThanOrEqual(next!.y);await expect(page.locator('.my-team-status')).toContainText('3 low-stock · 1 out-of-stock');await expect(page.locator('#home-announcements')).toHaveCount(0);
+ c.next_meeting={title:'Build session',starts_at:new Date(Date.now()+3600000).toISOString(),ends_at:new Date(Date.now()+7200000).toISOString(),type:'build',required:true,check_in_open:false};await page.getByRole('button',{name:'Refresh',exact:true}).click();await expect(page.locator('.my-next')).toContainText('Build session');await expect(page.getByRole('link',{name:'View meeting'})).toHaveAttribute('href','#attendance');expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
