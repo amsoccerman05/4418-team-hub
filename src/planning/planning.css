@@ -119,3 +119,16 @@
 
 .planning-table-scroll table{min-width:720px}
 .planning-table-scroll td:first-child{min-width:180px}
+
+/* V1.1: the same items/tasks, organized into familiar work surfaces. */
+.planning-toolbar [role=group]{display:flex;gap:4px;padding:3px;background:var(--suite-secondary);border-radius:8px}
+.planning-plan-group{margin:16px 0;padding:16px;border:1px solid var(--suite-border);border-radius:10px;background:var(--suite-surface)}
+.planning-plan-group>details>summary{font-size:16px;font-weight:650;padding:4px 0;cursor:pointer}
+.planning-plan-group .planning-table-scroll{margin-top:12px}.planning-plan-group td small{display:block;color:var(--suite-muted);margin-top:4px}
+.planning-group-actions{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}.planning-group-actions button{font-size:12px!important}
+.planning-quick-add{margin-top:12px}.planning-quick-add>button{width:100%;text-align:left;border-style:dashed!important;color:var(--suite-primary)!important}
+.planning-quick-add>button[hidden]{display:none}.planning-quick-add form{max-width:420px}.planning-quick-add input{width:100%;box-sizing:border-box}.planning-quick-add small{display:block;color:var(--suite-muted);margin:8px 0;font-size:12px}.planning-quick-add .planning-toolbar{margin:8px 0 0}
+.planning-gantt-group{height:52px;box-sizing:border-box;padding:16px 10px;font-size:12px;font-weight:700;background:var(--suite-secondary);border-bottom:1px solid var(--suite-border);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.planning-gantt-group-lane{position:absolute;background:var(--suite-secondary);pointer-events:none;opacity:.5}
+.planning-gantt-label{padding-left:16px}.planning-gantt-group-lane{z-index:0}.planning-table-scroll select,.planning-table-scroll input{min-width:120px}
+@media(max-width:600px){.planning-plan-group{padding:12px}.planning-quick-add button{min-height:44px}}

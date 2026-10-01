@@ -148,6 +148,17 @@ test('explicit grants deny direct table writes/deletes/truncate and private help
  const d=await detail(task);expect(d.comments).toHaveLength(1);expect(d.steps).toHaveLength(1);
  await as(1);const checks=(await db.query<any>(`select count(*)::integer n from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.relkind='r' and c.relrowsecurity and ((n.nspname='public' and c.relname like 'planning_%') or n.nspname='planning_private')`)).rows[0];expect(checks.n).toBe(8);
 });
+test('V1.1 quick payloads keep canonical statuses, audit, authorization and version checks',async()=>{
+ await as(1);await db.exec('begin');try{
+  const sid=await save('season',{name:'Workflow fixture',status:'draft'});const bid=await save('board',{season_id:sid,name:'Quick board',kind:'project',active:true,display_order:1});
+  const gid=await save('group',{season_id:sid,name:'Build',active:true,display_order:1});
+  const iid=await save('item',{season_id:sid,group_id:gid,title:'Quick item',kind:'work',status:'not_started',start_date:'2027-01-01',end_date:'2027-01-01',display_order:1});
+  expect((await context(sid)).items.find((i:any)=>i.id===iid).group_id).toBe(gid);
+  for(const status of ['backlog','todo','in_progress','blocked','done']){
+   const tid=await save('task',{board_id:bid,title:'Quick '+status,status,priority:'normal',owner_id:null,area_id:null});const t=(await context(sid)).tasks.find((t:any)=>t.id===tid);expect(t.status).toBe(status);const h=(await detail(tid)).history;expect(h).toHaveLength(1);expect(h[0].action).toBe('created');expect(h[0].actor_id).toBe(id(1));await db.exec('savepoint stale');await expect(save('task',{...t,version:0})).rejects.toThrow(/Changed/);await db.exec('rollback to stale');
+  }
+ }finally{await db.exec('rollback');}
+});
 test('board archival preserves records, season archive is read only, functional boards persist',async()=>{
  await as(1);let c=await context();let b=c.boards.find((b:any)=>b.id===board);await save('board',{...b,active:false});
  await as(3);expect((await context()).tasks).toHaveLength(0);await expect(detail(task)).rejects.toThrow(/unavailable/);
