@@ -1,0 +1,5 @@
+import type {Context,Task} from './service';
+export function BoardSummary({board,tasks,area,onOpen,onEdit}:{board:Context['boards'][number];tasks:Task[];area?:string;onOpen:()=>void;onEdit?:()=>void}){
+ const done=tasks.filter(t=>t.status==='done').length,blocked=tasks.filter(t=>t.status==='blocked').length;
+ return <article className="planning-card planning-board-card"><div className="planning-task-meta"><span className="planning-eyebrow">{board.kind==='area'?'Functional Area':'Project'}</span>{!board.active&&<span className="planning-badge">Archived</span>}</div><h3><button className="planning-text-button" onClick={onOpen}>{board.name}</button></h3>{area&&<small>{area}</small>}{board.description&&<p>{board.description}</p>}<div className="planning-board-progress"><span>{done} / {tasks.length} tasks complete</span>{blocked>0&&<span className="planning-badge">{blocked} blocked</span>}</div><progress aria-label={`${board.name} tasks complete`} value={done} max={tasks.length||1}/>{onEdit&&<button className="planning-board-edit" onClick={onEdit}>Edit board</button>}</article>;
+}

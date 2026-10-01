@@ -72,6 +72,21 @@ for(const width of [390,1440])test(`dedicated Planning shell and Dashboard ${wid
 });
 test('Planning empty Dashboard, attention omission, and Hub Systems entry',async({page})=>{
  const {c}=await setup(page);await page.goto('/#planning');await expect(page.getByRole('heading',{name:'Needs attention'})).toHaveCount(0);
- c.seasons=[];c.season_id=null;await page.getByRole('button',{name:'Refresh',exact:true}).click();await expect(page.getByRole('heading',{name:'No active planning season'})).toBeVisible();await expect(page.getByText('Create a season to start building the team plan.')).toBeVisible();await expect(page.locator('.planning-dashboard')).toHaveCount(0);
+ c.seasons=[];c.season_id=null;await page.getByRole('button',{name:'Refresh',exact:true}).click();await expect(page.getByRole('heading',{name:'No active planning season'})).toBeVisible();await expect(page.getByText('Create a season to build the master schedule, organize project boards, and assign work.')).toBeVisible();await expect(page.locator('.planning-dashboard')).toHaveCount(0);
  await page.goto('/#attendance');const link=page.locator('.hub-nav a[href="#planning"]');await expect(link).toBeVisible();expect(await link.evaluate(e=>e.previousElementSibling?.textContent)).toBe('Systems');await link.click();await expect(page.locator('.suite-brand strong')).toHaveText('Planning');
+});
+
+for(const width of [390,1440])test(`Planning polished surfaces ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});await page.clock.install({time:new Date('2027-01-06T12:00:00')});
+ const {c,calls}=await setup(page);const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ c.boards[1].area_id='area';c.tasks.push({...c.tasks[0],id:'blocked-review',board_id:'admin',title:'Resolve controller issue',status:'blocked',blocked_reason:'Waiting for replacement',due_date:'2027-01-05'});
+ async function capture(name:string){await page.evaluate(()=>{window.scrollTo(0,0);if(document.activeElement?.classList.contains('skip-link'))(document.activeElement as HTMLElement).blur();});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:`test-results/planning-polish-${name}-${width}.png`,fullPage:true});}
+ await page.goto('/#planning/plan');await expect(page.getByLabel('Today',{exact:true})).toBeVisible();await capture('gantt-today');
+ await page.goto('/#planning/boards');await expect(page.getByRole('heading',{name:'Projects',exact:true})).toBeVisible();await expect(page.getByRole('heading',{name:'Functional Areas',exact:true})).toBeVisible();await expect(page.getByText('1 blocked',{exact:true})).toBeVisible();await capture('boards');
+ await page.getByRole('button',{name:'Intake',exact:true}).click();await expect(page.getByLabel('Status for Cut shafts')).toHaveValue('todo');await capture('project');
+ await page.getByRole('button',{name:'List view',exact:true}).click();await expect(page.getByRole('columnheader',{name:'Priority',exact:true})).toBeVisible();await capture('list');
+ await page.getByRole('button',{name:'Cut shafts',exact:true}).click();const dialog=page.getByRole('dialog');await expect(dialog.getByRole('heading',{name:'Task',exact:true})).toBeVisible();await expect(dialog.getByRole('heading',{name:'Planning',exact:true})).toBeVisible();await expect(dialog.getByText('No comments yet. Share progress or a question here.')).toBeVisible();await capture('task');await dialog.press('Escape');await expect(page.getByRole('button',{name:'Cut shafts',exact:true})).toBeFocused();
+ await page.goto('/#planning/boards/admin');await page.getByRole('button',{name:'Kanban view',exact:true}).click();await expect(page.getByText('Blocked: Waiting for replacement')).toBeVisible();await capture('area');
+ await page.goto('/#planning/my-work');await expect(page.getByText('Overdue · 2027-01-05')).toBeVisible();await expect(page.locator('.planning-task').filter({hasText:'Resolve controller issue'}).getByText('Admin',{exact:true})).toBeVisible();await capture('work');
+ c.seasons=[];c.season_id=null;await page.goto('/#planning');await page.getByRole('button',{name:'Refresh',exact:true}).click();await expect(page.getByRole('heading',{name:'No active planning season'})).toBeVisible();await expect(page.locator('.planning-intro-grid section')).toHaveCount(3);await expect(page.locator('.planning-counts')).toHaveCount(0);await capture('onboarding');expect(calls).toHaveLength(0);expect(errors).toEqual([]);
 });
