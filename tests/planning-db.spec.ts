@@ -10,14 +10,21 @@ async function context(s?:string){return (await db.query<any>('select planning_c
 async function detail(t:string){return (await db.query<any>('select planning_task_detail($1) d',[t])).rows[0].d;}
 let season:string,board:string,task:string,item:string;
 test.beforeAll(async()=>{
- db=new PGlite();await db.exec(`create role anon;create role authenticated;create schema auth;create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('test.uid',true),'')::uuid$$;
+ db=new PGlite();await db.exec(`create role anon;create role authenticated;create role service_role;create schema auth;create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('test.uid',true),'')::uuid$$;
  create table public.profiles(id uuid primary key,display_name text,role text,active boolean);
  create table public.areas(id uuid primary key,name text,active boolean);
  create table public.team_positions(key text primary key,active boolean);
  create table public.team_member_positions(user_id uuid references profiles(id),position_key text references team_positions(key),revoked_at timestamptz);
  insert into profiles values('${id(1)}','Mentor','mentor',true),('${id(2)}','Leader','student',true),('${id(3)}','Owner','student',true),('${id(4)}','Unrelated','lead',true),('${id(5)}','Inactive','mentor',false);
  insert into areas values('${id(10)}','Software',true);insert into team_positions values('software_lead',true);insert into team_member_positions values('${id(2)}','software_lead',null);`);
- await db.exec(readFileSync('supabase/migrations/202610020001_planning_v1.sql','utf8'));await as(1);
+ // Supabase may inherit broad default table/function grants. The migration must
+ // revoke these explicitly; RLS alone does not prevent TRUNCATE.
+ await db.exec(`alter default privileges in schema public grant all on tables to anon,authenticated,service_role;
+ alter default privileges in schema public grant execute on functions to anon,authenticated,service_role;`);
+ const existing=()=>db.query(`select c.oid,c.relname,c.relacl::text,c.relrowsecurity from pg_class c where c.oid in ('profiles'::regclass,'areas'::regclass,'team_positions'::regclass,'team_member_positions'::regclass) order by c.oid`);
+ const before=await existing();
+ await db.exec(readFileSync('supabase/migrations/202610020001_planning_v1.sql','utf8'));
+ expect((await existing()).rows).toEqual(before.rows);await as(1);
 });
 test.afterAll(()=>db.close());
 test('active position leadership, not base role; one active season and stale edits',async()=>{
@@ -81,6 +88,65 @@ test('audit persistence failure rolls back the task mutation',async()=>{
  await as(1);await expect(save('task',{...before,title:'Must roll back'})).rejects.toThrow(/audit unavailable/);
  expect((await context(season)).tasks[0]).toEqual(before);
  await db.exec('reset role;drop trigger fail_audit on planning_private.history;drop function planning_private.fail_audit()');
+});
+test('calendar dates reject reversed ranges and survive timezone/DST boundaries',async()=>{
+ await as(1);const c=await context(season);const itemBefore=c.items.find((i:any)=>i.id===item);const taskBefore=c.tasks[0];
+ await expect(save('season',{name:'Invalid dates',start_date:'2027-03-15',end_date:'2027-03-13'})).rejects.toThrow(/check constraint/);
+ await expect(save('item',{...itemBefore,start_date:'2027-03-15',end_date:'2027-03-13'})).rejects.toThrow(/check constraint/);
+ await expect(save('task',{...taskBefore,start_date:'2027-03-15',due_date:'2027-03-13'})).rejects.toThrow(/check constraint/);
+ const milestone=c.items.find((i:any)=>i.kind==='milestone');
+ await expect(save('item',{...milestone,end_date:'2027-02-01'})).rejects.toThrow(/check constraint/);
+ await save('item',{...itemBefore,start_date:'2027-03-13',end_date:'2027-03-15'});
+ for(const timezone of ['America/Denver','Pacific/Auckland']){
+  await db.query("select set_config('TimeZone',$1,false)",[timezone]);
+  const actual=(await context(season)).items.find((i:any)=>i.id===item);
+  expect([actual.start_date,actual.end_date]).toEqual(['2027-03-13','2027-03-15']);
+ }
+ await db.exec("set timezone='UTC'");
+});
+test('dependency removal preserves items; deletion cannot orphan references',async()=>{
+ await as(1);let c=await context(season);let m=c.items.find((i:any)=>i.kind==='milestone');
+ await expect(save('item',{...m,predecessor_id:m.id})).rejects.toThrow(/cycle|check constraint/);
+ await expect(save('item',{...m,predecessor_id:id(999)})).rejects.toThrow(/foreign key/);
+ const draft=c.seasons.find((s:any)=>s.status==='draft');
+ const other=await save('item',{season_id:draft.id,title:'Other season',kind:'work',status:'not_started',start_date:'2028-01-01',end_date:'2028-01-02'});
+ await expect(save('item',{...m,predecessor_id:other})).rejects.toThrow(/foreign key/);
+ await expect(db.query('delete from planning_items where id=$1',[item])).rejects.toThrow(/permission denied/);
+ await db.exec('reset role');await expect(db.query('delete from planning_items where id=$1',[item])).rejects.toThrow(/foreign key/);
+ await as(1);await save('item',{...m,predecessor_id:null});
+ c=await context(season);m=c.items.find((i:any)=>i.id===m.id);expect(m.predecessor_id).toBeNull();expect(c.items.some((i:any)=>i.id===item)).toBe(true);
+ await save('item',{...m,predecessor_id:item});
+});
+test('all intended positions authorize through trusted current assignment only',async()=>{
+ const keys=['program_manager','product_technical_manager','finance_lead','software_lead','business_lead','cad_lead','fabrication_lead','strategy_lead','power_lead','communications_lead','operations_lead'];
+ for(const key of keys){
+  await db.exec(`reset role;insert into team_positions values('${key}',true) on conflict do nothing;update team_member_positions set position_key='${key}' where user_id='${id(2)}';`);
+  await as(2);expect((await context()).can_manage).toBe(true);
+ }
+ await db.exec(`reset role;update profiles set active=false where id='${id(2)}'`);await as(2);
+ await expect(save('board',{name:'Inactive',kind:'area'})).rejects.toThrow(/Active team/);
+ await db.exec(`reset role;update profiles set active=true where id='${id(2)}';update team_positions set active=false where key='operations_lead';`);await as(2);
+ await expect(save('board',{name:'Archived authority',kind:'area'})).rejects.toThrow(/leadership/);
+ await db.exec(`reset role;update team_positions set active=true where key='operations_lead';update team_member_positions set revoked_at=now() where user_id='${id(2)}';`);await as(2);
+ await expect(save('board',{name:'Revoked authority',kind:'area'})).rejects.toThrow(/leadership/);
+ await as(4);for(const entity of ['season','board','group','item'])await expect(save(entity,{name:'Spoofed',title:'Spoofed',role:'mentor',can_manage:true,position_key:'program_manager'})).rejects.toThrow(/leadership/);
+ await db.exec(`reset role;update team_member_positions set revoked_at=null,position_key='software_lead' where user_id='${id(2)}';`);
+});
+test('explicit grants deny direct table writes/deletes/truncate and private helpers',async()=>{
+ for(const role of ['anon','authenticated']){
+  await db.exec(`reset role;set role ${role}`);
+  for(const table of ['seasons','groups','boards','items','tasks','steps','comments']){
+   await expect(db.exec(`select * from public.planning_${table}`)).rejects.toThrow(/permission denied/);
+   await expect(db.exec(`delete from public.planning_${table}`)).rejects.toThrow(/permission denied/);
+   await expect(db.exec(`truncate public.planning_${table} cascade`)).rejects.toThrow(/permission denied/);
+  }
+  await expect(db.exec('select planning_private.manager()')).rejects.toThrow(/permission denied/);
+  await expect(db.exec('select * from planning_private.history')).rejects.toThrow(/permission denied/);
+  if(role==='anon'){await expect(save('season',{name:'Denied'})).rejects.toThrow(/permission denied/);await expect(detail(task)).rejects.toThrow(/permission denied/);}
+ }
+ await as(3);await expect(save('delete_task',{id:task})).rejects.toThrow(/Unknown/);
+ const d=await detail(task);expect(d.comments).toHaveLength(1);expect(d.steps).toHaveLength(1);
+ await as(1);const checks=(await db.query<any>(`select count(*)::integer n from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.relkind='r' and c.relrowsecurity and ((n.nspname='public' and c.relname like 'planning_%') or n.nspname='planning_private')`)).rows[0];expect(checks.n).toBe(8);
 });
 test('board archival preserves records, season archive is read only, functional boards persist',async()=>{
  await as(1);let c=await context();let b=c.boards.find((b:any)=>b.id===board);await save('board',{...b,active:false});

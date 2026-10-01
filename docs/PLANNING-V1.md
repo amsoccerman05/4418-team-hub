@@ -24,7 +24,7 @@ Mutations serialize on a Planning-only advisory lock and enforce row versions. S
 
 ## Review and manual rollout (not performed)
 
-1. Review `supabase/migrations/202610020001_planning_v1.sql`. Verify production has the existing `profiles` fields (`id`, `display_name`, `role`, `active`), `areas` (`id`, `name`, `active`), `team_positions` (`key`, `active`), `team_member_positions` (`user_id`, `position_key`, `revoked_at`) and `auth.uid()` with their reviewed types. Confirm there are no conflicting Planning objects. This pass did not inspect or modify production.
+1. Review `supabase/migrations/202610020001_planning_v1.sql`. Verify production has the existing `profiles` fields (`id`, `display_name`, `role`, `active`), `areas` (`id`, `name`, `active`), `team_positions` (`key`, `active`), `team_member_positions` (`user_id`, `position_key`, `revoked_at`) and `auth.uid()` with their reviewed types. Confirm there are no conflicting Planning objects. The pre-deployment review below verified these assumptions read-only; rerun `docs/PLANNING-V1-PREFLIGHT.sql` immediately before application.
 2. Take/verify the standard production backup. Apply only this migration as its single transaction after explicit approval. It creates only Planning objects and has no backfill.
 3. Check Mentor, assigned leadership, ordinary-member, inactive/revoked-position and signed-out access. Keep this read-only; do not create a production season as a deployment smoke test.
 4. Deploy only Team Hub after backend verification and deployment approval. Existing Suite Auth/handoff, routes and other workspaces remain unchanged.
@@ -39,3 +39,27 @@ One primary owner per task and one predecessor per plan item. Gantt drag/resize,
 ## Focused validation
 
 Planning-only PGlite database tests cover season/position permissions, activation uniqueness, stale writes, groups/items/milestones/dependencies, both board types, tasks/assignments/status, comments/checklists/audit, draft privacy, reference safety, archive/reactivation, persistence across seasons and atomic rollback when auditing fails. Browser fixtures cover 390px/1440px layouts, Gantt editors, status fallback, task editing/reassignment, checklist/comments, My Work, normal-member controls, desktop drag, draft setup and sign-out privacy. Hub TypeScript/build is required. No unrelated app suites are run.
+
+
+## Pre-deployment review of 6a4cf78 — 2026-10-01
+
+**Result:** no implementation/migration corrections were required. Only focused regression tests and review documentation were added. No schema, application, Auth, notification or production data changes were made during review.
+
+Production catalog verification used the existing Supabase management connection with `read_only: true`. PostgreSQL 17.6 has all referenced UUID/text/boolean/timestamptz columns, referenced primary keys, the expected `auth.uid() returns uuid`, and all 11 designated position keys (active). No Planning schema, relation or function conflicts exist. Existing profile/area read policies already permit active members to read the limited names/IDs projected by Planning. Planning adds no grants to existing tables or functions. Broad Supabase default privileges are accounted for by explicit revokes, tested locally including SELECT/DELETE/TRUNCATE and private helper/history denial. RLS is enabled on all eight Planning tables.
+
+Scheduling uses SQL `date`, ISO calendar-date strings in forms, and UTC timeline arithmetic/labels. Date round trips pass in Los Angeles/Auckland, including a DST boundary; reversed ranges and multi-day milestones are rejected. Cycles, self/missing/cross-season predecessors are rejected. Clearing a dependency retains both items; direct client deletion is denied, and foreign keys reject privileged deletion of a referenced predecessor. V1 exposes no item/task deletion API. Dependencies do not enforce automatic rescheduling.
+
+Mutations use the Planning advisory lock plus row versions. Local tests verify stale-save rejection, atomic rollback on audit failure, server-authored comments, draft/archived privacy, all designated positions, current revocation/archival/inactive-account checks and denial of browser-supplied authority. Unique-index enforcement protects the single active season. These are local functional/security tests, not a production concurrency load test.
+
+**Validation:** 19 focused Planning tests passed (12 database/security, 7 UI, including the original UI checks at 390px/1440px and two timezone checks); Hub TypeScript and production build passed. Auth bundle fingerprints are unchanged. Source review confirms the only pre-existing Hub files touched by implementation are the Planning sidebar entry and guarded route/context in `HubNav.tsx`/`main.tsx`; Attendance and Team Management implementations and Suite Auth are unchanged. The authenticated App guard encloses Planning; the existing Planning sign-out privacy test passes.
+
+**Release readiness:** ready for an approved rollout, subject to a fresh verified backup and an unchanged preflight immediately before application. Apply only `202610020001_planning_v1.sql` once in its BEGIN/COMMIT transaction, verify the three RPC grants, RLS, manager/member context and absence of unrelated changes, then deploy only the reviewed Hub branch after approval. Create a draft deliberately after deployment; activation remains a separate action. Nothing has been applied, pushed or deployed in this review.
+
+
+## Approved production backend rollout — 2026-10-01
+
+Fresh native `pg_dump --format=custom --role=postgres` backup verified at `/Users/aiden/Documents/IMPULSE-backups/2026-10-01-164244Z-planning-v1-pre-migration/production.dump` (1,024,946 bytes; checksum, contents and recovery notes alongside). Full archive decoding passed; Hub/Attendance/Team Management schema/data/functions/policies/grants were verified present. No isolated restore was performed.
+
+The final preflight exactly matched the reviewed production snapshot. Applied only `202610020001_planning_v1.sql`, unchanged from `6a4cf78`, once in its transaction. Backend verification used authenticated roles and existing identities with temporary fixtures inside an explicit rolled-back transaction. Mentor/member context, assigned task updates/checklists/comments, active designated leadership, revoked/inactive rejection, unauthorized administration/reassignment rejection, all eight RLS tables and direct access restrictions passed. Postcheck confirmed zero rows in every Planning table/history. Existing Hub/Attendance/Team Management records, functions and policies matched pre-migration fingerprints exactly.
+
+No real season was created or activated. Frontend rollout proceeds through the existing Hub Pages workflow. Earlier local-only notes above record the implementation/review stages, not the current backend state.

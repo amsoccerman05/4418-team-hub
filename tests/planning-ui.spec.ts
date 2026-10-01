@@ -34,3 +34,14 @@ test('draft season creation, board types and signed-out privacy',async({page})=>
  const {c,calls}=await setup(page);c.seasons=[];c.season_id=null;await page.goto('/#planning');await page.getByRole('button',{name:'Create planning season'}).click();const d=page.getByRole('dialog');await d.getByLabel('Name',{exact:true}).fill('2028 FRC Season');await expect(d.getByLabel('Season status')).toHaveValue('draft');await d.getByRole('button',{name:'Save',exact:true}).click();await expect(d).toHaveCount(0);expect(calls[0].p.status).toBe('draft');
  await page.evaluate(()=>{localStorage.removeItem('4418-team-hub-auth');const ch=new BroadcastChannel('4418-team-hub-auth');ch.postMessage({event:'SIGNED_OUT',session:null});ch.close();});await expect(page.getByRole('heading',{name:'Team sign in',exact:true})).toBeVisible();await expect(page.locator('.planning')).toHaveCount(0);
 });
+
+for(const timezoneId of ['America/Los_Angeles','Pacific/Auckland'])test(`Planning calendar-date round trip in ${timezoneId}`,async({browser})=>{
+ const context=await browser.newContext({timezoneId});const page=await context.newPage();const {c,calls}=await setup(page);
+ Object.assign(c.items[0],{start_date:'2027-03-13',end_date:'2027-03-15'});
+ await page.goto('http://127.0.0.1:4422/#planning');
+ await expect(page.getByRole('button',{name:'Edit Intake CAD',exact:true})).toHaveAttribute('title',/2027-03-13 – 2027-03-15/);
+ await page.getByRole('button',{name:'Edit Intake CAD',exact:true}).click();const d=page.getByRole('dialog');
+ await expect(d.getByLabel('Start date',{exact:true})).toHaveValue('2027-03-13');await expect(d.getByLabel('End date',{exact:true})).toHaveValue('2027-03-15');
+ await d.getByRole('button',{name:'Save',exact:true}).click();await expect(d).toHaveCount(0);
+ expect(calls[0].p.start_date).toBe('2027-03-13');expect(calls[0].p.end_date).toBe('2027-03-15');await context.close();
+});
