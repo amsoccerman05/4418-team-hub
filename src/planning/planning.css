@@ -132,3 +132,18 @@
 .planning-gantt-group-lane{position:absolute;background:var(--suite-secondary);pointer-events:none;opacity:.5}
 .planning-gantt-label{padding-left:16px}.planning-gantt-group-lane{z-index:0}.planning-table-scroll select,.planning-table-scroll input{min-width:120px}
 @media(max-width:600px){.planning-plan-group{padding:12px}.planning-quick-add button{min-height:44px}}
+
+/* V1.2: compact direct edits, with overflow contained inside tables/timelines. */
+.planning-inline{display:block;margin-top:4px}
+.planning-inline>button{font-size:.8rem;text-align:left}
+.planning-inline form{display:flex;flex-wrap:wrap;gap:6px;padding:8px;background:var(--suite-surface,#fff);border:1px solid var(--suite-border,#dce2ea);border-radius:8px;min-width:200px}
+.planning-inline label{display:grid;gap:4px;min-width:120px;flex:1}
+.planning-inline input{min-width:0;width:100%;box-sizing:border-box}
+.planning-dependency{display:block;margin:5px 0;color:var(--suite-muted,#536174);font-weight:600}
+.planning-dependencies{border-top:1px solid var(--suite-border,#dce2ea);padding-top:12px}
+.planning-dependencies form{display:flex;align-items:end;gap:8px;flex-wrap:wrap}
+.planning-dependencies form label{flex:1;min-width:180px;display:grid;gap:4px}
+.planning-unscheduled{font-size:.8rem;color:var(--suite-muted,#536174)}
+.planning-table-scroll td>select{display:block;margin-bottom:4px;max-width:220px;min-width:110px}
+.planning-inline>button{white-space:nowrap}
+.planning-table-scroll td{vertical-align:middle}

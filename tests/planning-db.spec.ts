@@ -24,6 +24,7 @@ test.beforeAll(async()=>{
  const existing=()=>db.query(`select c.oid,c.relname,c.relacl::text,c.relrowsecurity from pg_class c where c.oid in ('profiles'::regclass,'areas'::regclass,'team_positions'::regclass,'team_member_positions'::regclass) order by c.oid`);
  const before=await existing();
  await db.exec(readFileSync('supabase/migrations/202610020001_planning_v1.sql','utf8'));
+ await db.exec(readFileSync('supabase/migrations/202610030001_planning_task_dependencies.sql','utf8'));
  expect((await existing()).rows).toEqual(before.rows);await as(1);
 });
 test.afterAll(()=>db.close());
@@ -135,9 +136,10 @@ test('all intended positions authorize through trusted current assignment only',
 test('explicit grants deny direct table writes/deletes/truncate and private helpers',async()=>{
  for(const role of ['anon','authenticated']){
   await db.exec(`reset role;set role ${role}`);
-  for(const table of ['seasons','groups','boards','items','tasks','steps','comments']){
+  for(const table of ['seasons','groups','boards','items','tasks','steps','comments','task_dependencies']){
    await expect(db.exec(`select * from public.planning_${table}`)).rejects.toThrow(/permission denied/);
    await expect(db.exec(`delete from public.planning_${table}`)).rejects.toThrow(/permission denied/);
+   if(table==='task_dependencies'){await expect(db.exec('insert into public.planning_task_dependencies default values')).rejects.toThrow(/permission denied/);await expect(db.exec('update public.planning_task_dependencies set predecessor_task_id=successor_task_id')).rejects.toThrow(/permission denied/);}
    await expect(db.exec(`truncate public.planning_${table} cascade`)).rejects.toThrow(/permission denied/);
   }
   await expect(db.exec('select planning_private.manager()')).rejects.toThrow(/permission denied/);
@@ -146,7 +148,7 @@ test('explicit grants deny direct table writes/deletes/truncate and private help
  }
  await as(3);await expect(save('delete_task',{id:task})).rejects.toThrow(/Unknown/);
  const d=await detail(task);expect(d.comments).toHaveLength(1);expect(d.steps).toHaveLength(1);
- await as(1);const checks=(await db.query<any>(`select count(*)::integer n from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.relkind='r' and c.relrowsecurity and ((n.nspname='public' and c.relname like 'planning_%') or n.nspname='planning_private')`)).rows[0];expect(checks.n).toBe(8);
+ await as(1);const checks=(await db.query<any>(`select count(*)::integer n from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.relkind='r' and c.relrowsecurity and ((n.nspname='public' and c.relname like 'planning_%') or n.nspname='planning_private')`)).rows[0];expect(checks.n).toBe(9);
 });
 test('V1.1 quick payloads keep canonical statuses, audit, authorization and version checks',async()=>{
  await as(1);await db.exec('begin');try{
@@ -159,6 +161,64 @@ test('V1.1 quick payloads keep canonical statuses, audit, authorization and vers
   }
  }finally{await db.exec('rollback');}
 });
+async function dependency(action:string,predecessor:string|null=null,successor:string|null=null,dependency_id:string|null=null){return (await db.query<any>('select planning_dependency_save($1,$2,$3,$4) id',[action,predecessor,successor,dependency_id])).rows[0].id;}
+test('V1.2 dependencies: graph integrity, existing Task identity, audit and rollback',async()=>{
+ await as(1);await db.exec('begin');
+ async function rejects(fn:()=>Promise<unknown>,pattern:RegExp){await db.exec('savepoint attempt');await expect(fn()).rejects.toThrow(pattern);await db.exec('rollback to attempt');}
+ try{
+  const sid=await save('season',{name:'Dependency fixture',status:'draft'});
+  const bid=await save('board',{season_id:sid,name:'Dependency board',kind:'project'});
+  const other=await save('board',{season_id:sid,name:'Other',kind:'project'});
+  const tids=[];for(const name of ['A','B','C','D'])tids.push(await save('task',{board_id:bid,title:name,status:'todo',priority:'normal',owner_id:id(3),start_date:'2027-03-13',due_date:'2027-03-15'}));
+  const outside=await save('task',{board_id:other,title:'Outside',status:'todo',priority:'normal'});
+  const before=(await context(sid)).tasks;
+  const ab=await dependency('add',tids[0],tids[1]);await dependency('add',tids[1],tids[2]);await dependency('add',tids[3],tids[2]);
+  expect((await context(sid)).dependencies).toHaveLength(3);expect((await context(sid)).tasks).toEqual(before);
+  const auditBefore=(await detail(tids[1])).history;
+  await rejects(()=>dependency('add',tids[0],tids[0]),/itself/);
+  await rejects(()=>dependency('add',tids[0],tids[1]),/already exists/);
+  await rejects(()=>dependency('add',tids[1],tids[0]),/cycle/);
+  await rejects(()=>dependency('add',tids[2],tids[0]),/cycle/);
+  await db.exec('savepoint long_cycle');const branch=(await context(sid)).dependencies.find((d:any)=>d.predecessor_task_id===tids[3]);await dependency('remove',null,null,branch.id);await dependency('add',tids[2],tids[3]);await rejects(()=>dependency('add',tids[3],tids[0]),/cycle/);await db.exec('rollback to long_cycle');
+  await rejects(()=>dependency('add',outside,tids[0]),/one Board/);
+  await rejects(()=>dependency('add',id(999),tids[0]),/unavailable/);
+  await rejects(()=>dependency('add',tids[0],id(999)),/unavailable/);
+  expect((await detail(tids[1])).history).toEqual(auditBefore);
+  const h=(await detail(tids[1])).history.find((h:any)=>h.entity==='dependency');expect(h.actor_id).toBe(id(1));expect(h.after_data.predecessor_task_id).toBe(tids[0]);expect(h.after_data.successor_title).toBe('B');
+  await dependency('remove',null,null,ab);expect((await context(sid)).dependencies).toHaveLength(2);expect((await context(sid)).tasks).toEqual(before);
+  const removed=(await detail(tids[1])).history.find((h:any)=>h.action==='removed');expect(removed.before_data.id).toBe(ab);expect(removed.after_data).toBeNull();
+  await rejects(()=>dependency('remove',null,null,ab),/changed/);
+  await db.exec("reset role;create function planning_private.dependency_fail_audit() returns trigger language plpgsql as $$begin raise exception 'dependency audit unavailable';end$$;create trigger dependency_fail_audit before insert on planning_private.history for each row execute function planning_private.dependency_fail_audit();");await as(1);
+  await rejects(()=>dependency('add',tids[0],tids[1]),/audit unavailable/);expect((await context(sid)).dependencies).toHaveLength(2);
+  const remain=(await context(sid)).dependencies[0];await rejects(()=>dependency('remove',null,null,remain.id),/audit unavailable/);expect((await context(sid)).dependencies).toHaveLength(2);
+  await db.exec('reset role;drop trigger dependency_fail_audit on planning_private.history');await as(1);
+  await db.exec('reset role');await rejects(()=>db.query('delete from planning_tasks where id=$1',[tids[1]]),/foreign key/);await as(1);
+  let c=await context(sid);await save('board',{...c.boards.find((b:any)=>b.id===bid),active:false});
+  await rejects(()=>dependency('add',tids[0],tids[1]),/archived/);expect((await context(sid)).dependencies).toHaveLength(2);
+ }finally{await db.exec('rollback');}
+});
+test('V1.2 dependency permissions, archived privacy and functional Board persistence',async()=>{
+ await as(1);await db.exec('begin');
+ async function denies(fn:()=>Promise<unknown>,pattern=/leadership|permission denied/){await db.exec('savepoint denied');await expect(fn()).rejects.toThrow(pattern);await db.exec('rollback to denied');}
+ try{
+  const activeSeason=(await context()).seasons.find((s:any)=>s.status==='active')?.id||await save('season',{name:'Dependency active season',status:'active'});
+  const bid=await save('board',{kind:'area',name:'Persistent dependencies',area_id:id(10)});
+  const a=await save('task',{board_id:bid,title:'First',status:'todo',priority:'normal',owner_id:id(3)}),z=await save('task',{board_id:bid,title:'Next',status:'todo',priority:'normal',owner_id:id(3)});
+  await as(2);const dep=await dependency('add',a,z);expect((await context()).dependencies.some((d:any)=>d.id===dep)).toBe(true);
+  await as(3);expect((await context()).dependencies.some((d:any)=>d.id===dep)).toBe(true);await denies(()=>dependency('remove',null,null,dep));await denies(()=>dependency('add',z,a));
+  let t=(await context()).tasks.find((t:any)=>t.id===z);await save('task',{...t,status:'done'});expect((await context()).tasks.find((t:any)=>t.id===z).status).toBe('done');
+  await as(4);await denies(()=>dependency('add',z,a));await as(5);await denies(()=>dependency('remove',null,null,dep));
+  for(const change of ["update team_positions set active=false where key='software_lead'","update team_member_positions set revoked_at=now() where user_id='"+id(2)+"'","update profiles set active=false where id='"+id(2)+"'"]){
+   await db.exec('reset role;savepoint assignment');await db.exec(change);await as(2);await denies(()=>dependency('remove',null,null,dep));await db.exec('rollback to assignment');
+  }
+  await db.exec('reset role;set role anon');await denies(()=>dependency('add',a,z));
+  await as(1);let c=await context();await save('board',{...c.boards.find((b:any)=>b.id===bid),active:false});await as(3);expect((await context()).dependencies.some((d:any)=>d.id===dep)).toBe(false);
+  await as(1);c=await context();await save('board',{...c.boards.find((b:any)=>b.id===bid),active:true});
+  await save('season',{...c.seasons.find((s:any)=>s.id===activeSeason),status:'archived'});await save('season',{name:'Next dependency season',status:'active'});
+  expect((await context()).dependencies.some((d:any)=>d.id===dep)).toBe(true);await dependency('remove',null,null,dep);
+ }finally{await db.exec('rollback');}
+});
+
 test('board archival preserves records, season archive is read only, functional boards persist',async()=>{
  await as(1);let c=await context();let b=c.boards.find((b:any)=>b.id===board);await save('board',{...b,active:false});
  await as(3);expect((await context()).tasks).toHaveLength(0);await expect(detail(task)).rejects.toThrow(/unavailable/);

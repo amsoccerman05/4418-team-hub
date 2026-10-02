@@ -1,0 +1,27 @@
+-- Read-only production catalog review. Compare with the reviewed V1 baseline; stop on differences.
+begin read only;
+select jsonb_build_object(
+ 'server',current_setting('server_version'),'isolation',current_setting('default_transaction_isolation'),
+ 'columns',(select jsonb_agg(jsonb_build_object('schema',n.nspname,'table',c.relname,'column',a.attname,'type',format_type(a.atttypid,a.atttypmod),'notnull',a.attnotnull,'default',pg_get_expr(d.adbin,d.adrelid)) order by n.nspname,c.relname,a.attnum) from pg_class c join pg_namespace n on n.oid=c.relnamespace join pg_attribute a on a.attrelid=c.oid and a.attnum>0 and not a.attisdropped left join pg_attrdef d on d.adrelid=c.oid and d.adnum=a.attnum where (n.nspname='public' and (c.relname like 'planning_%' or c.relname in ('profiles','areas','team_positions','team_member_positions'))) or (n.nspname='planning_private' and c.relname='history')),
+ 'constraints',(select jsonb_agg(jsonb_build_object('table',conrelid::regclass::text,'name',conname,'definition',pg_get_constraintdef(oid)) order by conrelid,conname) from pg_constraint where conrelid in(select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where (n.nspname='public' and c.relname like 'planning_%') or n.nspname='planning_private')),
+ 'tables',(select jsonb_agg(jsonb_build_object('schema',n.nspname,'name',c.relname,'rls',c.relrowsecurity,'acl',c.relacl::text) order by n.nspname,c.relname) from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.relkind='r' and ((n.nspname='public' and c.relname like 'planning_%') or n.nspname='planning_private')),
+ 'functions',(select jsonb_agg(jsonb_build_object('schema',n.nspname,'name',p.proname,'args',pg_get_function_identity_arguments(p.oid),'result',pg_get_function_result(p.oid),'definer',p.prosecdef,'volatility',p.provolatile,'config',p.proconfig,'acl',p.proacl::text,'body',p.prosrc) order by n.nspname,p.proname) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='planning_private' or(n.nspname='public' and p.proname like 'planning_%') or(n.nspname='auth' and p.proname='uid')),
+ 'positions',(select jsonb_agg(jsonb_build_object('key',key,'active',active) order by key) from public.team_positions),
+ 'policies',(select coalesce(jsonb_agg(to_jsonb(p)),'[]') from pg_policies p where schemaname='planning_private' or(tablename like 'planning_%' and schemaname='public')),
+ 'triggers',(select coalesce(jsonb_agg(pg_get_triggerdef(t.oid)),'[]') from pg_trigger t where not t.tgisinternal and t.tgrelid in(select c.oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='planning_private' or(n.nspname='public' and c.relname like 'planning_%'))),
+ 'conflicts',jsonb_build_object('table',to_regclass('public.planning_task_dependencies'),'rpc',to_regprocedure('public.planning_dependency_save(text,uuid,uuid,uuid)'),'index_board',to_regclass('public.planning_dependencies_board'),'index_successor',to_regclass('public.planning_dependencies_successor'),'constraint',exists(select 1 from pg_constraint where conname='planning_task_board_identity' and conrelid='public.planning_tasks'::regclass)),
+ 'role_settings',(select coalesce(jsonb_agg(jsonb_build_object('role',r.rolname,'settings',s.setconfig)),'[]') from pg_db_role_setting s left join pg_roles r on r.oid=s.setrole where r.rolname in('authenticator','authenticated','anon','postgres') or s.setrole=0),
+ 'migration_table',to_regclass('supabase_migrations.schema_migrations'),
+ 'counts',jsonb_build_object('seasons',(select count(*) from public.planning_seasons),'boards',(select count(*) from public.planning_boards),'tasks',(select count(*) from public.planning_tasks),'history',(select count(*) from planning_private.history))
+) as preflight;
+commit;
+
+-- Effective privileges, default grants, and indexes.
+begin read only;
+select jsonb_build_object(
+ 'indexes',(select jsonb_agg(jsonb_build_object('name',indexname,'definition',indexdef) order by indexname) from pg_indexes where schemaname='public' and tablename like 'planning_%'),
+ 'client_access',(select jsonb_agg(jsonb_build_object('role',r.rolname,'table',c.relname,'select',has_table_privilege(r.oid,c.oid,'SELECT'),'insert',has_table_privilege(r.oid,c.oid,'INSERT'),'update',has_table_privilege(r.oid,c.oid,'UPDATE'),'delete',has_table_privilege(r.oid,c.oid,'DELETE'),'truncate',has_table_privilege(r.oid,c.oid,'TRUNCATE')) order by r.rolname,c.relname) from pg_roles r cross join pg_class c join pg_namespace n on n.oid=c.relnamespace where r.rolname in ('anon','authenticated') and c.relkind='r' and ((n.nspname='public' and c.relname like 'planning_%') or n.nspname='planning_private')),
+ 'function_access',(select jsonb_agg(jsonb_build_object('role',r.rolname,'function',p.proname,'execute',has_function_privilege(r.oid,p.oid,'EXECUTE')) order by r.rolname,p.proname) from pg_roles r cross join pg_proc p join pg_namespace n on n.oid=p.pronamespace where r.rolname in('anon','authenticated') and(n.nspname='planning_private' or(n.nspname='public' and p.proname like 'planning_%'))),
+ 'defaults',(select jsonb_agg(jsonb_build_object('owner',pg_get_userbyid(defaclrole),'schema',n.nspname,'type',defaclobjtype,'acl',defaclacl::text)) from pg_default_acl d left join pg_namespace n on n.oid=d.defaclnamespace where defaclrole=(select oid from pg_roles where rolname='postgres') and (n.nspname='public' or defaclnamespace=0))
+) as grants;
+commit;

@@ -1,0 +1,12 @@
+import {useRef,useState} from 'react';
+export type Commit=(patch:Record<string,unknown>)=>Promise<boolean|undefined>;
+export function InlineTitle({title,disabled,onSave}:{title:string;disabled:boolean;onSave:Commit}){
+ const [open,setOpen]=useState(false),[value,setValue]=useState(title);const trigger=useRef<HTMLButtonElement>(null);
+ function close(){setOpen(false);setValue(title);requestAnimationFrame(()=>trigger.current?.focus());}
+ return <div className="planning-inline"><button ref={trigger} aria-label={`Rename ${title}`} disabled={disabled} onClick={()=>{setValue(title);setOpen(true);}}>Rename</button>{open&&<form onSubmit={async e=>{e.preventDefault();if(value.trim()&&await onSave({title:value.trim()}))close();else setValue(title);}} onKeyDown={e=>{if(e.key==='Escape'){e.preventDefault();close();}}}><label>Title<input autoFocus required maxLength={200} disabled={disabled} value={value} onChange={e=>setValue(e.target.value)}/></label><button disabled={disabled||!value.trim()}>Save title</button><button type="button" onClick={close}>Cancel</button></form>}</div>;
+}
+export function InlineTimeline({title,start,end,milestone=false,required=false,disabled,onSave}:{title:string;start:string|null;end:string|null;milestone?:boolean;required?:boolean;disabled:boolean;onSave:(start:string|null,end:string|null)=>Promise<boolean|undefined>}){
+ const [open,setOpen]=useState(false),[a,setA]=useState(start||''),[z,setZ]=useState(end||'');const trigger=useRef<HTMLButtonElement>(null);
+ function close(){setOpen(false);requestAnimationFrame(()=>trigger.current?.focus());}
+ return <div className="planning-inline"><button ref={trigger} aria-label={`Timeline for ${title}`} disabled={disabled} onClick={()=>{setA(start||'');setZ(end||'');setOpen(!open);}}>{start||'No start'} → {end||'No end'}</button>{open&&<form onSubmit={async e=>{e.preventDefault();if(await onSave(a||null,milestone?a||null:z||null))close();else{setA(start||'');setZ(end||'');}}} onKeyDown={e=>{if(e.key==='Escape'){e.preventDefault();close();}}}><label>Start<input autoFocus type="date" required={required} disabled={disabled} value={a} onChange={e=>setA(e.target.value)}/></label>{!milestone&&<label>End<input type="date" required={required} min={a||undefined} disabled={disabled} value={z} onChange={e=>setZ(e.target.value)}/></label>}<button disabled={disabled}>Save timeline</button><button type="button" onClick={close}>Cancel</button></form>}</div>;
+}

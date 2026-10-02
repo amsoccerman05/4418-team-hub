@@ -7,7 +7,9 @@ export type Item={id:string;season_id:string;title:string;description:string;kin
 export type Task={id:string;board_id:string;title:string;description:string;status:string;priority:string;owner_id:string|null;area_id:string|null;start_date:string|null;due_date:string|null;blocked_reason:string;version:number};
 export type Step={id:string;task_id:string;text:string;done:boolean;display_order:number;version:number};
 export type Detail={steps:Step[];comments:{id:string;text:string;author_id:string;created_at:string}[];history:{id:number;entity:string;action:string;actor_id:string;created_at:string;before_data:Record<string,unknown>|null;after_data:Record<string,unknown>}[]};
-export type Context={user_id:string;can_manage:boolean;season_id:string|null;seasons:Season[];members:Named[];areas:Named[];groups:Group[];items:Item[];boards:Board[];tasks:Task[]};
+export type Dependency={id:string;board_id:string;predecessor_task_id:string;successor_task_id:string};
+export const changeDependency=(action:'add'|'remove',p:{predecessor?:string;successor?:string;dependency_id?:string})=>rpc<string>('planning_dependency_save',{action,...p});
+export type Context={user_id:string;can_manage:boolean;season_id:string|null;seasons:Season[];members:Named[];areas:Named[];groups:Group[];items:Item[];boards:Board[];tasks:Task[];dependencies?:Dependency[]};
 async function rpc<T>(name:string,args:Record<string,unknown>){if(!supabase)throw new Error('Team connection unavailable.');const {data,error}=await supabase.rpc(name,args).abortSignal(AbortSignal.timeout(15000));if(error)throw new Error(error.message.includes('planning_one_active')?'Another planning season is active. Archive it before activating this one.':error.message);return data as T;}
 export const loadPlanning=(selected_season:string|null=null)=>rpc<Context>('planning_context',{selected_season});
 export const savePlanning=(entity:string,p:Record<string,unknown>)=>rpc<string>('planning_save',{entity,p});
