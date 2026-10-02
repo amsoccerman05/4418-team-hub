@@ -147,3 +147,31 @@
 .planning-table-scroll td>select{display:block;margin-bottom:4px;max-width:220px;min-width:110px}
 .planning-inline>button{white-space:nowrap}
 .planning-table-scroll td{vertical-align:middle}
+
+/* Direct manipulation: retain details, keep everyday edits at the record. */
+.planning-inline-title{display:flex;align-items:center;gap:4px;margin:0}
+.planning-inline-title>button:first-child{font-weight:600;white-space:normal;text-align:left;flex:1}
+.planning-inline-title>button[hidden]{display:none}
+.planning-inline-title form{min-width:200px;margin:0}
+.planning button.planning-details-button{flex:none;min-width:40px;padding:4px;color:var(--suite-muted)}
+.planning-context-actions{position:relative;flex:none}
+.planning-context-actions>summary{list-style:none;cursor:pointer;min-height:40px;min-width:40px;display:flex;align-items:center;justify-content:center;border-radius:6px}
+.planning-context-actions>summary::-webkit-details-marker{display:none}
+.planning-context-actions[open]>summary{background:var(--suite-secondary)}
+.planning-context-actions>div{position:absolute;right:0;top:100%;z-index:6;display:grid;min-width:160px;padding:6px;background:var(--suite-surface);border:1px solid var(--suite-border);border-radius:8px;box-shadow:0 4px 14px #0002}
+.planning-context-actions>div>button{text-align:left;white-space:nowrap}
+.planning-plan-group>details>.planning-context-actions{float:right;margin-top:-36px}
+.planning-plan-group>details>summary{padding-right:46px}
+.planning .planning-board-card{position:relative;padding:0;min-height:0;gap:0}
+.planning button.planning-board-open{display:grid;width:100%;gap:6px;padding:14px;text-align:left;border:0;background:transparent;border-radius:10px}
+.planning-board-open>strong{font-size:17px;padding-right:36px}
+.planning-board-open .planning-eyebrow{padding-right:36px}
+.planning-board-open .planning-board-progress{margin:0;font-size:12px}
+.planning-board-open progress{margin:0;height:5px}
+.planning-board-card>.planning-context-actions{position:absolute;right:6px;top:6px}
+.planning-board-description{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.planning-toolbar [role=group]{gap:0;padding:2px}
+.planning-toolbar [role=group]>button{padding:6px 10px;border-color:transparent}
+.planning-table-scroll td{padding:8px}
+.planning-quick-add form{display:flex;flex-wrap:wrap;align-items:end;gap:6px;max-width:100%}
+.planning-quick-add form>label{flex:1;min-width:150px}.planning-quick-add form>.planning-toolbar{margin:0}.planning-quick-add form>small,.planning-quick-add form>[role=alert]{width:100%}
