@@ -1,3 +1,4 @@
+import {NotificationProvider,NotificationBell,Notifications} from './notifications/Notifications';
 import { HubNav } from './HubNav';
 import { SuiteHeader } from './SuiteHeader';
 import {useHubAuth} from './HubAuth';
@@ -18,20 +19,22 @@ function App() {
     return () => window.removeEventListener("hashchange", update);
   }, []);
   const planning = route === '#planning' || route.startsWith('#planning/');
+  const notifications=route==='#notifications'||route.startsWith('#notifications/');
   const management = route === "#team-management";
   const announcements = route === "#announcements";
   const workspace = route === "#attendance" || route.startsWith("#attendance/");
   if(!auth.signed)return auth.panel;
   return (
-    <>
+    <NotificationProvider key={auth.userId}>
       <a className="skip-link" href="#main">
         Skip to content
       </a>
-      <SuiteHeader app={planning?'Planning':'Team Hub'} context={planning?({'plan':'Season Plan','boards':'Boards','my-work':'My Work'}[route.split('/')[1]]||'Dashboard'):management?'Team Management':announcements?'Announcements':workspace?'Attendance':'My 4418'} name={auth.name} onSignOut={auth.signOut} busy={auth.busy}/>
+      <SuiteHeader app={planning?'Planning':'Team Hub'} context={notifications?'Notifications':planning?({'plan':'Season Plan','boards':'Boards','my-work':'My Work'}[route.split('/')[1]]||'Dashboard'):management?'Team Management':announcements?'Announcements':workspace?'Attendance':'My 4418'} notifications={!planning?<NotificationBell/>:undefined} name={auth.name} onSignOut={auth.signOut} busy={auth.busy}/>
 
       <div className={`hub-shell${planning?' planning-shell':''}`}>{planning?<PlanningNav route={route}/>:<HubNav route={route}/>}<main id="main">
         {auth.error&&<p role="alert">{auth.error}</p>}
-        {auth.signed && !workspace && !management && !planning && <My4418 management={announcements} />}
+        {auth.signed && !workspace && !management && !planning && !notifications && <My4418 management={announcements} />}
+        {notifications&&<Notifications/>}
         {auth.signed && workspace && <AttendanceHub
           workspace={workspace}
           tab={route.split("/")[1] || ""}
@@ -47,7 +50,7 @@ function App() {
           <span>Your team, in one place.</span>
         </footer>
       </main></div>
-    </>
+    </NotificationProvider>
   );
 }
 createRoot(document.getElementById("root")!).render(
