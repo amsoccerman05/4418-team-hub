@@ -3,7 +3,7 @@ import {localDate,workGroup,taskStatuses,type Context,type Season,type Task} fro
 export function PlanningDashboard({data,season,onTask,onBoard}:{data:Context;season:Season;onTask:(t:Task)=>void;onBoard:(id:string)=>void}){
  const today=localDate(),boards=data.boards.filter(b=>b.active),tasks=data.tasks.filter(t=>boards.some(b=>b.id===t.board_id));
  const unfinished=tasks.filter(t=>t.status!=='done'),overdue=unfinished.filter(t=>!!t.due_date&&t.due_date<today),blocked=unfinished.filter(t=>t.status==='blocked');
- const mine=unfinished.filter(t=>t.owner_id===data.user_id),milestones=data.items.filter(i=>i.kind==='milestone'&&i.start_date>=today&&i.status!=='done').sort((a,b)=>a.start_date.localeCompare(b.start_date)).slice(0,5);
+ const mine=unfinished.filter(t=>t.owner_ids.includes(data.user_id)),milestones=data.items.filter(i=>i.kind==='milestone'&&i.start_date>=today&&i.status!=='done').sort((a,b)=>a.start_date.localeCompare(b.start_date)).slice(0,5);
  const attention=[...new Map([...overdue,...blocked].map(t=>[t.id,t])).values()].sort((a,b)=>(a.due_date||'9999').localeCompare(b.due_date||'9999'));
  return <div className="planning-dashboard">
  <section className="planning-card planning-season-hero"><h2>{season.status==='active'?'Active season':'Selected season'}</h2><strong>{season.name}</strong><span className="planning-badge">{season.status}</span>{(season.start_date||season.end_date)&&<p>{season.start_date||'Start date not set'} → {season.end_date||'Target date not set'}</p>}<a href="#planning/plan">Open Season Plan →</a></section>

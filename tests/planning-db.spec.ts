@@ -25,6 +25,7 @@ test.beforeAll(async()=>{
  const before=await existing();
  await db.exec(readFileSync('supabase/migrations/202610020001_planning_v1.sql','utf8'));
  await db.exec(readFileSync('supabase/migrations/202610030001_planning_task_dependencies.sql','utf8'));
+ await db.exec(readFileSync('supabase/migrations/202610040001_planning_task_assignees.sql','utf8'));
  expect((await existing()).rows).toEqual(before.rows);await as(1);
 });
 test.afterAll(()=>db.close());
@@ -50,10 +51,10 @@ test('groups, work, milestone, finish-to-start dependency and cycle/season valid
 test('project and persistent functional boards, assigned task updates and reassign denial',async()=>{
  await as(2);board=await save('board',{season_id:season,kind:'project',name:'Intake'});
  await save('board',{kind:'area',name:'Admin',area_id:id(10)});
- task=await save('task',{board_id:board,title:'Cut shafts',status:'todo',priority:'normal',owner_id:id(3)});
+ task=await save('task',{board_id:board,title:'Cut shafts',status:'todo',priority:'normal',owner_ids:[id(3)]});
  await as(4);let t=(await context()).tasks[0];await expect(save('task',{...t,status:'done'})).rejects.toThrow(/assigned/);
  await expect(save('task',{board_id:board,title:'Forbidden',status:'todo',priority:'normal'})).rejects.toThrow(/assigned/);
- await as(3);await expect(save('task',{...t,owner_id:id(4)})).rejects.toThrow(/reassign/);
+ await as(3);await expect(save('task',{...t,owner_ids:[id(4)]})).rejects.toThrow(/reassign/);
  await save('task',{...t,status:'blocked',blocked_reason:'Waiting on CAD'});t=(await context()).tasks[0];
  await save('task',{...t,status:'done'});expect((await context()).tasks[0].status).toBe('done');
 });
@@ -72,7 +73,7 @@ test('revoked/archived positions and inactive accounts lose authority immediatel
 test('draft privacy, cross-season references and stale task/checklist writes',async()=>{
  await as(1);const draft=await save('season',{name:'Future draft',status:'draft'});
  const draftBoard=await save('board',{name:'Future board',kind:'project',season_id:draft});
- const hiddenTask=await save('task',{board_id:draftBoard,title:'Draft work',status:'todo',priority:'normal',owner_id:id(3)});
+ const hiddenTask=await save('task',{board_id:draftBoard,title:'Draft work',status:'todo',priority:'normal',owner_ids:[id(3)]});
  const hiddenGroup=await save('group',{season_id:draft,name:'Draft group'});
  const c=await context(season);const t=c.tasks[0];
  await expect(save('item',{...c.items[0],group_id:hiddenGroup})).rejects.toThrow(/active group/);
@@ -136,7 +137,7 @@ test('all intended positions authorize through trusted current assignment only',
 test('explicit grants deny direct table writes/deletes/truncate and private helpers',async()=>{
  for(const role of ['anon','authenticated']){
   await db.exec(`reset role;set role ${role}`);
-  for(const table of ['seasons','groups','boards','items','tasks','steps','comments','task_dependencies']){
+  for(const table of ['seasons','groups','boards','items','tasks','steps','comments','task_dependencies','task_assignees']){
    await expect(db.exec(`select * from public.planning_${table}`)).rejects.toThrow(/permission denied/);
    await expect(db.exec(`delete from public.planning_${table}`)).rejects.toThrow(/permission denied/);
    if(table==='task_dependencies'){await expect(db.exec('insert into public.planning_task_dependencies default values')).rejects.toThrow(/permission denied/);await expect(db.exec('update public.planning_task_dependencies set predecessor_task_id=successor_task_id')).rejects.toThrow(/permission denied/);}
@@ -148,7 +149,7 @@ test('explicit grants deny direct table writes/deletes/truncate and private help
  }
  await as(3);await expect(save('delete_task',{id:task})).rejects.toThrow(/Unknown/);
  const d=await detail(task);expect(d.comments).toHaveLength(1);expect(d.steps).toHaveLength(1);
- await as(1);const checks=(await db.query<any>(`select count(*)::integer n from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.relkind='r' and c.relrowsecurity and ((n.nspname='public' and c.relname like 'planning_%') or n.nspname='planning_private')`)).rows[0];expect(checks.n).toBe(9);
+ await as(1);const checks=(await db.query<any>(`select count(*)::integer n from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.relkind='r' and c.relrowsecurity and ((n.nspname='public' and c.relname like 'planning_%') or n.nspname='planning_private')`)).rows[0];expect(checks.n).toBe(10);
 });
 test('V1.1 quick payloads keep canonical statuses, audit, authorization and version checks',async()=>{
  await as(1);await db.exec('begin');try{
@@ -157,7 +158,7 @@ test('V1.1 quick payloads keep canonical statuses, audit, authorization and vers
   const iid=await save('item',{season_id:sid,group_id:gid,title:'Quick item',kind:'work',status:'not_started',start_date:'2027-01-01',end_date:'2027-01-01',display_order:1});
   expect((await context(sid)).items.find((i:any)=>i.id===iid).group_id).toBe(gid);
   for(const status of ['backlog','todo','in_progress','blocked','done']){
-   const tid=await save('task',{board_id:bid,title:'Quick '+status,status,priority:'normal',owner_id:null,area_id:null});const t=(await context(sid)).tasks.find((t:any)=>t.id===tid);expect(t.status).toBe(status);const h=(await detail(tid)).history;expect(h).toHaveLength(1);expect(h[0].action).toBe('created');expect(h[0].actor_id).toBe(id(1));await db.exec('savepoint stale');await expect(save('task',{...t,version:0})).rejects.toThrow(/Changed/);await db.exec('rollback to stale');
+   const tid=await save('task',{board_id:bid,title:'Quick '+status,status,priority:'normal',owner_ids:[],area_id:null});const t=(await context(sid)).tasks.find((t:any)=>t.id===tid);expect(t.status).toBe(status);const h=(await detail(tid)).history;expect(h).toHaveLength(1);expect(h[0].action).toBe('created');expect(h[0].actor_id).toBe(id(1));await db.exec('savepoint stale');await expect(save('task',{...t,version:0})).rejects.toThrow(/Changed/);await db.exec('rollback to stale');
   }
  }finally{await db.exec('rollback');}
 });
@@ -169,7 +170,7 @@ test('V1.2 dependencies: graph integrity, existing Task identity, audit and roll
   const sid=await save('season',{name:'Dependency fixture',status:'draft'});
   const bid=await save('board',{season_id:sid,name:'Dependency board',kind:'project'});
   const other=await save('board',{season_id:sid,name:'Other',kind:'project'});
-  const tids=[];for(const name of ['A','B','C','D'])tids.push(await save('task',{board_id:bid,title:name,status:'todo',priority:'normal',owner_id:id(3),start_date:'2027-03-13',due_date:'2027-03-15'}));
+  const tids=[];for(const name of ['A','B','C','D'])tids.push(await save('task',{board_id:bid,title:name,status:'todo',priority:'normal',owner_ids:[id(3)],start_date:'2027-03-13',due_date:'2027-03-15'}));
   const outside=await save('task',{board_id:other,title:'Outside',status:'todo',priority:'normal'});
   const before=(await context(sid)).tasks;
   const ab=await dependency('add',tids[0],tids[1]);await dependency('add',tids[1],tids[2]);await dependency('add',tids[3],tids[2]);
@@ -203,7 +204,7 @@ test('V1.2 dependency permissions, archived privacy and functional Board persist
  try{
   const activeSeason=(await context()).seasons.find((s:any)=>s.status==='active')?.id||await save('season',{name:'Dependency active season',status:'active'});
   const bid=await save('board',{kind:'area',name:'Persistent dependencies',area_id:id(10)});
-  const a=await save('task',{board_id:bid,title:'First',status:'todo',priority:'normal',owner_id:id(3)}),z=await save('task',{board_id:bid,title:'Next',status:'todo',priority:'normal',owner_id:id(3)});
+  const a=await save('task',{board_id:bid,title:'First',status:'todo',priority:'normal',owner_ids:[id(3)]}),z=await save('task',{board_id:bid,title:'Next',status:'todo',priority:'normal',owner_ids:[id(3)]});
   await as(2);const dep=await dependency('add',a,z);expect((await context()).dependencies.some((d:any)=>d.id===dep)).toBe(true);
   await as(3);expect((await context()).dependencies.some((d:any)=>d.id===dep)).toBe(true);await denies(()=>dependency('remove',null,null,dep));await denies(()=>dependency('add',z,a));
   let t=(await context()).tasks.find((t:any)=>t.id===z);await save('task',{...t,status:'done'});expect((await context()).tasks.find((t:any)=>t.id===z).status).toBe('done');

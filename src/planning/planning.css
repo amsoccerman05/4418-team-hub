@@ -175,3 +175,21 @@
 .planning-table-scroll td{padding:8px}
 .planning-quick-add form{display:flex;flex-wrap:wrap;align-items:end;gap:6px;max-width:100%}
 .planning-quick-add form>label{flex:1;min-width:150px}.planning-quick-add form>.planning-toolbar{margin:0}.planning-quick-add form>small,.planning-quick-add form>[role=alert]{width:100%}
+
+/* Task owners: one shared task, compact summaries and a bounded accessible picker. */
+.planning-owner-summary{overflow-wrap:anywhere;min-width:0}
+.planning-owners{min-width:120px;max-width:100%}
+.planning-owners>button{max-width:100%;text-align:left}
+.planning-owners>.planning-owner-summary{display:block;margin-bottom:6px}
+.planning-owner-dialog{box-sizing:border-box;width:min(440px,calc(100vw - 32px));max-height:85vh;overflow:auto;border:1px solid var(--border,#d6e0e9);border-radius:12px;padding:20px;color:inherit;background:var(--surface,#fff)}
+.planning-owner-dialog::backdrop{background:#10223466}
+.planning-owner-dialog input[type=search]{box-sizing:border-box;width:100%}
+.planning-owner-options{max-height:35vh;overflow:auto;margin:12px 0}
+.planning-owner-options>label{display:flex;align-items:center;gap:10px;min-height:44px;overflow-wrap:anywhere}
+.planning-owner-options input{width:18px;height:18px;flex-shrink:0}
+.planning-owner-chips{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.planning-owner-chips>span{display:flex;align-items:center;gap:4px;max-width:100%;overflow-wrap:anywhere;border:1px solid var(--border,#d6e0e9);border-radius:8px;padding-left:8px}
+.planning-owner-chips button{min-width:40px;min-height:40px;flex-shrink:0}
+.planning-filters>label{max-width:100%}
+.planning-filters select{width:100%;min-width:0;box-sizing:border-box}
+.planning-owner-dialog .planning-owner-options input[type=checkbox]{min-width:18px;min-height:18px;width:18px;height:18px;padding:0;flex:0 0 18px}
