@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page, type Route } from "@playwright/test";
 import { summary, strikeAction, meetingState, attendanceDuration, checkInControls, noticeTiming, type Data } from "../src/attendance/service";
 const student = "00000000-0000-0000-0000-000000000001";
 const lead = "00000000-0000-0000-0000-000000000003";
@@ -83,9 +83,7 @@ async function mock(page: Page, role = "student") {
       ),
     { user },
   );
-  await page.route(
-    "https://attendance-test.supabase.invalid/**",
-    async (route) => {
+  const handleRequest = async (route: Route) => {
       const path = new URL(route.request().url()).pathname;
       const body = route.request().postDataJSON();
       let result: unknown = [];
@@ -96,6 +94,7 @@ async function mock(page: Page, role = "student") {
           role,
           active: true,
         };
+      else if (path === "/rest/v1/rpc/notification_center") result = { unread: 0, attention: [], items: [], has_more: false };
       else if (path.endsWith("/team_dashboard_context")) result = {name:'Team member',role,admin:false,personal:{percent:null,strikes:0,pending:0},next_meeting:null,orders:[],finance:{allowed:false,approvals:0,school:0},attention:null,robot:null,inventory:null,announcements:[]};
       else if (path.endsWith("/team_attendance_policy_context")) result = data.policy || {user_id:user.id,can_review:role==="mentor",can_read_team:role!=="student",can_manage_meetings:role!=="student",can_start_year:role==="mentor",strike_year_start:null,people:[],warnings:[]};
       else if (path.endsWith("/team_meetings")) result = data.meetings;
@@ -169,11 +168,21 @@ async function mock(page: Page, role = "student") {
         contentType: "application/json",
         body: JSON.stringify(result),
       });
-    },
-  );
+    };
+  await page.route("https://attendance-test.supabase.invalid/**", handleRequest);
   await page.goto("/");
-  return { data, calls };
+  return { data, calls, handleRequest };
 }
+test("Attendance fixture accepts the header notification RPC and rejects unknown requests", async ({ page }) => {
+  const { handleRequest } = await mock(page);
+  await expect(page.getByRole("button", { name: "Notifications", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Notifications", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Recent notifications" }).getByText("You’re all caught up.")).toBeVisible();
+  const unknown = {
+    request: () => ({ url: () => "https://attendance-test.supabase.invalid/rest/v1/rpc/unapproved_rpc", postDataJSON: () => ({}) }),
+  } as unknown as Route;
+  await expect(handleRequest(unknown)).rejects.toThrow("Unexpected request: /rest/v1/rpc/unapproved_rpc");
+});
 for (const width of [390, 1440]) {
   test(`student self check-in, notice, and layout ${width}`, async ({
     page,
