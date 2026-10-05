@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "events": [
+    {
+      "slug": "kcmt-2026",
+      "title": "KCMT 2026",
+      "subtitle": "Kendrick Castillo Memorial Tournament",
+      "dateLabel": "October 10–11, 2026",
+      "venue": "Coronado High School",
+      "address": "1590 W Fillmore St, Colorado Springs, CO 80904",
+      "timeZone": "America/Denver",
+      "sourceUrl": "https://coloradofirst.org/frc/kcmt/",
+      "sourceChecked": "2026-10-05",
+      "schedule": [
+        {
+          "date": "2026-10-09",
+          "label": "Friday · Load-in & practice",
+          "optional": true,
+          "items": [
+            {
+              "time": "4:00 pm",
+              "title": "Team load-in / event check-in"
+            },
+            {
+              "time": "5:00 pm",
+              "title": "Practice field opens"
+            },
+            {
+              "time": "6:00–8:00 pm",
+              "title": "Practice rounds"
+            },
+            {
+              "time": "8:30 pm",
+              "title": "Venue closes"
+            }
+          ]
+        },
+        {
+          "date": "2026-10-10",
+          "label": "Saturday · Qualifications",
+          "items": [
+            {
+              "time": "7:30 am",
+              "title": "Venue opens"
+            },
+            {
+              "time": "8:30 am",
+              "title": "Drivers meeting"
+            },
+            {
+              "time": "9:00 am",
+              "title": "Opening ceremony"
+            },
+            {
+              "time": "9:30 am",
+              "title": "Qualification rounds"
+            },
+            {
+              "time": "12:30 pm",
+              "title": "Scheduled lunch break"
+            },
+            {
+              "time": "1:15 pm",
+              "title": "Qualification rounds resume"
+            },
+            {
+              "time": "6:00 pm",
+              "title": "Qualification rounds end"
+            },
+            {
+              "time": "7:30 pm*",
+              "title": "Venue closes"
+            }
+          ]
+        },
+        {
+          "date": "2026-10-11",
+          "label": "Sunday · Finals",
+          "items": [
+            {
+              "time": "7:30 am",
+              "title": "Venue opens"
+            },
+            {
+              "time": "8:30 am",
+              "title": "Welcome ceremony"
+            },
+            {
+              "time": "9:00 am",
+              "title": "Qualification rounds"
+            },
+            {
+              "time": "Noon",
+              "title": "Alliance selection"
+            },
+            {
+              "time": "12:30 pm",
+              "title": "Scheduled lunch break"
+            },
+            {
+              "time": "1:30 pm",
+              "title": "Elimination rounds"
+            },
+            {
+              "time": "6:00 pm",
+              "title": "Elimination rounds end"
+            }
+          ]
+        }
+      ],
+      "scheduleNote": "*Saturday venue closing is listed as 7:30 pm or one hour after the last round.",
+      "arrival": {
+        "status": "pending",
+        "text": "Team arrival, meeting point and pickup arrangements will be confirmed here. Venue opening times are not team arrival instructions."
+      },
+      "meals": {
+        "status": "pending",
+        "text": "The meal plan and a private way to share dietary needs will be confirmed here. A scheduled lunch break does not mean a team meal is provided."
+      },
+      "visiting": {
+        "status": "pending",
+        "text": "Spectator access, parking and what to bring will be added once confirmed. No admission, parking or packing instructions have been confirmed for this guide yet."
+      },
+      "volunteering": {
+        "status": "pending",
+        "text": "Team volunteer needs and an approved contact for questions will be added here. The official event page has general volunteer information."
+      }
+    }
+  ]
+}

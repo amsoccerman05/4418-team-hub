@@ -10,6 +10,7 @@ import { TeamManagement } from "./team/TeamManagement";
 import { AttendanceHub } from "./attendance/Attendance";
 import { PlanningNav } from "./planning/PlanningNav";
 import { Planning } from "./planning/Planning";
+import {EventOverview} from "./events/EventOverview";
 function App() {
   const auth=useHubAuth();
   const [route, setRoute] = useState(location.hash);
@@ -18,6 +19,7 @@ function App() {
     window.addEventListener("hashchange", update);
     return () => window.removeEventListener("hashchange", update);
   }, []);
+  const events = route === "#events" || route.startsWith("#events/");
   const planning = route === '#planning' || route.startsWith('#planning/');
   const notifications=route==='#notifications'||route.startsWith('#notifications/');
   const management = route === "#team-management";
@@ -26,14 +28,15 @@ function App() {
   if(!auth.signed)return auth.panel;
   return (
     <NotificationProvider key={auth.userId}>
-      <a className="skip-link" href="#main">
+      <a className="skip-link" href="#main" onClick={event => {event.preventDefault();document.getElementById("main")?.focus();}}>
         Skip to content
       </a>
-      <SuiteHeader app={planning?'Planning':'Team Hub'} context={notifications?'Notifications':planning?({'plan':'Season Plan','boards':'Boards','my-work':'My Work'}[route.split('/')[1]]||'Dashboard'):management?'Team Management':announcements?'Announcements':workspace?'Attendance':'My 4418'} notifications={!planning?<NotificationBell/>:undefined} name={auth.name} onSignOut={auth.signOut} busy={auth.busy}/>
+      <SuiteHeader app={planning?'Planning':'Team Hub'} context={events?'Events':notifications?'Notifications':planning?({'plan':'Season Plan','boards':'Boards','my-work':'My Work'}[route.split('/')[1]]||'Dashboard'):management?'Team Management':announcements?'Announcements':workspace?'Attendance':'My 4418'} notifications={!planning?<NotificationBell/>:undefined} name={auth.name} onSignOut={auth.signOut} busy={auth.busy}/>
 
-      <div className={`hub-shell${planning?' planning-shell':''}`}>{planning?<PlanningNav route={route}/>:<HubNav route={route}/>}<main id="main">
+      <div className={`hub-shell${planning?' planning-shell':''}`}>{planning?<PlanningNav route={route}/>:<HubNav route={route}/>}<main id="main" tabIndex={-1}>
         {auth.error&&<p role="alert">{auth.error}</p>}
-        {auth.signed && !workspace && !management && !planning && !notifications && <My4418 management={announcements} />}
+        {auth.signed && !workspace && !management && !planning && !notifications && !events && <My4418 management={announcements} />}
+        {events&&<EventOverview route={route}/>}
         {notifications&&<Notifications/>}
         {auth.signed && workspace && <AttendanceHub
           workspace={workspace}
