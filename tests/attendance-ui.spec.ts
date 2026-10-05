@@ -724,7 +724,7 @@ for(const width of [390,1440])test(`V3 compact roster attention and completion $
  await page.setViewportSize({width,height:900});const {data,calls}=await mock(page,'mentor');
  data.members.push({student_id:'other',display_name:'Jordan Here',member_status:'registered',team_area:'Build'});
  data.snapshots.push({...data.snapshots[0],student_id:'other'});data.attendance.push({...data.attendance[0],id:'a2',student_id:'other',physical_status:'present',checked_in_at:'2026-09-10T17:00:00Z'});
- await page.goto('/#attendance/calendar');await page.screenshot({path:`test-results/ui-review-attendance-calendar-${width}.png`,fullPage:true});
+ await page.goto('/#attendance/calendar');
  await page.getByRole('button',{name:/Preseason build/}).click();const dialog=page.getByRole('dialog');
  await expect(dialog.getByText('2 expected · 1 here · 0 checked out · 1 not checked in · 0 excused')).toBeVisible();await expect(dialog.getByRole('region',{name:'Needs attention'})).toBeVisible();
  const filters=dialog.getByRole('group',{name:'Live roster filter'});
@@ -761,7 +761,7 @@ for(const role of ['student','lead'])test(`checkout visible on calendar with clo
 test('expected lead explicitly checks self in without changing another attendee',async({page})=>{
  const {data,calls}=await mock(page,'lead');data.attendance[0].student_id=lead;data.snapshots[0].student_id=lead;data.members.push({student_id:lead,display_name:'Alex Lead',member_status:'registered',team_area:'Build'});
  data.attendance.push({...data.attendance[0],id:'other-attendance',student_id:student});data.meetings[0].check_in_open=false;data.meetings[0].status='draft';
- await page.goto('/#attendance/calendar');await page.screenshot({path:`test-results/ui-review-attendance-calendar-${width}.png`,fullPage:true});
+ await page.goto('/#attendance/calendar');
  await page.getByRole('button',{name:/Preseason build/}).click();const dialog=page.getByRole('dialog');await dialog.getByRole('button',{name:'Open check-in',exact:true}).click();
  expect(data.attendance[0].checked_in_at).toBeNull();expect(calls).toHaveLength(1);
  await dialog.getByRole('button',{name:'Check myself in',exact:true}).click();expect(calls.at(-1)).toEqual({meeting_id:'m1',code:'123456'});expect(data.attendance[1].checked_in_at).toBeNull();await expect(dialog.getByRole('button',{name:'Close check-in',exact:true})).toBeVisible();

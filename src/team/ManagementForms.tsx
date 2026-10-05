@@ -23,13 +23,13 @@ export function InviteForm({areas,invite,existingEmails=[],needsReview=false,onR
  <div className="team-fields">
  <label>Display name<input name="display_name" autoComplete="name" required maxLength={150} placeholder="Teammate’s name"/></label>
  <label>Email<input name="email" type="email" autoComplete="email" required maxLength={254} value={email} onChange={e=>setEmail(e.target.value)} placeholder="name@example.com" aria-describedby={duplicate?'invite-duplicate':undefined}/></label>
- <label>Account role<select name="role" value={role} onChange={e=>setRole(e.target.value)}>{['student','lead','mentor','admin','readonly'].map(r=><option key={r}>{r}</option>)}</select></label>
+ <label>Account role<select aria-label="Account role" name="role" value={role} onChange={e=>setRole(e.target.value)}>{['student','lead','mentor','admin','readonly'].map(r=><option key={r}>{r}</option>)}</select></label>
  <label>Invitation reason<input name="reason" required maxLength={2000} placeholder="Why is this person joining?"/></label>
  </div>
  <p className="team-form-hint">The reason is kept in team activity. Account role controls suite access; use mentor/admin only for authorized team managers.</p>
  <details className="team-invite-options"><summary>Optional team details</summary><div className="team-fields">
- <label>Functional area<select name="area_id"><option value="">Unassigned</option>{areas.filter(a=>a.active).map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label>
- <label>Registration<select name="member_status"><option value="">Not tracked</option>{['prospective','registered','inactive'].map(r=><option key={r}>{r}</option>)}</select></label>
+ <label>Functional area<select aria-label="Functional area" name="area_id"><option value="">Unassigned</option>{areas.filter(a=>a.active).map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label>
+ <label>Registration<select aria-label="Registration" name="member_status"><option value="">Not tracked</option>{['prospective','registered','inactive'].map(r=><option key={r}>{r}</option>)}</select></label>
  </div><p className="team-form-hint">Team positions can be assigned from the member editor after account creation.</p></details>
  {duplicate&&<p id="invite-duplicate" className="team-invite-duplicate" role="status">{duplicate.kind==='review'?'This invitation still needs review. Check Activity and refresh the team list before trying again.':duplicate.kind==='member'?'This email already has a team account. Find the member in the directory instead of sending another invitation.':'An invitation for this email is already listed. Check its status in Invitations before sending again.'}</p>}
  {email.trim()&&!duplicate&&<div className="team-invite-review"><strong>Review before sending</strong><span>{email.trim()}</span><span>Account role: <strong>{role}</strong></span></div>}
