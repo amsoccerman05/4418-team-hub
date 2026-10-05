@@ -73,8 +73,8 @@ for(const width of [390,1440])test(`dedicated Planning shell and Dashboard ${wid
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:`test-results/planning-dashboard-shell-${width}.png`,fullPage:true});
  await dash.getByRole('button',{name:'Intake',exact:true}).click();await expect(page.getByRole('heading',{name:'Intake',exact:true})).toBeVisible();expect(calls).toHaveLength(0);expect(errors).toEqual([]);
 });
-test('Planning empty Dashboard, attention omission, and Hub Systems entry',async({page})=>{
- const {c}=await setup(page);await page.goto('/#planning');await expect(page.getByRole('heading',{name:'Needs attention'})).toHaveCount(0);
+test('Planning empty Dashboard, clear attention state, and Hub Systems entry',async({page})=>{
+ await page.clock.setFixedTime(new Date('2027-01-06T12:00:00Z'));const {c}=await setup(page);await page.goto('/#planning');await expect(page.getByRole('heading',{name:'Needs attention'})).toBeVisible();await expect(page.getByText('No overdue or blocked tasks',{exact:true})).toBeVisible();
  c.seasons=[];c.season_id=null;await page.getByRole('button',{name:'Refresh',exact:true}).click();await expect(page.getByRole('heading',{name:'No active planning season'})).toBeVisible();await expect(page.getByText('Create a season to build the master schedule, organize project boards, and assign work.')).toBeVisible();await expect(page.locator('.planning-dashboard')).toHaveCount(0);
  await page.goto('/#attendance');const link=page.locator('.hub-nav a[href="#planning"]');await expect(link).toBeVisible();expect(await link.evaluate(e=>e.previousElementSibling?.textContent)).toBe('Systems');await link.click();await expect(page.locator('.suite-brand strong')).toHaveText('Planning');
 });
@@ -233,4 +233,23 @@ test('V1.3 full form stages assignments without submitting; owner activity uses 
  details.history=[{id:1,entity:'task',action:'updated',actor_id:uid,created_at:'2027-01-02T12:00:00Z',before_data:{owners:[{id:uid,name:'Aiden'}],owner_ids:[uid]},after_data:{owners:[{id:'other',name:'Teammate'}],owner_ids:['other']}}];
  await page.getByRole('button',{name:'Details for Full creation'}).click();let d=page.getByRole('dialog',{name:'Edit task'});await d.getByText('Task activity',{exact:true}).click();await expect(d).toContainText('Added owners: Teammate.');await expect(d).toContainText('Removed owners: Aiden.');await expect(d).not.toContainText(uid);await d.press('Escape');
  await chooseOwners(page,'Owners for Full creation',[]);await expect(page.getByRole('button',{name:'Owners for Full creation'})).toHaveText('Unassigned');expect(c.tasks.find((t:any)=>t.title==='Full creation').owner_ids).toEqual([]);
+});
+
+for(const width of [390,768,1440])test(`UI sweep Planning status totals and board presentation ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});await page.clock.setFixedTime(new Date('2027-01-06T12:00:00Z'));
+ const {c,calls}=await setup(page);Object.assign(c.boards[0],{description:'Design, fabricate, and validate the intake assembly.'});
+ c.boards.push({id:'archived',name:'Old project',kind:'project',active:false});
+ c.tasks.push({...c.tasks[0],id:'hidden',board_id:'archived',status:'blocked'});
+ await page.goto('/#planning');const counts=page.locator('.planning-counts');
+ await expect(counts.locator('[data-status="backlog"] dd')).toHaveText('1');await expect(counts.locator('[data-status="todo"] dd')).toHaveText('1');
+ await expect(counts.locator('[data-status="blocked"] dd')).toHaveText('0');await expect(page.getByText('0 of 2 complete',{exact:true})).toBeVisible();
+ await expect(page.locator('.planning-board-card').filter({hasText:'Old project'})).toHaveCount(0);
+ await page.getByRole('button',{name:'Intake',exact:true}).click();await expect(page.locator('.planning-board-heading')).toContainText('Intake');
+ await expect(page.getByText('Design, fabricate, and validate the intake assembly.',{exact:true})).toBeVisible();
+ await expect(page.getByLabel('Status for Cut shafts')).toHaveAttribute('data-status','todo');
+ await page.getByLabel('Search tasks').fill('Nothing matches');await expect(page.getByText('No tasks match these filters.')).toBeVisible();
+ await page.getByLabel('Search tasks').fill('');await page.getByRole('button',{name:'Details for Cut shafts',exact:true}).click();
+ await page.getByRole('dialog').getByRole('button',{name:'Close',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'Details for Cut shafts',exact:true})).toBeFocused();
+ expect(calls).toHaveLength(0);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });

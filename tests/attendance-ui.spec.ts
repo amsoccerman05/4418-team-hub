@@ -821,3 +821,20 @@ test('Program Manager student can review another member without meeting-manageme
  await page.locator('.att-tabs a[href="#attendance/notices"]').click();await page.getByLabel('Review reason').fill('School confirmation checked');await page.getByRole('button',{name:'Excuse',exact:true}).click();
  await expect.poll(()=>calls.at(-1)?.p.review_status).toBe('excused');expect(calls.at(-1).p.physical_status).toBeUndefined();expect(calls.at(-1).p.attendance_id).toBe('a1');
 });
+
+for(const width of [390,768,1440])test(`UI sweep Attendance review queue and calendar navigation ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});const {data,calls}=await mock(page,'mentor');
+ data.policy={user_id:lead,can_review:true,can_read_team:true,can_manage_meetings:true,strike_year_start:'2026-01-01T00:00:00Z',people:[],warnings:[]};
+ data.attendance[0].review_status='pending';data.attendance[0].notice_at='2026-09-09T12:00:00Z';data.attendance[0].notice_reason='School activity';
+ await page.goto('/#attendance');await expect(page.locator('.att-leadership-stats>span')).toHaveCount(5);
+ const queue=page.getByRole('region',{name:'Attendance review queue'});
+ await expect(queue.getByRole('link',{name:/1 attendance requests need review/})).toBeVisible();
+ await queue.getByRole('link').click();await expect(page).toHaveURL(/#attendance\/notices$/);
+ await expect(page.getByText('School activity',{exact:true})).toBeVisible();
+ await page.goto('/#attendance/calendar');await page.getByRole('button',{name:'Month',exact:true}).click();
+ await expect(page.locator('.att-weekdays>span')).toHaveCount(7);await expect(page.getByRole('heading',{name:'September 2026',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Next period',exact:true}).click();await expect(page.getByRole('heading',{name:'October 2026',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Today',exact:true}).click();await expect(page.getByRole('heading',{name:'September 2026',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:/Preseason build/}).click();const dialog=page.getByRole('dialog');await expect(dialog).toBeVisible();await dialog.press('Escape');await expect(dialog).toHaveCount(0);
+ expect(calls).toHaveLength(0);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});

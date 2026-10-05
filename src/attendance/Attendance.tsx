@@ -1,3 +1,4 @@
+import { CalendarDays, RefreshCw, Plus } from "lucide-react";
 import { PolicyHelp, LeadershipDashboard, MemberAttendance, StrikeWorkspace } from "./PolicyDashboard";
 import {
   useEffect,
@@ -171,12 +172,13 @@ export function AttendanceHub({
         <div>
           {workspace ? (
             <>
+              <span className="att-eyebrow">Team workspace</span>
               <h1 id="attendance-heading">Attendance</h1>
             </>
           ) : (
             <h2 id="attendance-heading">Attendance</h2>
           )}
-          <p>Show up. Stay connected. Keep your record clear.</p>
+          <p>Meetings, check-ins, and the people who keep the team moving.</p>
         </div>
 
       </div>
@@ -192,7 +194,7 @@ export function AttendanceHub({
               {error}
             </p>
           )}
-          {message && <p role="status">{message}</p>}
+          {message && <p className="att-success" role="status">{message}</p>}
           {loading ? (
             <p role="status">Loading attendance…</p>
           ) : !profile && signedIn ? (
@@ -205,14 +207,14 @@ export function AttendanceHub({
           ) : (
             data && (
               <>
-                <div className="att-toolbar">
-                  <span>Welcome, {profile.display_name}</span>
+                <div className="att-toolbar att-account-toolbar">
+                  <span>Welcome, <strong>{profile.display_name}</strong></span>
                   <button
                     className="att-secondary"
                     disabled={busy}
                     onClick={() => void run(async () => {}, "Refreshed")}
                   >
-                    Refresh
+                    <RefreshCw size={15} aria-hidden="true"/> Refresh
                   </button>
                   {!workspace && (
                     <a className="att-link-button" href="#attendance">
@@ -1163,7 +1165,7 @@ function Workspace({
         <>
           <div className="att-toolbar att-view-heading">
             <div>
-              <h2>Meeting calendar</h2>
+              <h2><CalendarDays size={20} aria-hidden="true"/> Meeting calendar</h2>
               <p className="att-muted">
                 {manager
                   ? "Plan meetings. Open check-in. Review each roster."
@@ -1178,7 +1180,7 @@ function Workspace({
                   setCreating(date);
                 }}
               >
-                New meeting
+                <Plus size={16} aria-hidden="true"/> New meeting
               </button>
             )}
           </div>
@@ -1415,7 +1417,7 @@ function Workspace({
               {error}
             </p>
           )}
-          {message && <p role="status">{message}</p>}
+          {message && <p className="att-success" role="status">{message}</p>}
           {manager ? (
             <Management
               key={selectedMeeting.id}

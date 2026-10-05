@@ -1,3 +1,4 @@
+import {ChevronLeft, ChevronRight} from "lucide-react";
 import { useState } from "react";
 import { label, meetingState, type Meeting } from "./service";
 const dateLabel = (date: Date) =>
@@ -53,13 +54,13 @@ export function MeetingCalendar({
             ? cursor.toLocaleDateString([], { month: "long", year: "numeric" })
             : `${dateLabel(days[0])} – ${dateLabel(days[6])}`}
         </h2>
-        <div className="att-toolbar">
+        <div className="att-toolbar att-calendar-navigation">
           <button
             className="att-secondary"
             aria-label="Previous period"
             onClick={() => move(-1)}
           >
-            ←
+            <ChevronLeft size={18} aria-hidden="true"/>
           </button>
           <button
             className="att-secondary"
@@ -72,10 +73,10 @@ export function MeetingCalendar({
             aria-label="Next period"
             onClick={() => move(1)}
           >
-            →
+            <ChevronRight size={18} aria-hidden="true"/>
           </button>
         </div>
-        <div className="att-toolbar" role="group" aria-label="Calendar view">
+        <div className="att-toolbar att-calendar-mode" role="group" aria-label="Calendar view">
           {(["month", "week"] as const).map((view) => (
             <button
               key={view}
@@ -94,6 +95,7 @@ export function MeetingCalendar({
           : "Open a meeting to check in, check out, or report an attendance issue."}{" "}
         Times shown in your local time zone.
       </p>
+      {mode === "month" && <div className="att-weekdays" aria-hidden="true">{days.slice(0,7).map(day=><span key={day.getDay()}>{day.toLocaleDateString([], {weekday:"short"})}</span>)}</div>}
       <div className={`att-calendar-grid ${mode}`}>
         {days.map((date) => {
           const events = meetings
@@ -117,14 +119,12 @@ export function MeetingCalendar({
                   <span>
                     {date.toLocaleDateString([], { weekday: "short" })}
                   </span>{" "}
-                  {date.getDate()} <span aria-hidden="true">+</span>
+                  <b>{date.getDate()}</b> <span className="att-date-add" aria-hidden="true">+</span>
                 </button>
               ) : (
                 <div className="att-date">
-                  {date.toLocaleDateString([], {
-                    weekday: "short",
-                    day: "numeric",
-                  })}
+                  <span>{date.toLocaleDateString([], {weekday: "short"})}</span>{" "}
+                  <b>{date.getDate()}</b>
                 </div>
               )}
               {events.map((m) => (

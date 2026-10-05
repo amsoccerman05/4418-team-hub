@@ -109,3 +109,20 @@ for(const width of [390,1440])test(`compact invitations and member filters ${wid
  await page.setViewportSize({width,height:900});const calls=await setup(page);let invitations=0;await page.route('**/functions/v1/team-invitations',r=>{invitations++;return r.fulfill({json:{}});});await page.goto('/#team-management');await expect(page.getByRole('heading',{name:'Invitations 3'})).toBeVisible();await expect(page.getByText('Account active',{exact:true})).toBeVisible();await expect(page.getByText('Awaiting account setup',{exact:true})).toBeVisible();await expect(page.getByText('An account exists, but this invitation could not be matched safely.')).toBeVisible();
  await page.getByLabel('Find a member').fill('mentor@example.test');await expect(page.locator('.team-member-grid .team-member')).toHaveCount(1);await page.getByRole('combobox',{name:'Account role filter'}).selectOption('student');await expect(page.locator('.team-member-grid .team-member')).toHaveCount(0);await page.getByRole('combobox',{name:'Account role filter'}).selectOption('mentor');await page.getByRole('combobox',{name:'Account state filter'}).selectOption('false');await expect(page.locator('.team-member-grid .team-member')).toHaveCount(0);await page.getByRole('combobox',{name:'Account state filter'}).selectOption('true');await expect(page.getByRole('button',{name:'Manage',exact:true})).toBeVisible();expect(invitations).toBe(0);expect(calls).toEqual([]);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:`test-results/team-polish-${width}.png`,fullPage:true});
 });
+
+for(const width of [390,1440])test(`empty member filters explain the result and reset without writes ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});const calls=await setup(page);await page.goto('/#team-management');
+ await expect(page.getByRole('button',{name:'Manage',exact:true})).toBeVisible();
+ await page.getByLabel('Account role filter').selectOption('student');
+ await expect(page.getByRole('button',{name:'Manage',exact:true})).toHaveCount(0);
+ await expect(page.getByText('No members match these filters.',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Clear filters',exact:true}).click();
+ await expect(page.getByLabel('Account role filter')).toHaveValue('');
+ await expect(page.getByRole('button',{name:'Manage',exact:true})).toBeVisible();
+ await page.getByLabel('Find a member').fill('unmatched');await page.getByLabel('Account state filter').selectOption('false');await page.getByLabel('Area filter').selectOption('area');
+ await expect(page.getByText('No members match “unmatched” with these filters.',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Clear filters',exact:true}).click();
+ for(const label of ['Find a member','Account role filter','Account state filter','Area filter'])await expect(page.getByLabel(label)).toHaveValue('');
+ await expect(page.getByRole('button',{name:'Manage',exact:true})).toBeVisible();expect(calls).toEqual([]);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
