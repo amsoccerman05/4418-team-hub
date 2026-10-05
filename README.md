@@ -83,3 +83,7 @@ Launcher deployment does not require SSO or API integrations. Attendance setup i
 ### Attendance verification
 
 `npm run build` includes TypeScript. `npm test` runs the launcher/browser checks plus local PostgreSQL (PGlite) migration, RLS, RPC, policy, and audit tests. Tests never contact production: browser tests use an intercepted `.invalid` Supabase hostname; SQL tests use disposable in-memory Postgres with mocked `auth.uid()` and profiles. Student and lead flows are checked at 390px and 1440px. This verifies local enforcement but does not replace a live smoke test after you apply the migration and configure the existing project. Verify real student isolation and a leadership check-in/finalize/review flow before team rollout.
+
+## Family event guides
+
+KCMT 2026 has a team event overview at `/#events/kcmt-2026` and a public family guide at `/event.html#kcmt-2026`. The guide includes the tentative organizer schedule, optional Friday activities, venue and clearly labeled family logistics awaiting confirmation. It requires no sign-in and reads only a separately curated static public document; it never reads team records or Planning tasks. See [event-page content and release guidance](docs/EVENT-PAGES.md) before adding or publishing information.

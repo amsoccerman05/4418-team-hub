@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   build: {
     rollupOptions: {
-      input: { main: "index.html", "suite-auth": "suite-auth.html" },
+      input: { main: "index.html", "suite-auth": "suite-auth.html", event: "event.html" },
     },
   },
   plugins: [react()],
