@@ -1,2 +1,26 @@
-.hub-shell{display:grid;grid-template-columns:var(--sidebar-width) minmax(0,1fr);min-height:calc(100dvh - var(--suite-header-height))}.hub-shell>main{width:100%;min-width:0;max-width:var(--page-max-width);padding:28px;margin:0 auto}.hub-nav{border-right:1px solid var(--suite-border);padding:24px 12px;position:sticky;top:var(--suite-header-height);height:calc(100dvh - var(--suite-header-height));overflow:auto}.hub-nav nav{display:flex;flex-direction:column;gap:4px}.hub-nav a{display:flex;align-items:center;text-decoration:none}.hub-nav-label{font-size:11px;text-transform:uppercase;letter-spacing:.09em;font-weight:700;color:var(--suite-muted);margin:20px 12px 6px}.hub-nav-label:first-child{margin-top:0}.hub-nav-meta{border-top:1px solid var(--suite-border);margin:24px 12px 0;padding-top:16px;font-size:12px;font-weight:650}.hub-nav-meta small{display:block;font-weight:400;color:var(--suite-muted);margin-top:4px}.hub-menu{display:none}.hub-shell footer{margin-top:32px;padding-top:20px}.hub-shell .attendance{margin-top:0}.skip-link{z-index:100}
-@media(max-width:760px){.hub-shell{display:block}.hub-shell>main{padding:20px 16px}.hub-nav{position:static;height:auto;border-right:0;border-bottom:1px solid var(--suite-border);padding:10px 16px}.hub-menu{display:flex;align-items:center;gap:8px;min-height:44px;border:1px solid var(--suite-border);border-radius:7px;background:var(--suite-surface);color:var(--suite-text);padding:10px 12px;font:inherit}.hub-nav nav{display:none;padding:16px 0 6px}.hub-nav[data-open=true] nav{display:flex}.hub-nav-meta{display:none}}
+.hub-shell { display:grid; grid-template-columns:var(--sidebar-width) minmax(0,1fr); min-height:calc(100dvh - var(--suite-header-height)); }
+.hub-shell > main { width:100%; min-width:0; max-width:var(--page-max-width); padding:32px 28px; margin:0 auto; }
+.hub-nav { position:sticky; top:var(--suite-header-height); height:calc(100dvh - var(--suite-header-height)); overflow:auto; padding:24px 12px; border-right:1px solid var(--suite-border); }
+.hub-nav nav { display:flex; flex-direction:column; gap:4px; }
+.hub-nav a { position:relative; display:flex; align-items:center; text-decoration:none; line-height:1.4; transition:background-color .15s ease,color .15s ease; }
+.hub-nav a[aria-current=page] { box-shadow:inset 3px 0 0 var(--suite-primary); }
+.hub-nav a svg { stroke-width:1.8; }.hub-nav a[aria-current=page] svg { stroke-width:2.1; }
+.hub-nav-label { font-size:10px; text-transform:uppercase; letter-spacing:.12em; font-weight:750; color:var(--suite-muted); margin:24px 12px 7px; }
+.hub-nav-label:first-child { margin-top:0; }
+.hub-nav-meta { margin:28px 12px 0; padding-top:18px; border-top:1px solid var(--suite-border); font-family:var(--font-heading); font-size:12px; font-weight:750; letter-spacing:.025em; }
+.hub-nav-meta small { display:block; margin-top:5px; color:var(--suite-muted); font-family:var(--font-body); font-size:11px; font-weight:450; letter-spacing:0; }
+.hub-menu { display:none; }
+.hub-shell footer { margin-top:40px; padding-top:20px; font-size:11px; color:var(--suite-muted); }
+.hub-shell .attendance { margin-top:0; }.skip-link { z-index:100; }
+.workspace-eyebrow { display:block; margin-bottom:8px; color:var(--suite-muted); font-size:11px; font-weight:750; letter-spacing:.1em; text-transform:uppercase; }
+@media(max-width:760px) {
+ .hub-shell { display:block; }.hub-shell > main { padding:24px 16px; }
+ .hub-nav { position:static; height:auto; border-right:0; border-bottom:1px solid var(--suite-border); padding:10px 16px; }
+ .hub-menu { display:flex; align-items:center; gap:8px; min-height:44px; border:1px solid var(--suite-border); border-radius:var(--radius-button); background:var(--suite-surface); color:var(--suite-text); padding:10px 12px; font:600 13px var(--font-body); }
+ .hub-menu:hover { background:var(--suite-secondary); }.hub-nav[data-open=true] .hub-menu { color:var(--suite-primary); border-color:var(--suite-primary); }
+ .hub-nav nav { display:none; padding:18px 0 6px; }.hub-nav[data-open=true] nav { display:flex; }.hub-nav-meta { display:none; }
+ .hub-shell footer { margin-top:28px; }
+}
+@media(prefers-reduced-motion:reduce) { .hub-nav a { transition:none; } }
+
+.hub-nav a.hub-nav-return { margin-top:20px; border-top:1px solid var(--suite-border); border-radius:0; padding-top:16px; }

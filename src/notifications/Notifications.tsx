@@ -1,5 +1,5 @@
 import {createContext,useContext,useEffect,useRef,useState,type ReactNode} from 'react';
-import {Bell,X} from 'lucide-react';
+import {Bell,X,RefreshCw,CheckCheck} from 'lucide-react';
 import {fetchNotifications,setRead,safeTarget,type Notice,type Center,type Filter} from './service';
 import './notifications.css';
 const empty:Center={unread:0,attention:[],items:[],has_more:false};
@@ -13,8 +13,8 @@ export function NotificationProvider({children}:{children:ReactNode}){
  return <State.Provider value={{data,error,busy,revision,refresh,mark}}>{children}</State.Provider>;
 }
 const sources={finance:'Finance',attendance:'Attendance',announcements:'Announcements'};
-function Rows({items,onOpen}:{items:Notice[];onOpen?:()=>void}){const {mark,busy}=useContext(State);return <ul className="notification-list">{items.map(n=><li key={n.id}>
- <div className="notification-meta"><span>{sources[n.source]}</span><time dateTime={n.created_at}>{new Date(n.created_at).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'})}</time></div>
+function Rows({items,onOpen}:{items:Notice[];onOpen?:()=>void}){const {mark,busy}=useContext(State);return <ul className="notification-list">{items.map(n=><li key={n.id} data-read={!!n.read_at}>
+ <div className="notification-meta"><span className="notification-source">{sources[n.source]}</span><time dateTime={n.created_at}>{new Date(n.created_at).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'})}</time></div>
  <a href={safeTarget(n.href)} onClick={()=>{void mark(n.id);onOpen?.();}}>{n.title}</a><p>{n.message}</p>
  <div className="notification-actions"><span>{n.read_at?'Read':'Unread'}</span>{n.action_needed&&<strong>Action needed</strong>}<button disabled={busy} onClick={()=>void mark(n.id,!!n.read_at)}>{n.read_at?'Mark unread':'Mark read'}</button></div>
  </li>)}</ul>;}
@@ -31,9 +31,9 @@ export function NotificationBell(){const {data,error,busy,refresh,mark}=useConte
 export function Notifications(){const {revision,busy,mark,refresh,error:sharedError}=useContext(State);const [filter,setFilter]=useState<Filter>(location.hash==='#notifications/action'?'action':'all'),[items,setItems]=useState<Notice[]>([]),[more,setMore]=useState(false),[loading,setLoading]=useState(false),[error,setError]=useState('');const generation=useRef(0);
  async function load(append=false){const n=++generation.current;setLoading(true);setError('');try{const c=await fetchNotifications(filter,append?items.at(-1):undefined);if(n===generation.current){setItems(old=>append?[...old,...c.items.filter(x=>!old.some(o=>o.id===x.id))]:c.items);setMore(c.has_more);}}catch{if(n===generation.current)setError('Notifications are unavailable. Try again.');}finally{if(n===generation.current)setLoading(false);}}
  useEffect(()=>{void load();return()=>{generation.current++;};},[filter,revision]);
- return <section className="notifications-page"><div className="notification-toolbar"><h1>Notifications</h1><button onClick={()=>void refresh()}>Refresh</button><button disabled={busy} onClick={()=>void mark(null)}>Mark all read</button></div>
+ return <section className="notifications-page"><div className="notification-toolbar notification-page-heading"><div><span className="workspace-eyebrow">Team workspace</span><h1>Notifications</h1><p className="notification-description">Updates and follow-ups across your team.</p></div><div className="notification-page-actions"><button onClick={()=>void refresh()}><RefreshCw size={16} aria-hidden="true"/>Refresh</button><button disabled={busy} onClick={()=>void mark(null)}><CheckCheck size={16} aria-hidden="true"/>Mark all read</button></div></div>
  <nav aria-label="Notification filters" className="notification-filters">{(['all','unread','action'] as const).map(f=><button key={f} aria-pressed={filter===f} onClick={()=>setFilter(f)}>{f==='all'?'All':f==='unread'?'Unread':'Action needed'}</button>)}</nav>
  <p className="notification-help">Read means you’ve seen it. Action needed stays until the work is handled.</p>
- {(error||sharedError)&&<p role="alert">{error||sharedError}</p>}{loading&&<p role="status">Loading notifications…</p>}<Rows items={items}/>{!loading&&!error&&!items.length&&<p>{filter==='action'?'Nothing needs your attention.':filter==='unread'?'You’re all caught up.':'No notifications yet.'}</p>}
+ {(error||sharedError)&&<p role="alert">{error||sharedError}</p>}{loading&&<p role="status">Loading notifications…</p>}<Rows items={items}/>{!loading&&!error&&!items.length&&<p className="notification-empty"><CheckCheck size={24} aria-hidden="true"/>{filter==='action'?'Nothing needs your attention.':filter==='unread'?'You’re all caught up.':'No notifications yet.'}</p>}
  {more&&<button disabled={loading} onClick={()=>void load(true)}>Load more</button>}</section>;
 }
