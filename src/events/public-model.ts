@@ -1,6 +1,7 @@
 /** The public contract is deliberately independent of all team database types. */
 export type EventDay = { date: string; label: string; optional?: boolean; items: { time: string; title: string }[] };
-export type EventNotice = { status: 'pending' | 'confirmed'; text: string };
+export type EventNotice = { status: 'pending' | 'confirmed'; text: string; bullets?: string[] };
+export type PublicContact = { name: string; phone: string };
 export type PublicEvent = {
   slug: string;
   title: string;
@@ -17,6 +18,7 @@ export type PublicEvent = {
   meals: EventNotice;
   visiting: EventNotice;
   volunteering: EventNotice;
+  contact?: PublicContact;
 };
 export const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const record = (value: unknown): Record<string, unknown> => {
@@ -35,7 +37,16 @@ const date = (value: unknown): string => {
 function notice(value: unknown): EventNotice {
   const n = record(value);
   if (n.status !== 'pending' && n.status !== 'confirmed') throw Error('Invalid event status.');
-  return { status: n.status, text: text(n.text, 1000) };
+  if (n.bullets !== undefined && (!Array.isArray(n.bullets) || n.bullets.length > 8)) throw Error('Invalid event details.');
+  return { status: n.status, text: text(n.text, 1000), ...(n.bullets === undefined ? {} : {bullets: (n.bullets as unknown[]).map(item => text(item, 300))}) };
+}
+function contact(value: unknown): PublicContact {
+  const c = record(value), phone = text(c.phone, 16);
+  if (!/^\+[1-9]\d{7,14}$/.test(phone)) throw Error('Invalid public contact phone.');
+  return {name: text(c.name, 80), phone};
+}
+export function contactPhoneLabel(phone: string): string {
+  return /^\+1\d{10}$/.test(phone) ? `${phone.slice(2,5)}-${phone.slice(5,8)}-${phone.slice(8)}` : phone;
 }
 /** Reconstruct only explicitly allowed fields. Never spread an API/database row. */
 export function parsePublicEvent(value: unknown): PublicEvent {
@@ -56,7 +67,7 @@ export function parsePublicEvent(value: unknown): PublicEvent {
       return { time: text(i.time, 70), title: text(i.title, 120) };
     }) };
   });
-  return { slug, title: text(e.title, 120), subtitle: text(e.subtitle, 250), dateLabel: text(e.dateLabel, 120), venue: text(e.venue, 120), address: text(e.address, 200), timeZone: e.timeZone, sourceUrl, sourceChecked: date(e.sourceChecked), schedule, ...(e.scheduleNote === undefined ? {} : {scheduleNote: text(e.scheduleNote, 500)}), arrival: notice(e.arrival), meals: notice(e.meals), visiting: notice(e.visiting), volunteering: notice(e.volunteering) };
+  return { slug, title: text(e.title, 120), subtitle: text(e.subtitle, 250), dateLabel: text(e.dateLabel, 120), venue: text(e.venue, 120), address: text(e.address, 200), timeZone: e.timeZone, sourceUrl, sourceChecked: date(e.sourceChecked), schedule, ...(e.scheduleNote === undefined ? {} : {scheduleNote: text(e.scheduleNote, 500)}), arrival: notice(e.arrival), meals: notice(e.meals), visiting: notice(e.visiting), volunteering: notice(e.volunteering), ...(e.contact === undefined ? {} : {contact: contact(e.contact)}) };
 }
 export function parsePublishedEvents(value: unknown): PublicEvent[] {
   const document = record(value);
