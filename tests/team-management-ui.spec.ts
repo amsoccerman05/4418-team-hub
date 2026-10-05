@@ -2,7 +2,7 @@ import {test,expect,type Page} from '@playwright/test';
 async function setup(page:Page,role='mentor',own=true) {
  const id='00000000-0000-0000-0000-000000000001';
  const member={id:own?id:'00000000-0000-0000-0000-000000000002',email:'mentor@example.test',display_name:'Aiden',role,active:true,primary_area_id:null,updated_at:'2026-09-12T00:00:00Z',member_status:null,team_area:null};
- const data:any={members:[member],areas:[{id:'area',name:'Finance',active:true}],positions:[{key:'lead_coach_2',name:'Lead Coach 2',active:true},{key:'finance_lead',name:'Finance Lead',active:true}],invitations:[{id:'pending',display_name:'New member',email:'new@example.test',status:'pending'},{id:'active',display_name:'Existing member',email:'active@example.test',status:'account_active'},{id:'review',display_name:'Review member',email:'review@example.test',status:'review',review_reason:'identity_unmatched'}],assignments:[] as any[],history:[]};
+ const data:any={members:[member],areas:[{id:'area',name:'Finance',active:true}],positions:[{key:'lead_coach_2',name:'Lead Coach 2',active:true},{key:'finance_lead',name:'Finance Lead',active:true}],invitations:[{id:'pending',display_name:'New member',email:'invited@example.test',status:'pending'},{id:'active',display_name:'Existing member',email:'active@example.test',status:'account_active'},{id:'review',display_name:'Review member',email:'review@example.test',status:'review',review_reason:'identity_unmatched'}],assignments:[] as any[],history:[]};
  const calls:any[]=[];
  await page.addInitScript(({id})=>localStorage.setItem('4418-team-hub-auth',JSON.stringify({access_token:'fixture-token',refresh_token:'fixture-refresh',expires_at:4000000000,token_type:'bearer',user:{id,aud:'authenticated',app_metadata:{},user_metadata:{},created_at:'2026-01-01T00:00:00Z'}})),{id});
  await page.route('**/rest/v1/**',async r=>{
@@ -95,14 +95,14 @@ test('mentor can promote another member without legacy Admin option',async({page
  await expect.poll(()=>calls.length).toBe(1);expect(calls[0].p.role).toBe('mentor');expect(calls[0].p.user_id).toBe('00000000-0000-0000-0000-000000000002');
 });
 
-test('invitation failure stays visible and retry preserves request identity',async({page})=>{
+test('invitation review outcome stays visible and prevents another send',async({page})=>{
  await setup(page);const ids:string[]=[];
  await page.route('**/functions/v1/team-invitations',async r=>{ids.push(r.request().postDataJSON().id);await r.fulfill({status:409,json:{status:'review',error:'Invitation needs review. Ask a mentor to check Activity; do not resend.'}});});
  await page.goto('/#team-management');await page.getByRole('button',{name:'+ Invite member',exact:true}).click();
  const d=page.getByRole('dialog',{name:'Invite member',exact:true});
  await d.getByLabel('Email',{exact:true}).fill('new@example.test');await d.getByLabel('Display name',{exact:true}).fill('New Member');await d.getByLabel('Invitation reason').fill('Joining team');
  await d.getByRole('button',{name:'Send invitation'}).click();await expect(d.getByRole('alert')).toContainText('needs review');
- await d.getByRole('button',{name:'Send invitation'}).click();await expect.poll(()=>ids.length).toBe(2);expect(ids[1]).toBe(ids[0]);await expect(d).toBeVisible();
+ await expect(d.getByRole('button',{name:'Send invitation'})).toBeDisabled();await expect(d.getByRole('region',{name:'Invitation needs review'})).toBeVisible();expect(ids).toHaveLength(1);await d.getByRole('button',{name:'Refresh team list'}).click();await expect(d.getByRole('button',{name:'Send invitation'})).toBeDisabled();expect(ids).toHaveLength(1);await d.getByRole('button',{name:'View Activity'}).click();await expect(d).toHaveCount(0);await expect(page.getByRole('heading',{name:'Recent team changes'})).toBeVisible();
 });
 
 for(const width of [390,1440])test(`compact invitations and member filters ${width}`,async({page})=>{
@@ -125,4 +125,38 @@ for(const width of [390,1440])test(`empty member filters explain the result and 
  for(const label of ['Find a member','Account role filter','Account state filter','Area filter'])await expect(page.getByLabel(label)).toHaveValue('');
  await expect(page.getByRole('button',{name:'Manage',exact:true})).toBeVisible();expect(calls).toEqual([]);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+
+for(const width of [390,1440])test(`invitation essentials optional details duplicate guidance and recipient review ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});await setup(page);const sent:any[]=[];
+ await page.route('**/functions/v1/team-invitations',r=>{sent.push(r.request().postDataJSON());return r.fulfill({status:202,json:{status:'pending'}});});
+ await page.goto('/#team-management');await page.getByRole('button',{name:'+ Invite member',exact:true}).click();const d=page.getByRole('dialog',{name:'Invite member',exact:true});
+ await expect(d.getByLabel('Account role',{exact:true})).toHaveValue('student');await expect(d.getByLabel('Functional area',{exact:true})).toBeHidden();
+ await d.getByLabel('Display name',{exact:true}).fill('Fixture Teammate');await d.getByLabel('Invitation reason').fill('Joining team');
+ await d.getByLabel('Email',{exact:true}).fill('mentor@example.test');await expect(d.getByRole('status')).toContainText('already has a team account');await expect(d.getByRole('button',{name:'Send invitation'})).toBeDisabled();
+ await d.getByLabel('Email',{exact:true}).fill('invited@example.test');await expect(d.getByRole('status')).toContainText('already listed');await expect(d.getByRole('button',{name:'Send invitation'})).toBeDisabled();
+ await d.getByLabel('Email',{exact:true}).fill('teammate@example.test');await expect(d.locator('.team-invite-review')).toContainText('teammate@example.test');await expect(d.locator('.team-invite-review')).toContainText('student');
+ await d.getByText('Optional team details',{exact:true}).click();await d.getByLabel('Functional area',{exact:true}).selectOption('area');await d.getByLabel('Registration',{exact:true}).selectOption('prospective');
+ expect(sent).toHaveLength(0);expect(await d.evaluate(e=>e.scrollWidth<=e.clientWidth)).toBe(true);
+ await d.getByRole('button',{name:'Send invitation'}).click();await expect(d).toHaveCount(0);expect(sent).toHaveLength(1);expect(sent[0]).toMatchObject({email:'teammate@example.test',role:'student',area_id:'area',member_status:'prospective',reason:'Joining team'});
+});
+
+test('invitation validation retry preserves UUID while uncertain outcomes do not resend',async({page})=>{
+ await setup(page);const calls:any[]=[];
+ await page.route('**/functions/v1/team-invitations',async r=>{calls.push(r.request().postDataJSON());return calls.length===1?r.fulfill({status:400,json:{error:'Check the invitation details.'}}):r.fulfill({status:202,json:{status:'pending'}});});
+ await page.goto('/#team-management');await page.getByRole('button',{name:'+ Invite member',exact:true}).click();const d=page.getByRole('dialog',{name:'Invite member',exact:true});
+ await d.getByLabel('Email',{exact:true}).fill('teammate@example.test');await d.getByLabel('Display name',{exact:true}).fill('Fixture Teammate');await d.getByLabel('Invitation reason').fill('Joining team');
+ await d.getByRole('button',{name:'Send invitation'}).click();await expect(d.getByRole('alert')).toContainText('Check the invitation details.');await expect(d.getByLabel('Email',{exact:true})).toHaveValue('teammate@example.test');
+ await d.getByRole('button',{name:'Send invitation'}).click();await expect(d).toHaveCount(0);expect(calls).toHaveLength(2);expect(calls[1].id).toBe(calls[0].id);
+});
+
+for(const reserved of [false,true])test(`closing an uncertain invitation cannot reset its resend protection (reserved=${reserved})`,async({page})=>{
+ await setup(page);let sent=0;
+ await page.route('**/functions/v1/team-invitations',r=>{sent++;return reserved?r.fulfill({status:409,json:{code:'already_reserved',error:'An invitation already exists for this email. Check Activity; do not resend.'}}):r.fulfill({status:502,json:{status:'review',error:'The invitation service could not confirm sending. Check Activity; do not resend.'}});});
+ await page.goto('/#team-management');await page.getByRole('button',{name:'+ Invite member',exact:true}).click();let d=page.getByRole('dialog',{name:'Invite member',exact:true});
+ await d.getByLabel('Email',{exact:true}).fill('uncertain@example.test');await d.getByLabel('Display name',{exact:true}).fill('Fixture Teammate');await d.getByLabel('Invitation reason').fill('Joining team');await d.getByRole('button',{name:'Send invitation'}).click();
+ await expect(d.getByRole('region',{name:'Invitation needs review'})).toBeVisible();await d.getByRole('button',{name:'Close editor'}).click();
+ await page.getByRole('button',{name:'+ Invite member',exact:true}).click();d=page.getByRole('dialog',{name:'Invite member',exact:true});await d.getByLabel('Email',{exact:true}).fill('UNCERTAIN@example.test');
+ await expect(d.getByRole('status')).toContainText('still needs review');await expect(d.getByRole('button',{name:'Send invitation'})).toBeDisabled();expect(sent).toBe(1);
+ await d.getByLabel('Email',{exact:true}).fill('another@example.test');await expect(d.getByRole('button',{name:'Send invitation'})).toBeEnabled();expect(sent).toBe(1);
 });

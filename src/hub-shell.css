@@ -22,3 +22,5 @@
  .hub-shell footer { margin-top:28px; }
 }
 @media(prefers-reduced-motion:reduce) { .hub-nav a { transition:none; } }
+
+.hub-nav a.hub-nav-return { margin-top:20px; border-top:1px solid var(--suite-border); border-radius:0; padding-top:16px; }

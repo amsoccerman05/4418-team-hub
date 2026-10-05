@@ -54,3 +54,15 @@
  .team-member-grid .team-member { gap:12px; padding:16px; }.team-member-details { padding-left:48px; border:0; }
  .team-member-grid .team-member>button { justify-self:stretch; }.team-invitations { padding:16px; }
 }
+
+/* A focused single-person invitation, with optional details and an explicit outcome. */
+.team-form-hint { color:var(--suite-muted); font-size:12px; line-height:1.6; }
+.team-management .team-invite-options { margin:18px 0; padding:0 16px; border:1px solid var(--suite-border); border-radius:var(--radius-card); background:var(--suite-secondary); }
+.team-invite-options>summary { font-weight:600; }.team-invite-options[open]>summary { margin-bottom:12px; }
+.team-invite-review { display:grid; gap:5px; padding:14px 16px; margin:16px 0; border:1px solid var(--suite-border); border-radius:var(--radius-card); background:var(--suite-info-bg); overflow-wrap:anywhere; font-size:13px; }
+.team-invite-review>strong { color:var(--suite-primary); font-size:12px; }.team-invite-review>span { display:block; }
+.team-invite-submit { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }.team-invite-submit>small { color:var(--suite-muted); font-size:12px; }
+.team-invite-review-state { padding:16px; margin:16px 0 0; border:1px solid var(--suite-warning-border); border-radius:var(--radius-card); background:var(--suite-warning-bg); }
+.team-management .team-invite-review-state h3 { margin:0; font-size:16px; }.team-invite-review-state>div { display:flex; gap:10px; flex-wrap:wrap; }
+.team-invite-review-state button { background:var(--suite-surface); }
+@media(max-width:640px){.team-invite-submit{gap:6px}.team-invite-submit>button{width:100%}.team-invite-review-state>div>button{flex:1}}

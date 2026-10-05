@@ -67,7 +67,7 @@ for(const width of [390,1440])test(`dedicated Planning shell and Dashboard ${wid
  await expect(dash.getByText('1 overdue · 1 blocked')).toBeVisible();await expect(dash.getByText('1 overdue · 1 due today · 1 due this week')).toBeVisible();await expect(dash.getByText('Design freeze',{exact:true})).toBeVisible();await expect(dash.getByText('Old milestone')).toHaveCount(0);await expect(dash.getByText('Finished milestone')).toHaveCount(0);
  await expect(dash.getByText('1 / 5 tasks complete')).toBeVisible();await expect(dash.getByText('Archived board')).toHaveCount(0);
  if(width===390)await page.getByRole('button',{name:'Planning menu'}).click();
- const nav=page.getByRole('navigation',{name:'Planning workspace'});await expect(nav.getByRole('link')).toHaveCount(4);await expect(nav.getByRole('link',{name:'Dashboard',exact:true})).toHaveAttribute('aria-current','page');await expect(page.getByRole('navigation',{name:'Hub workspace'})).toHaveCount(0);
+ const nav=page.getByRole('navigation',{name:'Planning workspace'});await expect(nav.getByRole('link')).toHaveCount(5);await expect(nav.getByRole('link',{name:'Team Hub / Home',exact:true})).toHaveAttribute('href','#');await expect(nav.getByRole('link',{name:'Dashboard',exact:true})).toHaveAttribute('aria-current','page');await expect(page.getByRole('navigation',{name:'Hub workspace'})).toHaveCount(0);
  if(width===390)await page.keyboard.press('Escape');
  await page.locator('.suite-picker summary').click();await expect(page.getByRole('navigation',{name:'Team 4418 apps'}).getByRole('link',{name:'Planning',exact:true})).toHaveAttribute('aria-current','page');await page.keyboard.press('Escape');
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:`test-results/planning-dashboard-shell-${width}.png`,fullPage:true});
@@ -244,12 +244,43 @@ for(const width of [390,768,1440])test(`UI sweep Planning status totals and boar
  await expect(counts.locator('[data-status="backlog"] dd')).toHaveText('1');await expect(counts.locator('[data-status="todo"] dd')).toHaveText('1');
  await expect(counts.locator('[data-status="blocked"] dd')).toHaveText('0');await expect(page.getByText('0 of 2 complete',{exact:true})).toBeVisible();
  await expect(page.locator('.planning-board-card').filter({hasText:'Old project'})).toHaveCount(0);
+ await page.screenshot({path:`test-results/ui-review-planning-dashboard-${width}.png`,fullPage:true});
  await page.getByRole('button',{name:'Intake',exact:true}).click();await expect(page.locator('.planning-board-heading')).toContainText('Intake');
  await expect(page.getByText('Design, fabricate, and validate the intake assembly.',{exact:true})).toBeVisible();
  await expect(page.getByLabel('Status for Cut shafts')).toHaveAttribute('data-status','todo');
+ await page.screenshot({path:`test-results/ui-review-planning-board-${width}.png`,fullPage:true});
  await page.getByLabel('Search tasks').fill('Nothing matches');await expect(page.getByText('No tasks match these filters.')).toBeVisible();
  await page.getByLabel('Search tasks').fill('');await page.getByRole('button',{name:'Details for Cut shafts',exact:true}).click();
  await page.getByRole('dialog').getByRole('button',{name:'Close',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);
  await expect(page.getByRole('button',{name:'Details for Cut shafts',exact:true})).toBeFocused();
  expect(calls).toHaveLength(0);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+
+for(const width of [390,1440])test(`Planning edit feedback and filter reset ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});const {calls}=await setup(page);await page.goto('/#planning/boards/board');
+ await page.getByLabel('Search tasks').fill('Nothing matches');await page.getByLabel('Priority',{exact:true}).selectOption('urgent');
+ await page.getByRole('button',{name:'Clear filters',exact:true}).click();await expect(page.getByLabel('Search tasks')).toHaveValue('');await expect(page.getByLabel('Priority',{exact:true})).toHaveValue('');await expect(page.getByRole('button',{name:'Cut shafts',exact:true})).toBeVisible();
+ let release!:()=>void;const pending=new Promise<void>(resolve=>{release=resolve;});
+ await page.route('**/rest/v1/rpc/planning_save',async route=>{await pending;await route.fallback();});
+ await page.getByRole('button',{name:'Cut shafts',exact:true}).click();await page.getByLabel('Title',{exact:true}).fill('Shafts ready');await page.getByRole('button',{name:'Save title',exact:true}).click();
+ try{
+  await expect(page.locator('.planning-save-feedback')).toHaveText('Saving changes…');await expect(page.getByRole('button',{name:'Saving…',exact:true})).toBeDisabled();await expect(page.getByRole('button',{name:'Cancel',exact:true})).toBeDisabled();
+  await page.keyboard.press('Escape');await expect(page.getByLabel('Title',{exact:true})).toBeVisible();
+ }finally{release();}
+ await expect(page.getByRole('button',{name:'Shafts ready',exact:true})).toBeVisible();await expect(page.locator('.planning-save-feedback')).toHaveText('Task saved.');expect(calls).toHaveLength(1);expect(calls[0].p.title).toBe('Shafts ready');
+ await page.route('**/rest/v1/rpc/planning_save',route=>route.fulfill({status:409,json:{message:'Changed by another teammate. Refresh before saving.'}}));
+ await page.getByLabel('Status for Shafts ready').selectOption('done');await expect(page.getByRole('alert')).toContainText('Changed by another teammate');await expect(page.locator('.planning-save-feedback')).toHaveCount(0);await expect(page.getByLabel('Status for Shafts ready')).toHaveValue('todo');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+
+test('Planning dialog and quick add confirm completed saves',async({page})=>{
+ await page.setViewportSize({width:390,height:900});await setup(page);await page.goto('/#planning/boards/board');
+ await page.getByRole('button',{name:'Details for Cut shafts',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Edit task'});
+ await dialog.getByLabel('New checklist step').fill('Measure carefully');await dialog.getByRole('button',{name:'Add step',exact:true}).click();await expect(dialog.getByRole('status')).toHaveText('Checklist saved.');
+ await dialog.getByLabel('Add a comment').fill('Dimensions confirmed');await dialog.getByRole('button',{name:'Post comment',exact:true}).click();await expect(dialog.getByRole('status')).toHaveText('Comment posted.');
+ await dialog.getByRole('button',{name:'Save',exact:true}).click();await expect(dialog).toHaveCount(0);await expect(page.locator('.planning-save-feedback')).toHaveText('Task saved.');
+ await page.getByRole('button',{name:'+ Add task',exact:true}).click();await page.getByLabel('Task title').fill('Check dimensions');await page.getByRole('button',{name:'Add',exact:true}).click();
+ const quick=page.locator('.planning-quick-add');await expect(quick.getByRole('status')).toHaveText('Task added: Check dimensions');await expect(page.getByLabel('Task title')).toBeFocused();
+ await page.getByLabel('Task title').fill('Next task');await expect(quick.getByRole('status')).toHaveCount(0);await page.getByRole('button',{name:'Cancel',exact:true}).click();await expect(page.getByRole('button',{name:'+ Add task',exact:true})).toBeFocused();
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });

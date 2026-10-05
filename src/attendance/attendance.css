@@ -631,3 +631,8 @@
  .att-roster-filters{box-sizing:border-box}.attendance-section .att-roster-filters button{min-height:42px}.att-record>summary{min-height:48px}
  .att-next-meeting{padding:18px}.att-next-meeting h3{font-size:18px}.att-presets>button{flex:1 1 100px}
 }
+
+.att-progress{position:sticky;top:calc(var(--suite-header-height,76px) + 12px);z-index:5;padding:12px 16px;border:1px solid var(--suite-border);border-radius:8px;background:var(--suite-info-bg);color:var(--suite-primary);font-size:13px;font-weight:600;box-shadow:var(--suite-shadow)}
+.att-dialog>.att-progress{top:0}
+.attendance-section>.att-error{position:sticky;top:calc(var(--suite-header-height,76px) + 12px);z-index:5}
+.att-dialog>.att-error,.att-dialog>.att-success{position:sticky;top:0;z-index:5}

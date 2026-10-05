@@ -194,7 +194,7 @@ export function AttendanceHub({
               {error}
             </p>
           )}
-          {message && <p className="att-success" role="status">{message}</p>}
+          {busy ? <p className="att-progress" role="status">Updating attendance…</p> : message && <p className="att-success" role="status">{message}</p>}
           {loading ? (
             <p role="status">Loading attendance…</p>
           ) : !profile && signedIn ? (
@@ -1079,6 +1079,7 @@ function Modal({
           Close
         </button>
       </div>
+      {busy && <p className="att-progress" role="status">Updating attendance…</p>}
       {children}
     </dialog>
   );
