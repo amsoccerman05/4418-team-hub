@@ -14,7 +14,7 @@ test('family guide includes optional Friday and all parent-information sections 
  try{
   const {EventOverview}=await server.ssrLoadModule('/src/events/EventOverview.tsx');
   const html=renderToStaticMarkup(createElement(EventOverview,{route:'#events/kcmt-2026'}));
-  for(const copy of ['Coronado High School','1590 W Fillmore St','Arrival &amp; pickup','Meals &amp; dietary needs','Spectators &amp; what to bring','Volunteering &amp; questions','private way to share dietary needs','Optional for Team 4418','4:00 pm','5:00 pm','6:00–8:00 pm','8:30 pm','All times Mountain Time','Organizer’s tentative schedule'])expect(html).toContain(copy);
+  for(const copy of ['Coronado High School','1590 W Fillmore St','Arrival &amp; pickup','Meals &amp; dietary needs','Spectators &amp; what to bring','Volunteering &amp; questions','Ask Aiden privately about dietary arrangements','Optional for Team 4418','4:00–6:00 pm','5:00 pm','6:00–8:00 pm','8:30 pm','All times Mountain Time','Organizer’s tentative schedule'])expect(html).toContain(copy);
   expect(html.match(/Optional for Team 4418/g)).toHaveLength(1);
   expect(html).not.toMatch(/Event prep tasks|Link board|Planning season|<form|<input|<select|<iframe/);
   expect(html).toContain('https://pit.frc4418.org');
@@ -26,7 +26,7 @@ test('parent preview and unknown event render without operational links or inven
  try{
   const {EventOverview}=await server.ssrLoadModule('/src/events/EventOverview.tsx');
   const preview=renderToStaticMarkup(createElement(EventOverview,{route:'#events/kcmt-2026/preview'}));
-  expect(preview).toContain('Parent page preview');expect(preview).toContain('Team details awaiting confirmation');expect(preview).toContain('Optional for Team 4418');expect(preview).not.toMatch(/pit\.frc4418|planning|kanban|mailto:|tel:|<form|<input|<select/i);
+  expect(preview).toContain('Parent page preview');expect(preview.match(/href="tel:[^"]+"/g)).toEqual(['href="tel:+17205253196"']);expect(preview).toContain('Team details awaiting confirmation');expect(preview).toContain('Optional for Team 4418');expect(preview).not.toMatch(/pit\.frc4418|planning|kanban|mailto:|<form|<input|<select/i);
   const unknown=renderToStaticMarkup(createElement(EventOverview,{route:'#events/unknown'}));expect(unknown).toContain('Event not found');expect(unknown).not.toContain('Coronado');
  }finally{await server.close();}
 });

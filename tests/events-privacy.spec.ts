@@ -71,7 +71,13 @@ test('the shipped public registry contains only the approved KCMT family guide',
   expect(event.slug).toBe('kcmt-2026');expect(event.venue).toBe('Coronado High School');
   expect(event.schedule.find(day=>day.date==='2026-10-09')?.optional).toBe(true);
   expect(event.schedule.filter(day=>day.optional)).toHaveLength(1);
-  expect([event.arrival,event.meals,event.visiting,event.volunteering].every(note=>note.status==='pending')).toBe(true);
+  expect(event.arrival.status).toBe('pending');expect(event.meals.status).toBe('pending');
+  expect(event.visiting.status).toBe('confirmed');expect(event.volunteering.status).toBe('confirmed');
+  expect(event.contact).toEqual({name:'Aiden Morrison',phone:'+17205253196'});
+  expect(event.schedule[0].items[0].time).toBe('4:00–6:00 pm');
+  expect(event.arrival.bullets?.join(' ')).toContain('bright yellow arrows');
+  expect(event.meals.bullets?.join(' ')).toContain('Outside food is allowed');
+  expect(event.visiting.bullets?.join(' ')).toContain('no quiet room');
   expect(JSON.stringify(event)).not.toMatch(/mailto:|tel:|forms\.gle|docs\.google|owner_ids|student_id|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
 });
 
@@ -92,6 +98,17 @@ test('the public parser reconstructs only the curated contract, including nested
     const event = parsePublicEvent({ ...fixture, schedule: [{ ...fixture.schedule[0], optional }] });
     expect(event.schedule[0].optional).toBe(optional);
   }
+});
+
+
+test('public contact and visitor bullets accept only the bounded plain-text contract', () => {
+  const candidate={...fixture,contact:{name:'Aiden Morrison',phone:'+17205253196',privateEmail:'DO-NOT-SHIP'},visiting:{...fixture.visiting,bullets:['Bring safety glasses.']}};
+  const event=parsePublicEvent(candidate);
+  expect(event.contact).toEqual({name:'Aiden Morrison',phone:'+17205253196'});
+  expect(event.visiting.bullets).toEqual(['Bring safety glasses.']);
+  expect(JSON.stringify(event)).not.toContain('DO-NOT-SHIP');
+  for(const phone of ['tel:+17205253196','+17205253196?body=secret','javascript:alert(1)','720-525-3196','+000012345','+17205253196;ext=4'])expect(()=>parsePublicEvent({...candidate,contact:{name:'Aiden',phone}})).toThrow();
+  for(const bullets of ['not-an-array',[42],Array(9).fill('Too many'),['x'.repeat(301)]])expect(()=>parsePublicEvent({...candidate,visiting:{...fixture.visiting,bullets}})).toThrow();
 });
 
 test('public validation rejects unsafe links, malformed dates, duplicates and unsupported data', () => {
@@ -141,7 +158,9 @@ test('pure public rendering escapes text and includes no internal record fields'
     expect(guide).toContain('Friday · Load-in &amp; practice');
     expect(guide).toContain('Before you go');
     expect(guide).toContain('Team details awaiting confirmation');
-    expect(guide).not.toMatch(/<form|<input|<select|<textarea|<iframe|mailto:|tel:|Planning board|prep tasks/);
+    expect(guide).not.toMatch(/<form|<input|<select|<textarea|<iframe|mailto:|Planning board|prep tasks/);
+    expect(guide.match(/href="tel:[^"]+"/g)).toEqual(['href="tel:+17205253196"']);
+    expect(guide).toContain('Aiden Morrison');expect(guide).toContain('720-525-3196');
     const required = parsePublicEvent({ ...fixture, schedule: [{ ...fixture.schedule[0], optional: false }] });
     expect(renderToStaticMarkup(createElement(EventDetails, { event: required }))).not.toContain('Optional for Team 4418');
   } finally { await server.close(); }
@@ -169,7 +188,9 @@ for (const width of [390, 1440]) test(`approved fixture is public-only, escaped 
   expect(signInUrl.pathname).toMatch(/\/index\.html$/);
   expect(signInUrl.hash).toBe('#events/kcmt-2026');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.getByRole('link', { name: 'Skip to content' }).focus();
+  const skip=page.getByRole('link', { name: 'Skip to content' });
+  await skip.focus();
+  expect(await skip.evaluate(element=>{const r=element.getBoundingClientRect();const top=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return top===element||element.contains(top);})).toBe(true);
   await page.keyboard.press('Enter');
   await expect(page.locator('#event-content')).toBeFocused();
   expect(page.url()).toContain('#kcmt-2026');
@@ -182,9 +203,24 @@ test('actual published guide opens anonymously with optional Friday and no opera
   await expect(page.getByRole('heading',{name:'KCMT 2026',exact:true})).toBeVisible();
   await expect(page.getByText('Optional for Team 4418',{exact:true})).toBeVisible();
   await expect(page.getByRole('heading',{name:'Spectators & what to bring',exact:true})).toBeVisible();
-  await expect(page.locator('body')).toContainText('private way to share dietary needs');
+  await expect(page.locator('body')).toContainText('Ask Aiden privately about dietary arrangements');
+  await expect(page.getByRole('link',{name:'Call Aiden Morrison at 720-525-3196'})).toHaveAttribute('href','tel:+17205253196');
+  await expect(page.locator('body')).toContainText('There is no quiet room');
   await expect(page.locator('body')).not.toContainText(/Kanban|Planning board|prep tasks|purchase orders|strike/i);
   await expect(page.locator('form,input,select,textarea')).toHaveCount(0);
+  expect(await page.locator('.event-hero').evaluate(element=>({accent:getComputedStyle(element).borderTopColor,ink:getComputedStyle(element).color}))).toMatchObject({accent:'rgb(0, 107, 179)'});
+  await assertIsolated(page,observed);
+});
+
+test('published parent details and suite branding remain readable on a narrow phone', async ({page}) => {
+  await page.setViewportSize({width:390,height:900});const observed=await observePrivacy(page);
+  await page.goto('/event.html#kcmt-2026');
+  await expect(page.getByRole('link',{name:'Call Aiden Morrison at 720-525-3196'})).toBeVisible();
+  await expect(page.getByText('Optional for Team 4418',{exact:true})).toBeVisible();
+  await expect(page.locator('.event-public-brand img')).toHaveAttribute('src',/branding\/4418-impulse-emblem\.png$/);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await expect(page.locator('.event-hero')).toHaveCSS('border-top-color','rgb(0, 107, 179)');
+  await expect(page.locator('.event-public')).toHaveCSS('background-color','rgb(244, 246, 248)');
   await assertIsolated(page,observed);
 });
 

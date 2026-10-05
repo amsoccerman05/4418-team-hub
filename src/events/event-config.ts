@@ -15,7 +15,7 @@ export const eventDraft: PublicEvent = {
   sourceChecked: '2026-10-05',
   schedule: [
     { date: '2026-10-09', label: 'Friday · Load-in & practice', optional: true, items: [
-      { time: '4:00 pm', title: 'Team load-in / event check-in' },
+      { time: '4:00–6:00 pm', title: 'Team load-in / event check-in' },
       { time: '5:00 pm', title: 'Practice field opens' },
       { time: '6:00–8:00 pm', title: 'Practice rounds' },
       { time: '8:30 pm', title: 'Venue closes' },
@@ -41,10 +41,22 @@ export const eventDraft: PublicEvent = {
     ] },
   ],
   scheduleNote: '*Saturday venue closing is listed as 7:30 pm or one hour after the last round.',
-  arrival: { status: 'pending', text: 'Team arrival, meeting point and pickup arrangements will be confirmed here. Venue opening times are not team arrival instructions.' },
-  meals: { status: 'pending', text: 'The meal plan and a private way to share dietary needs will be confirmed here. A scheduled lunch break does not mean a team meal is provided.' },
-  visiting: { status: 'pending', text: 'Spectator access, parking and what to bring will be added once confirmed. No admission, parking or packing instructions have been confirmed for this guide yet.' },
-  volunteering: { status: 'pending', text: 'Team volunteer needs and an approved contact for questions will be added here. The official event page has general volunteer information.' },
+  arrival: { status: 'pending', text: 'Team arrival, meeting point and pickup arrangements are still to be confirmed. Venue opening times are not team arrival instructions.', bullets: [
+    'Parking is available in the school parking lot.',
+    'Optional Friday load-in is October 9, 4:00–6:00 pm. Enter from W Fillmore St and follow the bright yellow arrows.',
+  ] },
+  meals: { status: 'pending', text: 'Team meal plans are still to be confirmed. Ask Aiden privately about dietary arrangements.', bullets: [
+    'Outside food is allowed at the venue.',
+    'Eat in the cafeteria, avoiding sections reserved for other events, or outside in the courtyard.',
+  ] },
+  visiting: { status: 'confirmed', text: 'Plan for limited seating and time outdoors.', bullets: [
+    'Bring safety glasses for everyone visiting with you. Only limited loaners are available.',
+    'Seating is limited. Keep the reserved accessible seating available for people who need it.',
+    'There is no quiet room at this event.',
+    'The walkway between the pits and competition field is outside. Prepare for the weather.',
+  ] },
+  volunteering: { status: 'confirmed', text: 'The event is seeking referees, meal-support volunteers, queuers, photographers/videographers, and setup/cleanup help. Use the Volunteer sign up tab on the official event page for details. For parent questions, contact Aiden.', },
+  contact: {name: 'Aiden Morrison', phone: '+17205253196'},
 };
 
 /** Add separately reviewed event drafts here; the public registry stays separate. */
