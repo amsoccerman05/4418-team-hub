@@ -1,6 +1,6 @@
-# Sponsor & Outreach V1: local review contract
+# Sponsor & Outreach V1: review contract
 
-Status: local implementation for review. The migration has not been applied to production, and the conservative access policy below requires explicit approval before any production rollout. No real contact import, scraping, communication, Finance mutation, push, or deployment is included.
+Status: draft implementation for review in Team Hub PR #6. The migration has not been applied to production, and the conservative access policy below requires explicit approval before any production rollout. No real contact import, scraping, communication, Finance mutation, or deployment is included.
 
 ## Boundary and authorization
 
@@ -52,5 +52,5 @@ Migration: `supabase/migrations/20261006045839_sponsor_outreach_v1.sql`, created
 
 - `tests/outreach-db.spec.ts`: 14 PGlite integration groups covering live access, distinct contact/organization/season relationships, actor binding, replay/mismatch/stale versions, immutable conversation entries, pledge/recognition constraints, Finance-only linking/read-through, guarded recovery after revocation, closed/archive rules, direct privilege denial, audit rollback, and cancellation tombstone identity/idempotency/no-undo guards. Snapshots verify the migration and Outreach operations preserve Finance records, grants, RLS flags, and the exact Finance budget guard definition.
 - `tests/native/outreach-concurrency.mjs`: eight reproducible PostgreSQL multi-session cases for duplicate replay, competing versioned edits, actor revocation while awaiting the global lock or record lock, Finance revocation while awaiting the income row, cancellation versus in-flight/late writes, and actor revocation during the cancellation lock wait. Run with `OUTREACH_PG_BIN=/path/to/postgresql/bin node tests/native/outreach-concurrency.mjs`. All eight cases passed on native PostgreSQL 17.6. This executor could not create Unix sockets, so the runner uses the existing bridge test pattern: an ephemeral port bound only to 127.0.0.1, Unix sockets disabled, a disposable synthetic database, and no production connection settings. It stops and removes the temp cluster on exit. No externally reachable listener is created.
-- Production-specific database advisors remain a release gate. No remote advisors or production queries were run because this scope is local only.
-- Production access approval, actual installed Finance dependency review, backup/rollout review, and user-facing validation are outside this local implementation and must precede any deployment.
+- Production-specific database advisors remain a release gate. No remote advisors or production queries were run because the current scope is staged implementation and draft-PR validation only.
+- Production access approval, actual installed Finance dependency review, backup/rollout review, and user-facing validation are outside the approved draft-PR implementation and must precede any deployment.
