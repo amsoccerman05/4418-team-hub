@@ -1,4 +1,4 @@
-# Disposable Fabrication integration
+# Disposable Fabrication and Assembly integration
 
 ## Verification status
 
@@ -11,11 +11,11 @@ Locally verified:
 - `--prepare-only` with official Supabase CLI **2.119.0**. Its actual `init`, `start`, `status`, `stop`, and `functions serve` help was inspected.
 - Generated DXF (116 bytes) and PDF (329 bytes) pass the unchanged feature's real validators. No existing document is opened or uploaded.
 
-Do not treat these checks, the existing PGlite tests, or native PostgreSQL checks as evidence that Auth/Edge/Storage integration passed. Only a successful `--run` can print `PASS_REAL_SUPABASE_INTEGRATION`.
+Do not treat these checks, the existing PGlite tests, or native PostgreSQL checks as evidence that Auth/Edge/Storage integration passed. Only a successful `--run`, completing both Fabrication and Assembly assertions, can print `PASS_REAL_SUPABASE_INTEGRATION`. The earlier Fabrication-only run is recorded in PR 9; the expanded Assembly run is tracked in PR 10.
 
 ## Run on a disposable Docker-capable Linux machine
 
-Requirements: Node 22 or 24, official Supabase CLI **2.119.0** on PATH, Docker daemon at `/var/run/docker.sock`, and free ports **54330–54339**. Do not use a production machine or a developer computer containing a valuable stack on these ports. The runner creates its own random project; it never stops or resets another project.
+Requirements: Node 24, official Supabase CLI **2.119.0** on PATH, Docker daemon at `/var/run/docker.sock`, and free ports **54330–54339**. Do not use a production machine or a developer computer containing a valuable stack on these ports. The runner creates its own random project; it never stops or resets another project.
 
 ```sh
 node --test tests/integration/fabrication-safety.test.mjs
@@ -64,7 +64,7 @@ The successful upload path is:
 
 Direct privileged SQL is limited to shared-contract scaffolding, seeding synthetic profiles, independent persistence assertions, controlled access changes, and race/fault instrumentation. The scaffold creates four shared tables missing from this repository's migration history: `profiles`, `areas`, `team_positions`, and `team_member_positions`. They use RLS and no client grants. Profiles reference actual `auth.users`. This is **not** an end-to-end migration replay of every unrelated app or the production profile-onboarding flow.
 
-After that scaffold, five existing migrations run byte-for-byte unchanged: Planning V1, task dependencies, assignees, Sprint Review, and Fabrication. Season/project creation and assignment setup use real authenticated Planning/Sprint Review RPCs. The report hashes each migration and all three Edge source files, so reviewers can tie proof to the tested code.
+After that scaffold, six existing migrations run byte-for-byte unchanged: Planning V1, task dependencies, assignees, Sprint Review, Fabrication, and Assembly & Testing. Season/project creation and assignment setup use real authenticated Planning/Sprint Review RPCs. The report hashes each migration, all three Edge source files, the Assembly client model and the integration runner/suites, so reviewers can tie proof to the tested code. Node 24 imports the unchanged Assembly validator with native type stripping; no additional package installation is needed.
 
 A deliberately broad unrelated Storage policy verifies that the feature's restrictive private-bucket policies still deny direct access. Test-only triggers in a private schema can fail finalization or hold the terminal-receipt transaction at an advisory lock. They do not replace application functions or write Storage rows. They are removed after the tests; all generated data disappears when the stack is stopped.
 
@@ -81,6 +81,8 @@ A deliberately broad unrelated Storage policy verifies that the feature's restri
 - Concurrent authenticated operator claims yield one owner. Same-key acknowledgements yield one audit. A new revision preserves the claim, invalidates acknowledgement/review, and leaves prior revision bytes available.
 - A queued retry rechecks role, assignment, and archive changes after its authority lock wait.
 - All leases end terminally; no test-only triggers remain.
+
+The Assembly suite reuses the six real local Auth identities and a separate synthetic project. It checks authenticated context against the actual client parser; project lead/supporter editing versus readonly and unrelated actors; canonical task references; immutable revision-specific checks and supersession; stale versions and actor-specific receipts; frozen snapshot counts and IDs; current role, membership, assignment and archive changes using previously issued JWTs; and denied direct private-schema access. Independent fingerprints cover 28 canonical tables, including Sprint Review and Storage, so Assembly writes cannot silently modify those records.
 
 The lock tests wait for `pg_stat_activity.wait_event = advisory`, not arbitrary sleeps. Gate connections are explicitly committed/released in `finally` blocks. Endpoint timeouts and SQL statement timeouts bound a broken run.
 

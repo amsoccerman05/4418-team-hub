@@ -96,3 +96,7 @@ Fabrication reuses existing Planning project boards and supports multiple immuta
 This feature requires the reviewed additive Fabrication migration and private file gateway before deployment. They have **not** been applied to production. See [release and cost review](docs/FABRICATION-RELEASE-REVIEW.md), [backend contract](docs/FABRICATION-BACKEND.md), and [file gateway/format limits](docs/FABRICATION-FILES.md). Only synthetic records and files are used in tests.
 
 Focused checks: `npx playwright test tests/fabrication-db.spec.ts tests/fabrication-model.spec.ts tests/fabrication-files.spec.ts --workers=1`. Browser flow checks: `npx playwright test tests/fabrication-ui.spec.ts --workers=1`; synthetic review screenshots go under ignored `test-results/fabrication/`. Native concurrent transactions: `FABRICATION_PG_BIN=/path/to/postgresql-17/bin node tests/native/fabrication-concurrency.mjs`.
+
+## Assembly & Testing
+
+Planning project boards now include an Assembly & testing view with manufactured-part facts, manual purchased-component status, links to existing Planning tasks, revision-specific checks/rework evidence, and explicit immutable snapshots for Sprint Review drafts. The additive Assembly migration depends on Fabrication. See [scope, access, and release requirements](docs/ASSEMBLY-TESTING.md).

@@ -1,0 +1,17 @@
+import type {Task} from '../service';
+export type ComponentStatus='needed'|'ordered'|'received'|'installed';
+export type AssemblyComponent={id:string;name:string;quantity:number;status:ComponentStatus;notes:string;created_by:string;created_at:string;updated_at:string};
+export type AssemblyPart={id:string;name:string;status:string;version:number;current_revision_id:string;revision_number:number;quantity:number};
+export type AssemblyRevision={id:string;part_id:string;name:string;revision_number:number};
+export type CheckKind='fit'|'function'|'durability'|'other';
+export type CheckOutcome='passed'|'failed'|'blocked';
+export type AssemblyCheck={id:string;title:string;kind:CheckKind;outcome:CheckOutcome;procedure:string;expected:string;observed:string;evidence_url:string;revision_id:string|null;rework_task_id:string|null;supersedes_id:string|null;created_by:string;created_at:string};
+export type ReadinessFacts={parts_total:number;parts_done:number;components_total:number;components_available:number;tasks_total:number;tasks_done:number;tasks_blocked:number;checks_total:number;checks_passed:number;checks_failed:number;checks_blocked:number;checks_stale:number};
+export type AssemblySnapshot={id:string;board_id:string;created_by:string;created_at:string;notes:string;facts:ReadinessFacts;summary:string};
+export type AssemblyContext={user_id:string;board_id:string;version:number;can_edit:boolean;loaded_at:string;components:AssemblyComponent[];parts:AssemblyPart[];revisions:AssemblyRevision[];tasks:Task[];linked_task_ids:string[];checks:AssemblyCheck[];snapshots:AssemblySnapshot[];facts:ReadinessFacts};
+export type ComponentInput=Pick<AssemblyComponent,'id'|'name'|'quantity'|'status'|'notes'>;
+export type CheckInput=Omit<AssemblyCheck,'created_by'|'created_at'>;
+export type AssemblyAction='component'|'task_link'|'check'|'snapshot';
+export type AssemblyPayload={board_id:string;version:number}&(ComponentInput|CheckInput|{task_id:string;linked:boolean}|{id:string;notes:string});
+export type AssemblyMutation={action:AssemblyAction;request_id:string;expected_actor:string;p:AssemblyPayload};
+export type AssemblyReceipt={request_id:string;status:'applied'|'cancelled'|'unknown';action:AssemblyAction|null;entity_id:string|null;version:number|null};
