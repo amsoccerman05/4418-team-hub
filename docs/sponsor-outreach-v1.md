@@ -1,0 +1,79 @@
+# Sponsor & Outreach initial release: contract V2
+
+Status: local revision of the never-applied initial migration. Student participation and shared sponsor/business-contact visibility were explicitly approved. Production migration, merge, and deployment remain held. The initial migration is one coherent policy; the superseded manager-only draft is preserved in Git history, not installed first by another migration. No real-contact import, scraping, communication, Finance write, or deployment is included.
+
+## What this workspace does
+
+Outreach records sponsor identities, business contacts, season relationships, and manually entered records of communications already sent. A log's author is the account entering it; neither an email channel label nor a log entry sends an email. There is no outbound message API, draft, notification job, payment path, income creation, or approval action.
+
+Finance remains authoritative for receipts, expected income, amounts, spending, and approvals. A pledge is never a receipt. A fulfilled logo placement or thank-you never changes financial status. Free-text Finance source names are never converted automatically into sponsors.
+
+## Participation and private data
+
+Only currently active admin, mentor, student, and lead profiles can open Outreach. All participants can see every sponsor name/website and business contact name, title, email, and phone, including identities belonging to another teammate. Visibility does not grant ownership or assignment rights. Student/lead team positions confer no additional Outreach privileges, including positions that independently permit access in Finance.
+
+Managers are current active admins/mentors. They retain private notes, full conversation summaries, financial pledges/recognition, and oversight. They can assign engagements to any currently eligible active admin/mentor/student/lead. Every per-record capability is calculated by the server from live profile and record state.
+
+For students and leads:
+
+- A new prospect belongs to its immutable creation author. One atomic action creates the sponsor identity and its first season engagement, with the current actor as author and owner. It is immediately possible to add a business contact and record an already-sent email, without a mentor-only Outreach setup step.
+- An engagement is actionable when the student created it OR its current owner is that student through an explicit manager assignment. Creator ownership persists if a manager assigns another teammate; assignment is an additional collaboration right. Both paths require the sponsor to remain active, the season to remain open, and the actor to remain eligible.
+- They may edit public fields on their own sponsor identities. They may create a contact for their own sponsor or an actionable engagement, and edit only contacts they authored while that sponsor remains within that scope. Assignment never permits changing a teammate's sponsor identity or contact details.
+- They may create another season engagement only for their own sponsor identity. They cannot claim someone else's existing prospect, change an engagement's owner, change authorship, archive/unarchive sponsors or contacts, or newly mark an engagement committed. An existing assigned committed stage may be left unchanged while editing a follow-up date.
+- They may append a conversation log on an actionable engagement. All conversation entries, including their own, are append-only. Corrections use a new entry. Author/date/channel are shared coordination metadata; a student sees the summary only for entries they authored. Being assigned to a prospect does not expose other people's email contents.
+- All sponsor/contact/engagement notes are private manager notes, even on a student-created record. Student responses contain notes=null and notes_redacted=true. Student saves preserve the stored notes and archive flags; redacted null/empty values cannot erase them.
+- Pledges, recognition, income, and income links are empty in student responses, with financials_redacted=true and can_link_finance=false. Students cannot write those entities or link income, even when they separately hold a Finance-eligible position.
+
+The owners list contains eligible team display names for coordination; it is not authorization to assign. Conversations also include a server-provided author_name so a former/inactive author remains identifiable. No private audit history or stored operation payload is exposed through the context or recovery APIs.
+
+## Storage and model
+
+All nine tables remain in outreach_private with RLS enabled and no client policies. Direct table/sequence access is revoked from PUBLIC, anon, authenticated, and service_role, including permissive default grants. Authenticated clients get only schema usage and five narrowly guarded entry points reached through public SECURITY INVOKER wrappers. Private SECURITY DEFINER code uses empty search_path and current auth.uid()/profile checks, never client capability flags or user-editable JWT metadata. Internal policy helpers are not callable by clients. No existing Finance or identity grants change.
+
+- Organizations are persistent organization or individual sponsor identities. Business contacts are separate affiliated people, not Hub users or student/minor contact records.
+- Engagements are unique per organization/Finance season, with stage, current assigned owner, next follow-up date, and private notes. Stages are prospect/contacted/discussing/committed/closed. An engagement's closed stage describes outreach; the Finance season's closed status makes seasonal writes unavailable.
+- Conversations are dated email/phone/meeting/other logs, optionally referencing an active contact from the same organization. The server authors creation identity/time and never edits an existing log.
+- Pledges are cash promises with a positive decimal amount, or in-kind promises without an amount, with pledged/canceled status. There is no received/payment-completion field.
+- Recognition tracks logo placement, recognition, thank-you, or other promised obligations with an owner, due date, optional same-engagement pledge, and promised/fulfilled/waived status. Fulfilled requires a fulfillment date. This data is manager-only.
+- Income links manually associate existing same-season Finance income with an active cash pledge. One income record can link to at most one pledge; multiple income references can attach to a pledge. Current Finance metadata is read through, not copied. V1 has no unlink/reassignment endpoint; an erroneous link requires a separately reviewed correction.
+- Immutable history and operation receipts commit in the same transaction as each mutation. Audit failure rolls back the entire mutation, including both halves of an atomic prospect.
+
+Organization/season identity on an engagement, organization identity on a contact, and engagement identity on pledges/recognition cannot be moved. Archived sponsors and closed Finance seasons reject dependent writes. Existing assignment to an actor who later becomes ineligible grants no authority. An active engagement creator can preserve that unchanged owner while editing public fields; only a new or changed assignment requires owner eligibility. Recognition remains manager-only and requires an eligible owner on save.
+
+## RPC and types
+
+The complete types are in src/outreach/types.ts. Five public RPCs retain their names and signatures.
+
+`outreach_context(selected_season uuid = null)` returns contract_version=2, user_id, can_manage, can_create_prospect, can_link_finance, financials_redacted, season_id, seasons, owners, organizations, contacts, engagements, conversations, pledges, recognition, income, and income_links. The actor must match the pinned client account. Version 1 is no longer accepted by the revised frontend.
+
+An explicit unknown season fails 22023. Null selects active first, otherwise the latest season; no seasons yields null and empty seasonal arrays. Season summaries expose only id/name/status/start/end dates, never starting funds or reserves. Organizations/contacts are global; other arrays are selected-season scoped. Context is complete for the small-team dataset without silent truncation. Pagination and a browsable audit history are outside this initial release.
+
+All newly stored Outreach dates are finite Gregorian dates from 0001-01-01 through 9999-12-31. Required names, descriptions, and summaries reject the exact JavaScript trim whitespace set, including tabs, NBSP, Unicode separators, and BOM. Invalid legacy Finance season/income dates are projected as null in nullable fields without changing Finance. Null legacy owner/author display names become Team member. Optional website strings cannot invalidate the context; the separate link validator suppresses malformed or unsafe links.
+
+Each organization includes can_edit, can_add_contact, can_create_engagement, notes_redacted. Contacts include can_edit and notes_redacted. Engagements include can_edit, can_log, can_assign, notes_redacted. Conversations include summary_redacted, author_name, and can_edit=false. Redacted notes and summaries are null, never invented empty strings. Clients must validate flags and nulls, and show restricted content labels rather than infer permission from owner IDs.
+
+`outreach_save(entity text, p jsonb, request_id uuid, expected_actor uuid)` returns `{id,version}`. Existing entities remain organization/contact/engagement/conversation/pledge/recognition. Create with a client UUID and version 0; update with the current version and complete editable fields. The server owns author/time/version. Missing/null/negative version fails 22023; stale/nonzero-create version fails 40001. Permission failures use 42501; invalid relationships use 22023 or relational/check constraints.
+
+The additional entity `prospect` is a genuinely atomic create. Its payload is `{id:<new organization UUID>, version:0, engagement_id:<new engagement UUID>, season_id, kind, name, website, next_follow_up_on?}`. Both sponsor and engagement are created with the current author, engagement owner=current actor, stage=prospect, and empty private notes. It returns `{id:<organization UUID>,version:1}` and records two business audit entries plus one request receipt. Duplicate exact requests return that receipt; an existing/conflicting identity or engagement rolls back the whole create. No automatic second RPC is required.
+
+For student saves, sender/author spoofing and reassignment are rejected. The server preserves hidden fields from the stored row, including when a client sends null or empty redacted notes. The exact original request payload is captured before that normalization, so retries still compare correctly. The directly executable private save boundary also sanitizes PostgreSQL exceptions: it preserves SQLSTATE and controlled authorization/conflict/validation messages, clears original DETAIL/HINT, and replaces other messages. This prevents CHECK/NOT NULL failing-row diagnostics from exposing restored private notes. An error still rolls back the full transaction; it is never treated as success. Logging records the sender-authored summary of an already-sent communication; it does not perform delivery.
+
+`outreach_link_income(pledge_id, income_id, request_id, expected_actor)` remains restricted to managers who also pass unchanged finance_private.can_manage_budget(). It returns `{id,version:1}` for the association and never writes a Finance record. Amounts need not equal the pledge (for example, installments), and source text is not evidence of sponsor identity.
+
+`outreach_request_status(request_id, expected_actor)` returns `{status:'applied',result:{id,version}}`, `{status:'canceled'}`, or `{status:'not_found'}` for the current actor's UUID only. Not found remains inconclusive for an in-flight request.
+
+`outreach_cancel_request(request_id, expected_actor)` returns applied with the original opaque receipt if the write committed, otherwise canceled after inserting/observing an immutable tombstone. It takes the same transaction lock as save/link and rechecks live actor eligibility after waiting. A late original write sees the tombstone and fails 22023. It never edits/deletes/undoes business data or duplicates an existing receipt.
+
+Recovery is intentionally narrower than mutation replay: an eligible actor who loses an assignment may still reconcile/cancel their own opaque UUID, receiving only the original id/version or canceled status. No original input, notes, email contents, contact details, or current domain record is returned. This prevents legitimate unrelated work being stranded behind an uncertain old request. Finance-link receipts continue to require the existing Finance budget guard. A different actor sees not_found for that UUID; expected_actor mismatch or inactive/ineligible identity fails 42501.
+
+Late/exact mutation replay still rechecks current role and record scope, including current assignment, active sponsor, and open season. It cannot restore lost authority. Reusing a request UUID with different input fails. The short global transaction lock serializes cross-entity changes, and authorization is rechecked after blocking row/relationship/owner waits. A manager downgraded to student while waiting cannot retain assignment authority merely because they originally created the engagement.
+
+## Dependencies, tests, and release gate
+
+The single migration is supabase/migrations/20261006045839_sponsor_outreach_v1.sql, originally generated with official Supabase CLI 2.119.0 and now revised before its first application. It requires the installed Finance budget core: finance_seasons, finance_income, and finance_private.can_manage_budget. No substitute seasons or financial model is created. The Finance checkout was inspected read-only.
+
+The unchanged outreach_finance_budget_core.sql fixture is copied from Finance main d8fd913's budget-core migration and paired with the existing Finance V1 fixture. Every value used in tests is synthetic; no production queries occur.
+
+- tests/outreach-db.spec.ts has 28 sequential PGlite integration groups against this exact final migration. Coverage includes the initial Finance/audit/recovery invariants plus student atomic creation, all-contact visibility, per-record capabilities, private note/body/Finance redaction, hidden-note preservation, author/assignment spoof attempts, unrelated/assigned/revoked cases, recovery after assignment loss, and actual RPC-to-frontend-parser checks for bounded dates, legacy date/null-name projection, whitespace-only required text, malformed optional websites, an unchanged inactive assignee, and complete raw error-object checks on both public and private entry points. Finance snapshots verify no changes to records, grants, RLS flags, or the exact budget guard definition.
+- tests/native/outreach-concurrency.mjs exercises 18 native multi-session cases plus a raw-diagnostics check, including duplicate and stale writes, actor/Finance revocation during waits, cancellation order races, student prospect atomic replay, assignment-revoked contact/log/replay writes, active-sponsor/open-season checks after waits, manager downgrade during assignment, and immediate denial of hidden financial entities after either advisory or record waits. Native error checks cover CHECK/NOT NULL/atomic failure without private row diagnostics. It accepts OUTREACH_PG_BIN pointing to PostgreSQL binaries, uses a disposable cluster on an ephemeral 127.0.0.1-only port with Unix sockets disabled, and stops/removes it afterward. No production connection settings are used.
+- Production-specific database advisors, installed dependency verification, backup/rollout review, and user-facing release acceptance remain outstanding release gates. Production migration, merge, deployment, and real communications remain held.
