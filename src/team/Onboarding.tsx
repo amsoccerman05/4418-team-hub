@@ -1,8 +1,8 @@
 import {useEffect,useRef,useState} from 'react';
-import {ArrowRight,CheckCircle2,ClipboardList,Pause,Plus,RefreshCw,Users} from 'lucide-react';
+import {ArrowRight,CheckCircle2,Pause,Plus,RefreshCw} from 'lucide-react';
 import {createInvitationRow,updateInvitationRow,reviewInvitationBatch,validateInvitationBatch,createInvitationBatchRunner,INVITATION_BATCH_LIMIT,INVITATION_ROLES,INVITATION_REGISTRATIONS,type InvitationRow,type InvitationDraft,type InvitationBatchRunner,type InvitationValidationContext,type InvitationOutcome,type InvitationPayload} from './invitation-batch';
 import {submitReviewedInvitation} from './invitation-client';
-import {invitationSetup,attendanceRegistration,linkedInvitationMember,type OnboardingMember,type OnboardingInvitation} from './onboarding-status';
+import {invitationSetup,invitationDirectory,attendanceRegistration,linkedInvitationMember,type OnboardingMember,type OnboardingInvitation} from './onboarding-status';
 import {parseInvitationList} from './onboarding-input';
 import './onboarding.css';
 export type OnboardingData={members:OnboardingMember[];invitations?:OnboardingInvitation[];areas:{id:string;name:string;active:boolean}[]};
@@ -15,7 +15,7 @@ export function Onboarding(props:Props){
  const latest=useRef(props);latest.current=props;
  const workspaceRequests=useRef(new AbortController());
  const mounted=useRef(true),operation=useRef(false),pauseRequested=useRef(false),runner=useRef<InvitationBatchRunner|null>(null);
- const [rows,setRows]=useState<readonly InvitationRow[]>([]),[paste,setPaste]=useState(''),[reason,setReason]=useState(''),[step,setStep]=useState<'draft'|'review'>('draft'),[acknowledged,setAcknowledged]=useState(false),[running,setRunning]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[past,setPast]=useState<InvitationRow[]>([]),[search,setSearch]=useState(''),[status,setStatus]=useState('all');
+ const [rows,setRows]=useState<readonly InvitationRow[]>([]),[paste,setPaste]=useState(''),[reason,setReason]=useState(''),[step,setStep]=useState<'draft'|'review'>('draft'),[acknowledged,setAcknowledged]=useState(false),[running,setRunning]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[past,setPast]=useState<InvitationRow[]>([]),[search,setSearch]=useState(''),[status,setStatus]=useState('all'),[directoryView,setDirectoryView]=useState<'open'|'history'>('open'),[batchOpen,setBatchOpen]=useState(false);
  const currentWorkspace=()=>mounted.current&&latest.current.active&&latest.current.isCurrentIdentity()&&location.hash==='#team-management';
  const context=(data=latest.current.data):InvitationValidationContext=>({areas:data.areas,existingEmails:[...latest.current.existingEmails,...data.members.filter(member=>member.email).map(member=>({email:member.email!,kind:'member' as const})),...(data.invitations||[]).map(invitation=>({email:invitation.email,kind:'invitation' as const}))]});
  function makeRunner(initial:readonly InvitationRow[]=[]):InvitationBatchRunner{
@@ -37,6 +37,7 @@ export function Onboarding(props:Props){
   window.addEventListener('hashchange',leave);
   return()=>{mounted.current=false;runner.current?.pause();workspaceRequests.current.abort();window.removeEventListener('hashchange',leave);};
  },[]);
+ useEffect(()=>{if(props.active){setDirectoryView('open');setStatus('all');setSearch('');}},[props.active]);
  useEffect(()=>{if(!props.active&&running){pauseRequested.current=true;runner.current?.pause();setNotice('Paused after the current request because you left Onboarding. Nothing else will start automatically.');}},[props.active,running]);
  useEffect(()=>{
   if(!running||!rows.length)return;
@@ -79,13 +80,16 @@ export function Onboarding(props:Props){
  }
  const issues=rows.length?validateInvitationBatch(rows,context()):[];
  const ready=rows.filter(row=>row.status==='ready').length,attempted=rows.filter(row=>['accepted','review','sending','not_sent'].includes(row.status)).length;
- const invitations=(props.data.invitations||[]).filter(invitation=>(status==='all'||invitationSetup(invitation).tone===status)&&`${invitation.display_name} ${invitation.email}`.toLowerCase().includes(search.toLowerCase()));
- const counts={ready:(props.data.invitations||[]).filter(invitation=>invitationSetup(invitation).tone==='ready').length,pending:(props.data.invitations||[]).filter(invitation=>invitationSetup(invitation).tone==='pending').length,review:(props.data.invitations||[]).filter(invitation=>invitationSetup(invitation).tone==='review').length};
+ const directory=invitationDirectory(props.data.invitations||[]);
+ const invitations=directory[directoryView].filter(invitation=>(directoryView==='history'||status==='all'||invitationSetup(invitation).tone===status)&&`${invitation.display_name} ${invitation.email}`.toLowerCase().includes(search.trim().toLowerCase()));
+ const reviewCount=directory.open.filter(invitation=>invitationSetup(invitation).tone==='review').length;
+ const filtered=!!search.trim()||(directoryView==='open'&&status!=='all');
+ function switchDirectory(view:'open'|'history'){setDirectoryView(view);setStatus('all');}
  if(!props.active)return null;
  return <section className="onboarding" hidden={!props.active} aria-label="Team onboarding">
-  <div className="onboarding-heading"><div><h2>Onboarding</h2><p>Review invitations, account setup, and team attendance registration.</p></div><button disabled={props.busy||running} onClick={()=>void refreshStatus()}><RefreshCw size={16} aria-hidden="true"/>Refresh status</button></div>
-  <div className="onboarding-stats"><div><CheckCircle2 size={18} aria-hidden="true"/><strong>{counts.ready}</strong><span>Accounts active</span></div><div><Users size={18} aria-hidden="true"/><strong>{counts.pending}</strong><span>Setup in progress</span></div><div><ClipboardList size={18} aria-hidden="true"/><strong>{counts.review}</strong><span>Need review</span></div></div>
+  <div className="onboarding-heading"><div><h2>Onboarding</h2><p>Track invitations and help teammates get started.</p></div><button disabled={props.busy||running} onClick={()=>void refreshStatus()}><RefreshCw size={16} aria-hidden="true"/>Refresh status</button></div>
   {error&&<p className="onboarding-error" role="alert">{error}</p>}{notice&&<p className="onboarding-notice" role="status">{notice}</p>}
+  <details className="onboarding-compose" open={batchOpen} onToggle={event=>setBatchOpen(event.currentTarget.open)}><summary onClick={event=>{if(batchOpen&&running){event.preventDefault();pause();setBatchOpen(false);}}}><span>Invite a group</span><span className="onboarding-compose-summary">{rows.length?`${rows.length} recipients · ${running?'Sending':step==='review'?'Review and send':'Draft in progress'}`:'Paste a list, review, then send'}</span></summary>
   <section className="onboarding-batch" aria-labelledby="batch-heading"><div className="onboarding-heading"><div><span className="workspace-eyebrow">{step==='draft'?'1 · Prepare':'2 · Review and send'}</span><h3 id="batch-heading">Reviewed batch invitations</h3></div><span className="team-badge">{rows.length} / {INVITATION_BATCH_LIMIT} recipients</span></div>
    <p className="team-form-hint">This is a {INVITATION_BATCH_LIMIT}-recipient review limit, not an email allowance. Provider limits are unknown. Sending pauses on any rejection or uncertain result; nothing retries automatically.</p>
    {step==='draft'&&<>
@@ -108,14 +112,17 @@ export function Onboarding(props:Props){
     {running?<button onClick={pause}><Pause size={16} aria-hidden="true"/>Pause after current invitation</button>:step==='draft'?<button className="primary" disabled={props.busy||!rows.length} onClick={review}>Review batch<ArrowRight size={16} aria-hidden="true"/></button>:<><button disabled={props.busy} onClick={()=>{setStep('draft');setAcknowledged(false);}}>Edit remaining recipients</button><button className="primary" disabled={props.busy||!acknowledged||ready===0} onClick={()=>void sendReviewed()}>{attempted?'Resume':'Send'} {ready} reviewed {ready===1?'invitation':'invitations'}</button></>}
     {!running&&rows.length>0&&!rows.some(row=>row.status==='draft'||row.status==='ready')&&<button disabled={props.busy} onClick={newBatch}>Start a new batch</button>}
    </div><p className="team-form-hint">Drafts and pause/resume state stay while Team Management remains open. Leaving or reloading does not undo a request already sent. Refresh the team directory before starting again.</p>
-  </section>
+  </section></details>
   {past.length>0&&<details className="onboarding-history"><summary>Earlier batch outcomes ({past.length})</summary><ul>{past.map(row=><li key={row.id}><strong>{row.draft.display_name}</strong> · {row.draft.email} · {statusLabel(row)}<p>{row.outcome?.message}</p></li>)}</ul></details>}
-  <section aria-labelledby="setup-heading"><div className="onboarding-heading"><div><h3 id="setup-heading">Account setup and registration</h3><p className="team-form-hint">Team attendance registration does not confirm FIRST registration or school forms. Account access and attendance registration are separate.</p></div><button onClick={props.onActivity}>View Activity</button></div>
-   <div className="onboarding-directory-filters"><label>Find an invitation<input type="search" value={search} onChange={event=>setSearch(event.target.value)}/></label><label>Account setup status<select aria-label="Account setup status" value={status} onChange={event=>setStatus(event.target.value)}><option value="all">All invitations</option><option value="ready">Account active</option><option value="pending">Setup in progress</option><option value="review">Needs review</option></select></label></div>
+  <section className="onboarding-directory" aria-labelledby="setup-heading"><div className="onboarding-heading"><div><h3 id="setup-heading">Invitations</h3><p>Open invitations stay here until the server confirms an active account.</p></div><button onClick={props.onActivity}>View Activity</button></div>
+   <div className="onboarding-views" role="group" aria-label="Invitation views"><button aria-pressed={directoryView==='open'} onClick={()=>switchDirectory('open')}>In progress <span className="team-count">{directory.open.length}</span></button><button aria-pressed={directoryView==='history'} onClick={()=>switchDirectory('history')}>Account history <span className="team-count">{directory.history.length}</span></button></div>
+   <div className="onboarding-directory-filters"><label><span className="team-control-label">Find an invitation</span><input type="search" placeholder="Search name or email…" value={search} onChange={event=>setSearch(event.target.value)}/></label>{directoryView==='open'&&<label><span className="team-control-label">Account setup status</span><select value={status} onChange={event=>setStatus(event.target.value)}><option value="all">All in progress</option><option value="pending">Awaiting setup</option><option value="review">Needs review ({reviewCount})</option></select></label>}</div>
+   {directoryView==='history'&&<p className="team-form-hint">These invitation records are retained for reference. Account active confirms a verified email and sign-in, not completion of password setup.</p>}
    <div className="onboarding-status-list">{invitations.map(invitation=>{
     const setup=invitationSetup(invitation),member=linkedInvitationMember(invitation,props.data.members),registration=attendanceRegistration(member);
-    return <article className="onboarding-status-row" key={invitation.id}><div><h4>{invitation.display_name||'Invited member'}</h4><p>{invitation.email}</p><small>Requested {safeDate(invitation.created_at)}</small></div><div><span className={`team-badge onboarding-${setup.tone}`}>{setup.label}</span><p>{setup.description}</p></div><div><strong>Attendance: {registration.label}</strong><p>{registration.description}</p>{member&&<button disabled={props.busy||running} onClick={()=>props.onMember(member.id)}>Manage {member.display_name||'member'}</button>}</div></article>;
-   })}</div>{!invitations.length&&<p className="team-empty">{search||status!=='all'?'No invitations match this view.':'No invitations yet. Prepare a reviewed batch above, or invite one member from the directory.'}</p>}
+    return <article className="onboarding-status-row" key={invitation.id}><div className="onboarding-invite-identity"><h4>{invitation.display_name||'Invited member'}</h4><p>{invitation.email}</p><small>Requested {safeDate(invitation.created_at)}</small></div><div className="onboarding-invite-status"><span className={`team-badge onboarding-${setup.tone}`}>{setup.label}</span><p>{setup.description}</p><details className="onboarding-registration"><summary>Attendance registration</summary><p><strong>Attendance: {registration.label}</strong> · {registration.description}</p>{member&&<button disabled={props.busy||running} onClick={()=>props.onMember(member.id)}>Manage {member.display_name||'member'}</button>}</details></div></article>;
+   })}</div>{!invitations.length&&<div className="team-empty onboarding-empty">{filtered?<><p>No invitations match this view.</p><button onClick={()=>{setSearch('');setStatus('all');}}>Clear invitation filters</button></>:directoryView==='history'?<p>No account history yet. Invitations move here when an active account is confirmed.</p>:<><CheckCircle2 size={24} aria-hidden="true"/><h4>No invitations in progress</h4><p>{directory.history.length?'Active accounts are in Members; their invitation records are in Account history.':'Invite a member from the directory or open Invite a group above.'}</p></>}</div>}
+   <p className="team-form-hint onboarding-registration-note">Team attendance registration does not confirm FIRST registration or school forms. Account access and attendance registration are separate.</p>
   </section>
  </section>;
 }

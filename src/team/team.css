@@ -24,7 +24,7 @@
 @media(max-width:640px){.team-member-grid .team-member{grid-template-columns:1fr;gap:6px;padding:16px}.team-member-grid button,.team-member-grid p:last-of-type{grid-column:auto;grid-row:auto}.team-member-grid button{justify-self:start;margin-top:6px}.team-view-heading{align-items:flex-start;flex-direction:column}.team-tabs{gap:0}.team-tabs button{padding:10px 8px;font-size:13px}.team-dialog .team-editor{padding:16px}.team-dialog .section-heading{top:-16px;flex-direction:row;align-items:center}.team-dialog .section-heading button{padding:8px;white-space:nowrap}}
 .team-filters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:16px 0}.team-email{overflow-wrap:anywhere}.team-linked{font-size:12px;color:var(--suite-primary);padding:8px;background:var(--suite-info-bg);border-radius:6px}.team-invite-status{padding:12px;background:var(--suite-info-bg);border-radius:8px;overflow-wrap:anywhere}.team-area-list>div{align-items:center;flex-wrap:wrap}.team-area-list button{margin-left:auto}.team-editor fieldset{min-width:0}.team-editor code{overflow-wrap:anywhere}.team-member-grid .team-member{grid-template-columns:minmax(0,1fr) minmax(0,1.4fr) auto}.team-position-grid .team-member{min-width:0;overflow-wrap:anywhere}@media(max-width:640px){.team-filters{grid-template-columns:1fr}.team-member-grid .team-member{grid-template-columns:minmax(0,1fr)}}
 /* My 4418 / member directory polish: existing workflows remain unchanged. */
-.team-tabs{background:transparent;border-radius:0;padding:0;border-bottom:1px solid var(--suite-border);margin:16px 0;gap:12px}.team-tabs button{flex:0 0 auto;border-radius:0;padding:8px 12px}.team-tabs button[aria-pressed=true]{box-shadow:none;border-bottom:2px solid var(--suite-primary)}.team-search-row{display:flex;gap:16px;align-items:end}.team-search-row label{flex:1;min-width:0;display:grid;gap:6px}.team-search-row input{width:100%;box-sizing:border-box}.team-search-row button{white-space:nowrap}.team-filters{max-width:760px;margin:12px 0 20px}.team-filters label{font-size:13px;display:grid;gap:4px}.team-invitations h2{font-size:18px}.team-invitation-row{display:flex;align-items:start;justify-content:space-between;gap:16px;padding:12px 0;border-bottom:1px solid var(--suite-border)}.team-invitation-row p{font-size:13px;margin:4px 0}.team-invitation-row>div{min-width:0}.team-badge{display:inline-block;font-size:12px;font-weight:600;padding:4px 8px;border-radius:5px;background:var(--suite-subtle);white-space:normal}.team-badges{display:flex;gap:6px;margin:6px 0}.team-member-grid .team-member button{grid-row:auto;grid-column:auto}.team-member-identity,.team-member-details{min-width:0}.team-member-grid .team-member p{margin:4px 0}.team-member-grid .team-member p:last-of-type{grid-column:auto}@media(max-width:640px){.team-search-row{flex-wrap:wrap}.team-search-row label{flex-basis:100%}.team-search-row button{margin-left:auto}.team-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.team-invitation-row{flex-direction:column;gap:6px}.team-tabs{gap:0}.team-tabs button{padding:8px}.team-member-grid .team-member button{justify-self:start}}
+.team-tabs{background:transparent;border-radius:0;padding:0;border-bottom:1px solid var(--suite-border);margin:16px 0;gap:12px}.team-tabs button{flex:0 0 auto;border-radius:0;padding:8px 12px}.team-tabs button[aria-pressed=true]{box-shadow:none;border-bottom:2px solid var(--suite-primary)}.team-filters{max-width:760px;margin:12px 0 20px}.team-filters label{font-size:13px;display:grid;gap:4px}.team-badge{display:inline-block;font-size:12px;font-weight:600;padding:4px 8px;border-radius:5px;background:var(--suite-subtle);white-space:normal}.team-badges{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}.team-member-grid .team-member button{grid-row:auto;grid-column:auto}.team-member-identity,.team-member-details{min-width:0}.team-member-grid .team-member p{margin:4px 0}.team-member-grid .team-member p:last-of-type{grid-column:auto}@media(max-width:640px){.team-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.team-tabs{gap:0}.team-tabs button{padding:8px}.team-member-grid .team-member button{justify-self:start}}
 
 /* Directory polish: one filter surface and a clear identity column. */
 .team-management > .section-heading { padding-bottom:24px; border-bottom:1px solid var(--suite-border); margin-bottom:24px; }
@@ -34,14 +34,12 @@
 .team-tabs button:hover { color:var(--suite-primary); background:var(--suite-info-bg); }
 .team-directory-controls { padding:20px; background:var(--suite-surface); border:1px solid var(--suite-border); border-radius:var(--radius-card); box-shadow:var(--suite-shadow); }
 .team-directory-controls .team-filters { max-width:none; margin:16px 0 0; padding-top:16px; border-top:1px solid var(--suite-subtle); }
-.team-directory-controls .team-search-row label { max-width:660px; }.team-directory-controls .team-search-row { justify-content:space-between; }
 .team-count { display:inline-flex; align-items:center; justify-content:center; min-width:24px; height:24px; padding:0 7px; border-radius:6px; background:var(--suite-subtle); font-weight:650; vertical-align:middle; }
 .team-member-grid { margin:0; box-shadow:var(--suite-shadow); }
 .team-member-grid .team-member { padding:20px; }.team-member-grid .team-member:hover { background:var(--suite-secondary); }
 .team-member-identity { position:relative; padding-left:48px; }.team-member-avatar { position:absolute; top:0; left:0; width:34px; height:34px; display:flex; align-items:center; justify-content:center; border-radius:9px; background:var(--suite-info-bg); color:var(--suite-primary); font-family:var(--font-heading); font-weight:750; }
 .team-badge { font-size:10px; font-weight:700; letter-spacing:.025em; }.team-badge.is-active { background:var(--suite-success-bg); color:var(--suite-success); }.team-badge.is-inactive { background:var(--suite-subtle); color:var(--suite-muted); }
 .team-member-details { padding-left:20px; border-left:1px solid var(--suite-border); }
-.team-invitations { margin-top:24px; padding:18px 20px; background:var(--suite-secondary); border:1px solid var(--suite-border); border-radius:var(--radius-card); }.team-invitation-row:last-child { border-bottom:0; padding-bottom:0; }
 .team-area-list { background:var(--suite-surface); border:1px solid var(--suite-border); border-radius:var(--radius-card); overflow:hidden; }.team-area-list>div:last-child { border-bottom:0; }
 .team-position-grid .team-member { border-top:3px solid var(--suite-primary); box-shadow:var(--suite-shadow); }
 .team-directory-group > h2 { font-size:14px; color:var(--suite-muted); margin-bottom:12px; }
@@ -50,9 +48,8 @@
 @media(max-width:640px){
  .team-management > .section-heading { padding-bottom:20px; margin-bottom:20px; }.team-management .team-tabs { gap:0; margin-bottom:20px; }
  .team-directory-controls { padding:16px; }.team-directory-controls .team-filters { grid-template-columns:1fr; gap:12px; }
- .team-directory-controls .team-search-row { gap:12px; }.team-directory-controls .team-search-row button { width:100%; margin:0; }
  .team-member-grid .team-member { gap:12px; padding:16px; }.team-member-details { padding-left:48px; border:0; }
- .team-member-grid .team-member>button { justify-self:stretch; }.team-invitations { padding:16px; }
+ .team-member-grid .team-member>button { justify-self:stretch; }
 }
 
 /* A focused single-person invitation, with optional details and an explicit outcome. */
@@ -66,3 +63,36 @@
 .team-management .team-invite-review-state h3 { margin:0; font-size:16px; }.team-invite-review-state>div { display:flex; gap:10px; flex-wrap:wrap; }
 .team-invite-review-state button { background:var(--suite-surface); }
 @media(max-width:640px){.team-invite-submit{gap:6px}.team-invite-submit>button{width:100%}.team-invite-review-state>div>button{flex:1}}
+
+/* The roster is the directory; invitation records live in Onboarding. */
+.team-directory-heading { margin:0 0 16px; }
+.team-directory-heading p { color:var(--suite-muted); font-size:13px; }
+.team-directory-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.team-directory-actions .team-count { font-size:11px; margin-left:6px; height:20px; }
+.team-directory-controls { display:flex; align-items:center; gap:12px; padding:12px; margin-bottom:16px; box-shadow:none; }
+.team-directory-controls .team-member-search { flex:1 1 320px; min-width:0; }
+.team-directory-controls .team-filters { flex:1 1 420px; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:0; padding:0; border:0; }
+.team-control-label { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0; }
+.team-directory-results { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:-8px 0 8px; }
+.team-directory-results p { font-size:12px; color:var(--suite-muted); }
+.team-directory-results button { background:transparent; border-color:transparent; box-shadow:none; padding-inline:8px; font-size:12px; }
+@media(max-width:850px){.team-directory-controls{flex-wrap:wrap}.team-directory-controls .team-member-search,.team-directory-controls .team-filters{flex-basis:100%}}
+@media(max-width:640px){
+ .team-directory-heading{gap:12px}.team-directory-actions{width:100%;gap:8px}.team-directory-actions button{flex:1;padding-inline:10px}
+ .team-directory-controls{padding:10px;gap:8px}.team-directory-controls .team-filters{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.team-directory-controls select{padding-inline:6px}
+}
+
+/* Keep account details distinct when the workspace shares the screen with navigation. */
+@media(min-width:641px) and (max-width:1100px){
+ .team-member-grid .team-member{grid-template-columns:minmax(0,1fr) auto;gap:8px 20px}
+ .team-member-grid .team-member-identity{grid-column:1;grid-row:1}
+ .team-member-grid .team-member-details{grid-column:1;grid-row:2;padding-left:48px;border-left:0}
+ .team-member-grid .team-member>button{grid-column:2;grid-row:1 / span 2;align-self:center}
+}
+@media(max-width:1100px){
+ .team-management .team-tabs{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;overflow:visible}
+ .team-management .team-tabs button{min-width:0;padding:10px 8px;font-size:13px;white-space:normal}
+}
+@media(max-width:640px){
+ .team-management .team-tabs{grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}
+}
