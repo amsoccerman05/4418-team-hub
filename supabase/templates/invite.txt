@@ -1,0 +1,13 @@
+FRC Team 4418 · IMPULSE
+Team workspace invitation
+
+You're invited to join us.
+
+You've been invited to the 4418 IMPULSE team workspace. Accept your invitation to continue.
+
+Accept invitation:
+{{ .ConfirmationURL }}
+
+This invitation is intended for you. Please don't forward it.
+
+If you weren't expecting this invitation, you can ignore this email.

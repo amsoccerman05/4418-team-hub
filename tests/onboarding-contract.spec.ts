@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 import {classifyInvitationResponse} from '../src/team/invitation-client';
 import {parseInvitationList} from '../src/team/onboarding-input';
-import {invitationSetup,attendanceRegistration,linkedInvitationMember,type OnboardingInvitation} from '../src/team/onboarding-status';
+import {invitationSetup,invitationDirectory,attendanceRegistration,linkedInvitationMember,type OnboardingInvitation} from '../src/team/onboarding-status';
 import {readFileSync} from 'node:fs';
 const id='00000000-0000-0000-0000-000000000001';
 for(const status of [200,202])test(`only confirmed matching pending responses are accepted ${status}`,()=>{
@@ -55,5 +55,36 @@ test('batch preparation gives concise accessible names with separately linked hi
   expect(html).toMatch(/<input[^>]*aria-label="Reason for these invitations"[^>]*aria-describedby="onboarding-reason-hint"/);
   expect(html).toContain('<small id="onboarding-paste-hint">One Name, email pair per line.');
   expect(html).toContain('<small id="onboarding-reason-hint">Copied into new draft rows;');
+ }finally{await server.close();}
+});
+
+
+test('only server-confirmed active accounts leave the open invitation queue',()=>{
+ const states=['pending','processing','review','accepted','unknown','account_active'];
+ const invitations=states.map((status,index)=>({id:`request-${index}`,email:'same@example.test',display_name:'Same person',status,review_reason:status==='review'?'identity_unmatched':undefined,created_at:'2026-10-05',user_id:null}));
+ const original=JSON.stringify(invitations);
+ const directory=invitationDirectory(invitations);
+ expect(directory.open.map(invitation=>invitation.status)).toEqual(states.slice(0,-1));
+ expect(directory.history.map(invitation=>invitation.status)).toEqual(['account_active']);
+ expect(directory.open).toHaveLength(5);expect(JSON.stringify(invitations)).toBe(original);
+ expect(invitationDirectory([])).toEqual({open:[],history:[]});
+ expect(invitationDirectory([{...invitations[0],status:'account_active'}]).open).toEqual([]);
+ expect(invitationDirectory([{...invitations[5],status:'review'}]).open).toHaveLength(1);
+ for(const status of ['account_active','accepted','pending'])expect(invitationSetup({...invitations[0],status}).description.toLowerCase()).toContain('password setup');
+});
+
+test('onboarding initially shows unresolved records and retains a separate history count',async()=>{
+ const {createServer}=await import('vite');const {createElement}=await import('react');const {renderToStaticMarkup}=await import('react-dom/server');
+ const server=await createServer({logLevel:'silent',server:{middlewareMode:true},appType:'custom'});
+ try{
+  const {Onboarding}=await server.ssrLoadModule('/src/team/Onboarding.tsx');
+  const invitations=['account_active','pending','processing','accepted','review','unrecognized'].map((status,index)=>({id:`request-${index}`,email:`fixture${index}@example.test`,display_name:`Fixture ${status}`,status,created_at:'2026-10-05',user_id:null}));
+  const html=renderToStaticMarkup(createElement(Onboarding,{actorId:'fixture-manager',identitySignal:new AbortController().signal,isCurrentIdentity:()=>true,data:{members:[],areas:[],invitations},active:true,busy:false,existingEmails:[],refresh:async()=>({members:[],areas:[],invitations}),onBusyChange:()=>{},onBlock:()=>{},onActivity:()=>{},onMember:()=>{}}));
+  expect(html).not.toContain('fixture0@example.test');
+  for(let index=1;index<invitations.length;index++)expect(html).toContain(`fixture${index}@example.test`);
+  expect(html).toContain('In progress <span class="team-count">5</span>');
+  expect(html).toContain('Account history <span class="team-count">1</span>');
+  expect(html).toContain('Sign-in recorded');expect(html).not.toContain('onboarding-stats');
+  expect(html).toMatch(/<details class="onboarding-compose">/);
  }finally{await server.close();}
 });

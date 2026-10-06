@@ -23,5 +23,5 @@ export async function onboardingFixture(page:Page,role='mentor'){
 }
 export async function openOnboarding(page:Page){await page.goto('/#team-management');await page.getByRole('button',{name:'Onboarding',exact:true}).click();return page.getByRole('region',{name:'Team onboarding',exact:true});}
 export async function prepareBatch(page:Page,text='Alex Rivera, alex@example.test\nJordan Lee, jordan@example.test'){
- const ui=await openOnboarding(page);await ui.getByLabel('Names and emails',{exact:true}).fill(text);await ui.getByLabel('Reason for these invitations',{exact:true}).fill('Joining the build team');await ui.getByRole('button',{name:'Add pasted recipients',exact:true}).click();await ui.getByRole('button',{name:'Review batch',exact:true}).click();return ui;
+ const ui=await openOnboarding(page);await ui.getByText('Invite a group',{exact:true}).click();await ui.getByLabel('Names and emails',{exact:true}).fill(text);await ui.getByLabel('Reason for these invitations',{exact:true}).fill('Joining the build team');await ui.getByRole('button',{name:'Add pasted recipients',exact:true}).click();await ui.getByRole('button',{name:'Review batch',exact:true}).click();return ui;
 }
