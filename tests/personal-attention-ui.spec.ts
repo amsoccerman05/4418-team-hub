@@ -11,11 +11,13 @@ async function setup(page:Page){
  await page.route('**/rpc/notification_center',r=>r.fulfill({json:{unread:0,attention:[],items:[],has_more:false}}));
  await page.route('**/rpc/planning_my_work_context',r=>r.fulfill({json:c}));
  await page.route('**/rpc/planning_task_detail',r=>r.fulfill({json:{steps:[],comments:[],history:[]}}));
- await page.route('**/rest/v1/pit_issues?*',r=>{expect(new URL(r.request().url()).searchParams.get('assigned_to')).toBe(`eq.${id(1)}`);return r.fulfill({json:repairs,headers:{'content-range':repairs.length?`0-${repairs.length-1}/${repairs.length}`:'*/0'}});});
+ await page.route('**/rest/v1/pit_issues?*',r=>{expect(new URL(r.request().url()).searchParams.get('assigned_to')).toBe(`eq.${id(1)}`);return r.fulfill({json:repairs,headers:{'content-range':repairs.length?`0-${repairs.length-1}/${repairs.length}`:'*/0','access-control-expose-headers':'content-range'}});});
  return {c,repairs,mutations};
 }
 for(const width of [390,1440])test(`personal follow-through and exact task navigation at ${width}`,async({page})=>{
  await page.setViewportSize({width,height:900});const {c,repairs,mutations}=await setup(page);await page.goto('/');
+ // This cross-origin fixture must expose the same count header the SDK reads.
+ expect(await page.evaluate(async uid=>(await fetch(`https://attendance-test.supabase.invalid/rest/v1/pit_issues?assigned_to=eq.${uid}`)).headers.get('content-range'),id(1))).toBe('0-0/1');
  const attention=page.getByRole('region',{name:'Needs your attention'});await expect(attention.getByText('Check intake alignment',{exact:true})).toBeVisible();await expect(attention.getByText('Repair #40 · Replace loose connector',{exact:true})).toBeVisible();
  await expect(attention.getByRole('link',{name:/Repair #40/})).toHaveAttribute('href',`https://pit.frc4418.org/#issue/${id(40)}`);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await page.screenshot({path:`test-results/personal-attention-${width}.png`,fullPage:true});
@@ -23,8 +25,9 @@ for(const width of [390,1440])test(`personal follow-through and exact task navig
  await page.getByRole('button',{name:'Refresh',exact:true}).click();await expect(dialog).toHaveCount(0);await page.goBack();await expect(page.getByRole('heading',{name:'My 4418',exact:true})).toBeVisible();await page.goForward();await expect(page.getByRole('heading',{name:'My Work',exact:true})).toBeVisible();await expect(dialog).toHaveCount(0);
  c.tasks[0].status='done';repairs.length=0;await page.goto('/');await expect(page.getByRole('region',{name:'Needs your attention'})).toHaveCount(0);expect(mutations).toEqual([]);
 });
+// GET 503 retries are bounded by the dashboard's existing 15-second source budget.
 test('partial failures preserve the other source and retry replaces stale assignments',async({page})=>{
- const {c}=await setup(page);await page.route('**/rest/v1/pit_issues?*',r=>r.fulfill({status:503,json:{message:'Synthetic unavailable'}}));await page.goto('/');await expect(page.getByText('Check intake alignment',{exact:true})).toBeVisible();await expect(page.getByText('Your pit repairs couldn’t be checked.',{exact:false})).toBeVisible();
+ const {c}=await setup(page);await page.route('**/rest/v1/pit_issues?*',r=>r.fulfill({status:503,json:{message:'Synthetic unavailable'}}));await page.goto('/');await expect(page.getByText('Check intake alignment',{exact:true})).toBeVisible();await expect(page.getByText('Your pit repairs couldn’t be checked.',{exact:false})).toBeVisible({timeout:16000});
  c.tasks=[];await page.getByRole('button',{name:'Refresh',exact:true}).click();await expect(page.getByText('Check intake alignment',{exact:true})).toHaveCount(0);
  await page.goto(`/#planning/my-work/${id(30)}`);await expect(page.getByText('This assigned task is no longer available.',{exact:false})).toBeVisible();await expect(page.getByRole('dialog')).toHaveCount(0);
 });

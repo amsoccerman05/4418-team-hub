@@ -44,3 +44,16 @@ test('onboarding remains client-only and does not add credential/storage/provide
  expect(ui).not.toMatch(/SERVICE_ROLE|auth\.admin|\/auth\/v1\/invite|localStorage|sessionStorage|setTimeout|setInterval/);
  const client=readFileSync('src/team/invitation-client.ts','utf8');expect((client.match(/functions\.invoke\(/g)||[])).toHaveLength(1);
 });
+
+test('batch preparation gives concise accessible names with separately linked hints',async()=>{
+ const {createServer}=await import('vite');const {createElement}=await import('react');const {renderToStaticMarkup}=await import('react-dom/server');
+ const server=await createServer({logLevel:'silent',server:{middlewareMode:true},appType:'custom'});
+ try{
+  const {Onboarding}=await server.ssrLoadModule('/src/team/Onboarding.tsx');
+  const html=renderToStaticMarkup(createElement(Onboarding,{actorId:'fixture-manager',identitySignal:new AbortController().signal,isCurrentIdentity:()=>true,data:{members:[],areas:[],invitations:[]},active:true,busy:false,existingEmails:[],refresh:async()=>({members:[],areas:[],invitations:[]}),onBusyChange:()=>{},onBlock:()=>{},onActivity:()=>{},onMember:()=>{}}));
+  expect(html).toMatch(/<textarea[^>]*aria-label="Names and emails"[^>]*aria-describedby="onboarding-paste-hint"/);
+  expect(html).toMatch(/<input[^>]*aria-label="Reason for these invitations"[^>]*aria-describedby="onboarding-reason-hint"/);
+  expect(html).toContain('<small id="onboarding-paste-hint">One Name, email pair per line.');
+  expect(html).toContain('<small id="onboarding-reason-hint">Copied into new draft rows;');
+ }finally{await server.close();}
+});
