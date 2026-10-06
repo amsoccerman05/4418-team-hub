@@ -1,6 +1,6 @@
 # Season Goals in Planning
 
-Status: staged implementation for review. This branch starts from Team Hub main `ba4e303` and does not include the unmerged Sponsor workspace. No migration, public push, or deployment is authorized by this implementation task.
+Season Goals is an additive Planning feature. Deployment follows the dependency, permission and verification gates below.
 
 ## The weekly workflow
 
@@ -11,7 +11,7 @@ Status: staged implementation for review. This branch starts from Team Hub main 
 
 A lower target is supported for measurements such as cycle time. An unchanged target uses the explicit “Maintain this value” direction. Fundraising goals label their manually reported measure as pledged or received; they do not import donor, income, or budget data from Finance.
 
-## Proposed permissions
+## Goal permissions
 
 | Action | Who can do it |
 | --- | --- |
@@ -22,7 +22,7 @@ A lower target is supported for measurements such as cycle time. An unchanged ta
 | Add evidence or a weekly update | Its active student owner, named eligible supporter, or existing Planning leadership |
 | Read drafts/archives | Existing Planning leadership, following the current Planning season rules |
 
-Supporting writers must have an active student, lead, mentor, or admin base role. Readonly profiles remain read-only. A goal assignment never adds task-editing, season-administration, app, or Finance permissions. The existing `planning_private.manager()` definition is unchanged. These new goal-specific capabilities require a separate production-access decision before rollout.
+Supporting writers must have an active student, lead, mentor, or admin base role. Readonly profiles remain read-only. A goal assignment never adds task-editing, season-administration, app, or Finance permissions. The existing `planning_private.manager()` definition and Planning private schema permissions are unchanged. Goals uses its own private schema for guarded operations and history.
 
 ## History, links, and interrupted work
 
@@ -38,4 +38,4 @@ The feature adds database authorization, concurrency, model/service/session, and
 
 Run `npm run build` and the normal `npm test` release checks on the final candidate. Native PostgreSQL concurrency coverage is in `tests/native/season-goals-concurrency.mjs`; the backend contract and focused verification commands are in [SEASON-GOALS-BACKEND.md](SEASON-GOALS-BACKEND.md).
 
-Before rollout: review the goal-specific access policy, verify current production dependencies and privileges without modifying business records, assess the additive migration and rollback plan, and complete browser/visual review. The held parent hub, training, Sponsor policy revision, Test & Practice, notifications, and engineering logs are outside this branch.
+Before rollout: review the goal-specific access policy, verify current production dependencies and privileges without modifying business records, assess the additive migration and rollback plan, and complete browser/visual review. Keep the new `planning_goals_private` schema outside the Data API's exposed schemas and extra search path. Goals does not change the parent hub, training, Sponsor policy, Test & Practice, notifications, or engineering logs.

@@ -5,7 +5,7 @@ import {execFileSync, spawn} from 'node:child_process';
 import {mkdtempSync, readFileSync, rmSync} from 'node:fs';
 import {createServer} from 'node:net';
 import {join} from 'node:path';
-import {baseline, goal, id, migration} from '../fixtures/season-goals-baseline.mjs';
+import {baseline, goal, id, migration, planningBoundarySnapshot, goalBoundaryGrants, expectedGoalBoundaryGrants} from '../fixtures/season-goals-baseline.mjs';
 
 const bin = process.env.SEASON_GOALS_PG_BIN || '/opt/homebrew/opt/postgresql@17/bin';
 const dir = mkdtempSync('/tmp/impulse-season-goals-native-');
@@ -114,8 +114,8 @@ const update = (operation, overrides = {}) => ({
   evidence: 'Synthetic native concurrency evidence', evidence_url: null,
   next_step: 'Run the next measured trial', observed_on: '2026-10-06', ...overrides,
 });
-const historyCount = operation => sql(`select count(*) from planning_private.goal_history where operation_id='${id(operation)}';`);
-const operationCount = operation => sql(`select count(*) from planning_private.goal_operations where operation_id='${id(operation)}';`);
+const historyCount = operation => sql(`select count(*) from planning_goals_private.goal_history where operation_id='${id(operation)}';`);
+const operationCount = operation => sql(`select count(*) from planning_goals_private.goal_operations where operation_id='${id(operation)}';`);
 const version = (ident = 300) => Number(sql(`select version from public.planning_goals where id='${id(ident)}';`));
 const noOperation = operation => {
   assert.equal(operationCount(operation), '0', 'Rejected request persisted an operation');
@@ -139,9 +139,28 @@ try {
     throw error;
   }
   sql(baseline());
+  const planningBefore = JSON.parse(sql(planningBoundarySnapshot));
   sql(readFileSync(migration, 'utf8'));
   assert.equal(sql("show listen_addresses;"), '127.0.0.1');
   assert.equal(sql('show unix_socket_directories;'), '');
+  assert.deepEqual(JSON.parse(sql(planningBoundarySnapshot)), planningBefore);
+  assert.deepEqual(JSON.parse(sql(`select jsonb_agg(to_jsonb(grants)) from (${goalBoundaryGrants}) grants`)), expectedGoalBoundaryGrants);
+  for (const role of ['anon', 'authenticated', 'service_role']) {
+    assert.equal(sql(`select has_schema_privilege('${role}','planning_private','USAGE')||','||has_sequence_privilege('${role}','planning_private.history_id_seq','USAGE')`), 'false,true');
+    for (const query of [
+      "select nextval('planning_private.history_id_seq')", "select setval('planning_private.history_id_seq',999)",
+      'select * from planning_private.history', 'select planning_private.member()', 'select planning_private.manager()',
+      `select planning_private.task_owners('${id(120)}')`,
+    ]) assertDenied(await startSQL(`set role ${role};${query};`, 'old_private_boundary').done, /42501:.*permission denied for schema planning_private/);
+    for (const query of [
+      "select nextval('planning_goals_private.goal_history_id_seq')", "select setval('planning_goals_private.goal_history_id_seq',999)",
+      'select * from planning_goals_private.goal_operations', 'select * from planning_goals_private.goal_history',
+      `select planning_goals_private.goal_snapshot('${id(300)}')`,
+    ]) assertDenied(await startSQL(`set role ${role};${query};`, 'new_private_boundary').done);
+  }
+  assert.equal(resultJSON(sql(`${user(3)}select public.planning_goals_context('${id(100)}');`)).capabilities.can_create, true);
+  assert.equal(resultJSON(sql(`${user(3)}select public.planning_context('${id(100)}');`)).season_id, id(100));
+  pass('permissive global defaults retain the original Planning boundary; only guarded Goals entry points are granted');
 
   const create = goal({supporter_ids: [id(6)], task_ids: [], milestone_ids: [], next_milestone_id: null});
   const replayGate = await transactionGate(`${user(1)}${save(create)}`, 'create_replay');
@@ -389,7 +408,8 @@ try {
   sql(`update public.profiles set active=true where id='${id(1)}';`);
   pass('actor deactivation during cancellation wait prevents a new tombstone');
 
-  console.log(`${checks} native multi-session checks passed on ${sql('show server_version;')}; no production database or external writes used.`);
+  assert.deepEqual(JSON.parse(sql(planningBoundarySnapshot)), planningBefore);
+  console.log(`${checks} native checks passed on ${sql('show server_version;')}; no production database or external writes used.`);
 } finally {
   // Close request pipes before stopping PostgreSQL, including when an assertion fails.
   for (const client of clients) client.child.stdin.destroy();

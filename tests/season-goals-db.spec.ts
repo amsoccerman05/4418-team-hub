@@ -3,9 +3,10 @@ import {PGlite} from '@electric-sql/pglite';
 import {readFileSync} from 'node:fs';
 import {assertContext,validEvidenceUrl} from '../src/planning/goals/model';
 // @ts-expect-error Shared JavaScript fixtures are also consumed by native PostgreSQL.
-import {baseline,id,migration,goal,update} from './fixtures/season-goals-baseline.mjs';
+import {baseline,id,migration,goal,update,planningBoundarySnapshot,goalBoundaryGrants,expectedGoalBoundaryGrants} from './fixtures/season-goals-baseline.mjs';
 test.describe.configure({mode:'serial'});
 let db:PGlite;
+let planningBefore:unknown;
 const as=async(n:number)=>db.exec(`reset role;select set_config('test.uid','${id(n)}',false);set role authenticated`);
 const save=async(p:any=goal(),actor=3)=>(await db.query<any>('select planning_goal_save($1,$2) r',[JSON.stringify(p),id(actor)])).rows[0].r;
 const append=async(p:any=update(),actor=3)=>(await db.query<any>('select planning_goal_update($1,$2) r',[JSON.stringify(p),id(actor)])).rows[0].r;
@@ -17,10 +18,27 @@ const fresh=async()=>{const c=await context();return c.goals.find((g:any)=>g.id=
 const edited=async(overrides:any={})=>{const g=await fresh();return goal({operation_id:id(902),expected_version:g.version,...overrides});};
 async function adminSQL(sql:string,actor=3){await db.exec('reset role');await db.exec(sql);await as(actor);}
 async function count(table:string){await db.exec('reset role');const n=(await db.query<any>(`select count(*)::integer n from ${table}`)).rows[0].n;await as(3);return n;}
-test.beforeAll(async()=>{db=new PGlite();await db.exec(baseline());await db.exec(readFileSync(migration,'utf8'));});
+test.beforeAll(async()=>{db=new PGlite();await db.exec(baseline());planningBefore=(await db.query(planningBoundarySnapshot)).rows;await db.exec(readFileSync(migration,'utf8'));});
 test.afterAll(async()=>db.close());
 test.beforeEach(async()=>{await as(3);await db.exec('begin');});
 test.afterEach(async()=>db.exec('rollback'));
+
+test('Goals leaves the existing Planning private boundary and object permissions unchanged under global defaults',async()=>{
+ await db.exec('reset role');
+ expect((await db.query(planningBoundarySnapshot)).rows).toEqual(planningBefore);
+ // This is the dormant grant that a new USAGE grant on planning_private would
+ // activate. Preserve the old ACL while proving that clients cannot use it.
+ for(const role of ['anon','authenticated','service_role']){
+  expect((await db.query<any>("select has_schema_privilege($1,'planning_private','USAGE') reachable,has_sequence_privilege($1,'planning_private.history_id_seq','USAGE') inherited",[role])).rows[0]).toEqual({reachable:false,inherited:true});
+  await db.exec(`set role ${role}`);
+  for(const query of ["select nextval('planning_private.history_id_seq')","select setval('planning_private.history_id_seq',999)",'select * from planning_private.history','select planning_private.member()','select planning_private.manager()',`select planning_private.task_owners('${id(120)}')`])await rejects(()=>db.exec(query),/permission denied for schema planning_private/);
+  await db.exec('reset role');
+ }
+ await as(3);expect((await context()).capabilities.can_create).toBe(true);
+ expect((await save()).status).toBe('committed');expect((await append()).result.version).toBe(2);
+ expect((await db.query<any>('select planning_context($1) c',[id(100)])).rows[0].c.season_id).toBe(id(100));
+ await db.exec('reset role');expect((await db.query(planningBoundarySnapshot)).rows).toEqual(planningBefore);
+});
 
 test('explicit current capabilities, eligible student owners, and season visibility match existing Planning',async()=>{
  for(const n of [1,2,8]){await as(n);const c=await context();expect(c.capabilities).toEqual({can_create:true,can_manage:true,can_reassign:true});expect(c.eligible_owners.map((x:any)=>x.id).sort()).toEqual([2,3,4,6].map(id));expect((await context(id(101))).capabilities.can_create).toBe(true);expect((await context(id(102))).capabilities).toEqual({can_create:false,can_manage:true,can_reassign:false});}
@@ -84,7 +102,7 @@ test('actor-bound exact replay is immutable, payload-sensitive, and never duplic
  await rejects(()=>save(goal({title:'Different'})),/different input/);await rejects(()=>append(update({operation_id:id(900)})),/different input/);
  await as(4);await rejects(()=>save(goal(),4),/another account/);await rejects(()=>status(900,4),/another account/);await rejects(()=>cancel(900,4),/another account/);
  await as(3);await rejects(()=>save(goal({operation_id:id(902),id:id(301)}),4),/Account changed/);await rejects(()=>append(update(),4),/Account changed/);await rejects(()=>status(900,4),/Account changed/);await rejects(()=>cancel(900,4),/Account changed/);
- const ur=await append();expect(await append()).toEqual(ur);expect((await fresh()).updates).toHaveLength(1);expect(await count('planning_private.goal_history')).toBe(2);expect(await count('planning_private.goal_operations')).toBe(2);
+ const ur=await append();expect(await append()).toEqual(ur);expect((await fresh()).updates).toHaveLength(1);expect(await count('planning_goals_private.goal_history')).toBe(2);expect(await count('planning_goals_private.goal_operations')).toBe(2);
 });
 test('explicit reconciliation/cancellation distinguishes absent, cancelled and committed without resending',async()=>{
  expect(await status(900)).toEqual({status:'not_found',operation_id:id(900),result:null});
@@ -96,26 +114,29 @@ test('stale writes, actor spoofing and unknown fields leave goal, receipts and e
  await save();await save(await edited({title:'Current title'}));await rejects(()=>save(goal({operation_id:id(903),expected_version:1})),/Changed/);await rejects(()=>append(update()),/Changed/);
  for(const patch of [{actor_id:id(1)},{author_id:id(1)},{can_manage:true},{role:'mentor'}])await rejects(async()=>save(await edited({operation_id:id(903),...patch})),/Unknown goal/);
  await rejects(()=>append(update({expected_version:2,actor_id:id(1)})),/Unknown update/);
- expect((await fresh()).title).toBe('Current title');expect((await fresh()).version).toBe(2);expect(await count('planning_private.goal_operations')).toBe(2);
+ expect((await fresh()).title).toBe('Current title');expect((await fresh()).version).toBe(2);expect(await count('planning_goals_private.goal_operations')).toBe(2);
 });
 test('audit is atomic, server-authored and immutable; audit insert failure rolls back version, data and receipt',async()=>{
- await save();await append();await db.exec('reset role');const history=(await db.query<any>('select actor_id,action,before_data,after_data from planning_private.goal_history order by id')).rows;expect(history.map(h=>h.actor_id)).toEqual([id(3),id(3)]);expect(history.map(h=>h.action)).toEqual(['created','measurement']);expect(history[0].before_data).toBeNull();expect(history[1].after_data.update.author_id).toBe(id(3));
- for(const table of ['public.planning_goal_updates','planning_private.goal_history','planning_private.goal_operations'])for(const query of [`delete from ${table}`,`truncate ${table} cascade`])await rejects(()=>db.exec(query),/append only/);
- await db.exec("create function planning_private.fail_goal_audit() returns trigger language plpgsql as $$begin raise exception 'audit offline';end$$;create trigger fail_goal_audit before insert on planning_private.goal_history for each row execute function planning_private.fail_goal_audit();");await as(3);
+ await save();await append();await db.exec('reset role');const history=(await db.query<any>('select actor_id,action,before_data,after_data from planning_goals_private.goal_history order by id')).rows;expect(history.map(h=>h.actor_id)).toEqual([id(3),id(3)]);expect(history.map(h=>h.action)).toEqual(['created','measurement']);expect(history[0].before_data).toBeNull();expect(history[1].after_data.update.author_id).toBe(id(3));
+ for(const table of ['public.planning_goal_updates','planning_goals_private.goal_history','planning_goals_private.goal_operations'])for(const query of [`delete from ${table}`,`truncate ${table} cascade`])await rejects(()=>db.exec(query),/append only/);
+ await db.exec("create function planning_goals_private.fail_goal_audit() returns trigger language plpgsql as $$begin raise exception 'audit offline';end$$;create trigger fail_goal_audit before insert on planning_goals_private.goal_history for each row execute function planning_goals_private.fail_goal_audit();");await as(3);
  await rejects(async()=>save(await edited()),/audit offline/);await rejects(()=>append(update({id:id(401),operation_id:id(902),expected_version:2})),/audit offline/);expect((await fresh()).version).toBe(2);expect((await fresh()).updates).toHaveLength(1);expect((await status(902)).status).toBe('not_found');
 });
 test('RLS/revokes deny every direct table path, privileged helper and anonymous API under broad inherited grants',async()=>{
- await save();const tables=['public.planning_goals','public.planning_goal_supporters','public.planning_goal_updates','public.planning_goal_task_links','public.planning_goal_milestone_links','planning_private.goal_operations','planning_private.goal_history'];
- for(const role of ['anon','authenticated','service_role']){await db.exec(`reset role;set role ${role}`);for(const table of tables)for(const sql of [`select * from ${table}`,`delete from ${table}`,`truncate ${table}`,`insert into ${table} default values`])await rejects(()=>db.exec(sql),/permission denied/);
-  await rejects(()=>db.exec(`select planning_private.goal_snapshot('${id(300)}')`),/permission denied/);
+ await save();const tables=['public.planning_goals','public.planning_goal_supporters','public.planning_goal_updates','public.planning_goal_task_links','public.planning_goal_milestone_links','planning_goals_private.goal_operations','planning_goals_private.goal_history'];
+ for(const role of ['anon','authenticated','service_role']){await db.exec(`reset role;set role ${role}`);for(const table of tables){const key=table.startsWith('planning_goals_private.')?'operation_id':table.endsWith('_supporters')||table.endsWith('_links')?'goal_id':'id';for(const sql of [`select * from ${table}`,`delete from ${table}`,`truncate ${table}`,`insert into ${table} default values`,`update ${table} set ${key}=${key}`])await rejects(()=>db.exec(sql),/permission denied/);}
+  await rejects(()=>db.exec(`select planning_goals_private.goal_snapshot('${id(300)}')`),/permission denied/);
+  for(const query of ["select nextval('planning_goals_private.goal_history_id_seq')","select setval('planning_goals_private.goal_history_id_seq',999)"])await rejects(()=>db.exec(query),/permission denied/);
   if(role!=='authenticated'){await rejects(()=>context(),/permission denied/);await rejects(()=>save(),/permission denied/);await rejects(()=>append(),/permission denied/);await rejects(()=>status(900),/permission denied/);await rejects(()=>cancel(900),/permission denied/);}
  }
  await db.exec("reset role;select set_config('test.uid','',false);set role authenticated");await rejects(()=>context(),/Active team/);await rejects(()=>save(),/Account changed/);
  await db.exec('reset role');expect((await db.query<any>("select count(*)::integer n from pg_class where oid=any($1::regclass[]) and relrowsecurity",[tables])).rows[0].n).toBe(tables.length);
+ expect((await db.query(goalBoundaryGrants)).rows).toEqual(expectedGoalBoundaryGrants);
+ expect((await db.query<any>("select n.nspname||'.'||p.proname as name from pg_proc p join pg_namespace n on n.oid=p.pronamespace where (n.nspname='planning_goals_private' or (n.nspname='public' and p.proname like 'planning_goal%')) and p.prosecdef order by name")).rows.map(r=>r.name)).toEqual(['planning_goals_private.goal_operation','planning_goals_private.goal_save','planning_goals_private.goal_update','planning_goals_private.goals_context']);
 });
 test('migration failure rolls back every additive object and preserves existing Planning API and rows',async()=>{
- const freshDb=new PGlite();try{await freshDb.exec(baseline());const before=(await freshDb.query<any>("select pg_get_functiondef('planning_private.manager()'::regprocedure) m,pg_get_functiondef('planning_save(text,jsonb)'::regprocedure) s")).rows;
- await expect(freshDb.exec(readFileSync(migration,'utf8').replace(/commit;\s*$/,()=>"do $$begin raise exception 'forced migration failure';end$$;commit;"))).rejects.toThrow(/forced migration/);await freshDb.exec('rollback');expect((await freshDb.query<any>("select to_regclass('public.planning_goals') g,to_regprocedure('public.planning_goals_context(uuid)') f")).rows[0]).toEqual({g:null,f:null});expect((await freshDb.query<any>("select pg_get_functiondef('planning_private.manager()'::regprocedure) m,pg_get_functiondef('planning_save(text,jsonb)'::regprocedure) s")).rows).toEqual(before);expect((await freshDb.query<any>('select count(*)::integer n from planning_tasks')).rows[0].n).toBe(3);
+ const freshDb=new PGlite();try{await freshDb.exec(baseline());const before=(await freshDb.query(planningBoundarySnapshot)).rows;
+ await expect(freshDb.exec(readFileSync(migration,'utf8').replace(/commit;\s*$/,()=>"do $$begin raise exception 'forced migration failure';end$$;commit;"))).rejects.toThrow(/forced migration/);await freshDb.exec('rollback');expect((await freshDb.query<any>("select to_regclass('public.planning_goals') g,to_regprocedure('public.planning_goals_context(uuid)') f,to_regnamespace('planning_goals_private') s")).rows[0]).toEqual({g:null,f:null,s:null});expect((await freshDb.query(planningBoundarySnapshot)).rows).toEqual(before);expect((await freshDb.query<any>('select count(*)::integer n from planning_tasks')).rows[0].n).toBe(3);
  }finally{await freshDb.close();}
 });
 
@@ -137,11 +158,11 @@ test('a moved task link retains only its identity and may be removed without exp
 test('actual RPC contexts use browser-compatible required whitespace semantics and reject blanks atomically',async()=>{
  const whitespace=['\t','\n','\u00a0','\r\n\t\u00a0','\u0009\u000a\u000b\u000c\u000d\u0020\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'];
  for(const blank of whitespace){expect(blank.trim()).toBe('');for(const key of ['title','unit'])await rejects(()=>save(goal({[key]:blank})),/check constraint/);}
- expect(await count('public.planning_goals')).toBe(0);expect(await count('planning_private.goal_operations')).toBe(0);expect(await count('planning_private.goal_history')).toBe(0);
+ expect(await count('public.planning_goals')).toBe(0);expect(await count('planning_goals_private.goal_operations')).toBe(0);expect(await count('planning_goals_private.goal_history')).toBe(0);
  const padding=whitespace.at(-1)!;await save(goal({title:padding+'Student goal'+padding,unit:padding+'runs'+padding}));
  expect((await fresh()).title).toBe('Student goal');expect((await fresh()).unit).toBe('runs');const initialWire=await context();expect(()=>assertContext(initialWire,id(3),id(100))).not.toThrow();
  for(const blank of whitespace)for(const key of ['evidence','next_step'])await rejects(()=>append(update({[key]:blank})),/check constraint/);
- expect((await fresh()).version).toBe(1);expect((await fresh()).updates).toEqual([]);expect(await count('planning_private.goal_operations')).toBe(1);expect(await count('planning_private.goal_history')).toBe(1);
+ expect((await fresh()).version).toBe(1);expect((await fresh()).updates).toEqual([]);expect(await count('planning_goals_private.goal_operations')).toBe(1);expect(await count('planning_goals_private.goal_history')).toBe(1);
  await append(update({evidence:padding+'Observed four runs'+padding,next_step:padding+'Repeat tomorrow'+padding,evidence_url:padding+'https://example.org/evidence'+padding}));
  const wire=await context();expect(()=>assertContext(wire,id(3),id(100))).not.toThrow();expect(wire.goals[0].updates[0]).toMatchObject({evidence:'Observed four runs',next_step:'Repeat tomorrow',evidence_url:'https://example.org/evidence'});
 });
