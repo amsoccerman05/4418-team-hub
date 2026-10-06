@@ -20,6 +20,17 @@ for(const width of [390,768,1440])test(`invitations are separate from the roster
  await expect(page.getByText('alex@example.test',{exact:true})).toHaveCount(1);
  await expect(page.getByText('invite0@example.test',{exact:true})).toHaveCount(0);
  await expect(page.getByRole('button',{name:'View invitations 5 open',exact:true})).toBeVisible();
+ await page.evaluate(()=>document.fonts.ready);
+ const rosterGeometry=await page.locator('.team-member-grid .team-member').evaluateAll(rows=>rows.map(row=>{
+  const details=row.querySelector('.team-member-details')!.getBoundingClientRect();
+  const identity=row.querySelector('.team-member-identity')!.getBoundingClientRect();
+  const badges=Array.from(row.querySelectorAll('.team-badge'),badge=>badge.getBoundingClientRect());
+  return {name:row.querySelector('h2')!.textContent,badgesWithinIdentity:badges.every(badge=>badge.right<=identity.right+1),badgesClearOfDetails:badges.every(badge=>badge.right<=details.left+1||badge.left>=details.right-1||badge.bottom<=details.top+1||badge.top>=details.bottom-1)};
+ }));
+ for(const row of rosterGeometry){expect(row.badgesWithinIdentity,`${row.name} badges fit their identity column`).toBe(true);expect(row.badgesClearOfDetails,`${row.name} badges do not overlap account details`).toBe(true);}
+ const navigation=page.getByRole('navigation',{name:'Team management views'});
+ expect(await navigation.evaluate(nav=>{const bounds=nav.getBoundingClientRect();return Array.from(nav.querySelectorAll('button')).every(button=>{const rect=button.getBoundingClientRect();return rect.left>=bounds.left-1&&rect.right<=bounds.right+1&&button.scrollWidth<=button.clientWidth+1;});})).toBe(true);
+ await page.evaluate(async()=>{window.scrollTo(0,0);await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));});
  await page.screenshot({path:`test-results/invite-cleanup/members-${width}.png`,fullPage:true});
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await page.getByRole('button',{name:'View invitations 5 open',exact:true}).click();const ui=page.getByRole('region',{name:'Team onboarding',exact:true});
@@ -29,14 +40,22 @@ for(const width of [390,768,1440])test(`invitations are separate from the roster
  await expect(ui.getByText('Sign-in recorded',{exact:true})).toBeVisible();
  await expect(ui.locator('.onboarding-status-row').filter({hasText:'alex@example.test'})).toContainText('Needs review');
  await expect(ui.getByLabel('Names and emails',{exact:true})).toBeHidden();
+ await page.evaluate(async()=>{window.scrollTo(0,0);await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));});
  await page.screenshot({path:`test-results/invite-cleanup/invitations-${width}.png`,fullPage:true});
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ const composer=ui.locator('.onboarding-compose>summary');
+ const composerInset=await composer.evaluate(summary=>{const box=summary.getBoundingClientRect(),label=summary.firstElementChild!.getBoundingClientRect();return {left:label.left-box.left,top:label.top-box.top,right:Number.parseFloat(getComputedStyle(summary).paddingRight)};});
+ expect(composerInset.left).toBeGreaterThanOrEqual(12);expect(composerInset.top).toBeGreaterThanOrEqual(10);expect(composerInset.right).toBeGreaterThanOrEqual(12);
+ await composer.focus();await page.keyboard.press('Tab');await page.keyboard.press('Shift+Tab');await expect(composer).toBeFocused();
+ await page.evaluate(async()=>{window.scrollTo(0,0);await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));});
+ await page.screenshot({path:`test-results/invite-cleanup/composer-focus-${width}.png`,fullPage:true});
  await ui.getByLabel('Account setup status').selectOption('review');await expect(ui.locator('.onboarding-status-row')).toHaveCount(2);
  await ui.getByLabel('Find an invitation').fill('alex@');await expect(ui.locator('.onboarding-status-row')).toHaveCount(1);
  await ui.getByRole('button',{name:'Account history 1',exact:true}).click();await expect(ui.locator('.onboarding-status-row')).toHaveCount(1);
  await expect(ui.getByText('Account active',{exact:true})).toBeVisible();await expect(ui.getByText('Needs review',{exact:true})).toHaveCount(0);
  await expect(ui.getByText('Password setup is not tracked here.',{exact:false})).toBeVisible();
  await ui.getByText('Attendance registration',{exact:true}).click();await expect(ui).toContainText('Attendance: Registered');
+ await page.evaluate(async()=>{window.scrollTo(0,0);await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));});
  await page.screenshot({path:`test-results/invite-cleanup/history-${width}.png`,fullPage:true});
  await ui.getByRole('button',{name:'Manage Alex Rivera'}).click();await expect(page.getByRole('dialog',{name:'Member editor'})).toBeVisible();await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);
  await page.getByRole('button',{name:'View invitations 5 open',exact:true}).click();await expect(ui.getByRole('button',{name:'In progress 5',exact:true})).toHaveAttribute('aria-pressed','true');await expect(ui.getByLabel('Find an invitation')).toHaveValue('');await expect(ui.locator('.onboarding-status-row')).toHaveCount(5);

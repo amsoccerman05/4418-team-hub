@@ -4,6 +4,7 @@ for(const width of [390,768,1440])test(`reviewed batch requires explicit approva
  await page.setViewportSize({width,height:1000});const {sent}=await onboardingFixture(page);const ui=await prepareBatch(page);
  await expect(ui.getByRole('button',{name:'Send 2 reviewed invitations',exact:true})).toBeDisabled();expect(sent).toEqual([]);
  await expect(ui.locator('.onboarding-review-values')).toHaveCount(2);await expect(ui).toContainText('alex@example.test');await expect(ui).toContainText('Joining the build team');
+ await page.evaluate(async()=>{window.scrollTo(0,0);await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));});
  await page.screenshot({path:`test-results/invite-cleanup/batch-${width}.png`,fullPage:true});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await ui.getByRole('checkbox').check();await ui.getByRole('button',{name:'Send 2 reviewed invitations',exact:true}).click();
  await expect(ui.locator('.onboarding-recipient.is-accepted')).toHaveCount(2);expect(sent).toHaveLength(2);expect(new Set(sent.map(row=>row.id)).size).toBe(2);expect(sent[0]).toMatchObject({display_name:'Alex Rivera',email:'alex@example.test',role:'student',reason:'Joining the build team',area_id:'',member_status:''});

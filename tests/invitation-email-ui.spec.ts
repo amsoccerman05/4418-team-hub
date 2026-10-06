@@ -25,6 +25,9 @@ for (const width of [320, 390, 1024]) {
       if (mode === 'standard') {
         await expect.poll(() => page.locator('img').evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBeTruthy();
       }
+      // Capture the default reading view after checking both keyboard targets.
+      await page.getByRole('heading', {name: "You're invited to join us."}).click();
+      await page.evaluate(() => window.scrollTo(0, 0));
       mkdirSync('test-results/invite-cleanup', {recursive: true});
       const screenshot = await page.screenshot({path: `test-results/invite-cleanup/email-${width}-${mode}.png`, fullPage: true});
       await testInfo.attach('Synthetic invitation preview', {body: screenshot, contentType: 'image/png'});

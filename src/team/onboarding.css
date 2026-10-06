@@ -30,15 +30,16 @@
 
 /* Focus the default workspace on unresolved invitations, with history retained. */
 .team-management details.onboarding-compose { margin:0; border:1px solid var(--suite-border); border-radius:var(--radius-card); background:var(--suite-surface); overflow:hidden; }
-.onboarding-compose>summary { display:flex; align-items:center; gap:12px; padding:16px 20px; font-size:14px; font-weight:650; list-style:none; cursor:pointer; }
-.onboarding-compose>summary::-webkit-details-marker { display:none; }
-.onboarding-compose>summary::after { content:''; flex:0 0 7px; height:7px; border-right:2px solid var(--suite-muted); border-bottom:2px solid var(--suite-muted); transform:rotate(45deg); margin:0 2px 4px auto; }
-.onboarding-compose[open]>summary::after { transform:rotate(225deg); margin-bottom:0; }
+.team-management .onboarding-compose>summary { display:flex; align-items:center; gap:12px; padding:16px 20px; font-size:14px; font-weight:650; list-style:none; cursor:pointer; }
+.team-management .onboarding-compose>summary::-webkit-details-marker { display:none; }
+.team-management .onboarding-compose>summary:focus-visible { outline-offset:-4px; }
+.team-management .onboarding-compose>summary::after { content:''; flex:0 0 7px; height:7px; border-right:2px solid var(--suite-muted); border-bottom:2px solid var(--suite-muted); transform:rotate(45deg); margin:0 2px 4px auto; }
+.team-management .onboarding-compose[open]>summary::after { transform:rotate(225deg); margin-bottom:0; }
 .onboarding-compose-summary { font-size:12px; font-weight:450; color:var(--suite-muted); }
 .onboarding-compose .onboarding-batch { border:0; border-top:1px solid var(--suite-border); border-radius:0; box-shadow:none; }
 .onboarding-views { display:flex; gap:8px; margin-top:20px; border-bottom:1px solid var(--suite-border); }
-.onboarding-views button { background:transparent; border:0; border-bottom:2px solid transparent; border-radius:0; box-shadow:none; color:var(--suite-muted); }
-.onboarding-views button[aria-pressed=true] { border-bottom-color:var(--suite-primary); color:var(--suite-primary); }
+.team-management .onboarding-views button { background:transparent; border:0; border-bottom:2px solid transparent; border-radius:0; box-shadow:none; color:var(--suite-muted); }
+.team-management .onboarding-views button[aria-pressed=true] { border-bottom-color:var(--suite-primary); color:var(--suite-primary); }
 .onboarding-views .team-count { margin-left:6px; font-size:11px; height:20px; }
 .onboarding-directory-filters { display:flex; flex-wrap:wrap; gap:10px; padding:0; margin:16px 0; border:0; background:transparent; }
 .onboarding-directory-filters>label:first-child { flex:1 1 240px; }
@@ -57,7 +58,7 @@
 .onboarding-empty { padding:32px 20px; }.onboarding-empty svg { color:var(--suite-success); margin-bottom:8px; }.onboarding-empty h4 { font-size:15px; }.onboarding-empty p { font-size:13px; }
 @media(max-width:850px){.onboarding-status-row>div:first-child{grid-column:auto}}
 @media(max-width:640px){
- .onboarding-compose>summary{padding:14px 16px;flex-wrap:wrap;gap:3px 10px}.onboarding-compose-summary{flex-basis:calc(100% - 28px);order:2}.onboarding-compose>summary::after{margin-left:auto}
- .onboarding-views{gap:0}.onboarding-views button{flex:1;padding:10px 8px;font-size:13px}.onboarding-directory-filters>label:nth-child(2){flex:1 1 100%}
+ .team-management .onboarding-compose>summary{padding:14px 16px;flex-wrap:wrap;gap:3px 10px}.onboarding-compose-summary{flex-basis:calc(100% - 28px);order:2}.team-management .onboarding-compose>summary::after{margin-left:auto}
+ .onboarding-views{gap:0}.team-management .onboarding-views button{flex:1;padding:10px 8px;font-size:13px}.onboarding-directory-filters>label:nth-child(2){flex:1 1 100%}
  .onboarding-status-row{grid-template-columns:1fr;gap:12px;padding:16px}.onboarding-status-row>div:first-child{grid-column:auto}
 }

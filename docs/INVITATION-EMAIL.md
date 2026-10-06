@@ -9,7 +9,7 @@ This is the reviewable source for Supabase Auth's **Invite user** email. It repl
 - `supabase/templates/invite.txt`: equivalent plain-text copy for review or a mailer that explicitly supports a separate text body. Supabase's documented hosted template settings expose subject and HTML; this file is not automatically deployed or wired to a separate text setting. Inspect the delivered plain-text alternative when an authorized mail test is available.
 - `supabase/templates/preview-invite.mjs`: offline synthetic previews with an embedded local logo and long links under the reserved `example.invalid` domain.
 
-This change is staged locally. Committing, building or deploying the web app will **not** change the hosted Auth email template. Neither `supabase/config.toml`, the Edge Function, the mail provider, sender identity, redirect settings, nor any account or invitation record is changed.
+This template is staged for review in the repository. Committing, building or deploying the web app will **not** change the hosted Auth email template. Neither `supabase/config.toml`, the Edge Function, the mail provider, sender identity, redirect settings, nor any account or invitation record is changed.
 
 The HTML's action and fallback both use `{{ .ConfirmationURL }}` verbatim. The existing Auth-generated verification URL and redirect remain responsible for acceptance. There is no custom token construction, `.Data`/user metadata, recipient data, role claim, fixed expiry, or promise about completed setup. No invitation link from a real email is needed for these checks.
 
@@ -38,7 +38,7 @@ npx playwright test --config supabase/templates/invitation-email.playwright.conf
 
 If the environment provides its own Chromium, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to its supported executable. Browser checks cover 320px, 390px and 1024px widths, blocked images, missing head CSS, a long synthetic link, keyboard focus, CTA target size and horizontal overflow. They attach synthetic screenshots and also write deterministic `test-results/invite-cleanup/email-{width}-{mode}.png` files; network requests are blocked. A separately approved screenshot-only artifact can use those PNG files without collecting traces or session files. These are browser layout checks, not Gmail/Outlook rendering or real delivery tests.
 
-During preparation on 2026-10-06, the browser-free contract checks passed. Browser rendering was not run for this template because browser launch in this execution environment is blocked (`socket(): Operation not permitted`). No screenshots, inbox rendering, delivery, or live acceptance flow are claimed as verified.
+During preparation on 2026-10-06, all four browser-free contract checks and nine browser layout cases passed in [the first PR 5 CI run](https://github.com/amsoccerman05/4418-team-hub/actions/runs/37412968590). Its synthetic screenshots were inspected at phone and desktop widths, including images-disabled and head-CSS-stripped rendering. Local browser launch is blocked by the execution sandbox, so CI supplies the review images. The current PR head must pass again after later changes. Gmail/Outlook inbox rendering, delivery, and a live acceptance flow are not claimed as verified.
 
 ## Apply to the hosted project after release approval
 

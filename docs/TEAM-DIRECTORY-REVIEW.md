@@ -18,9 +18,9 @@ Service acceptance, inbox delivery, sign-in, and password setup remain distinct.
 ## Verification
 
 - `npm run typecheck`: passed.
-- `npm run build` and all 209 browser-free regression checks passed locally. The standard suite collects 400 tests; browser execution and image review still require CI.
+- `npm run build` and all 209 browser-free regression checks passed locally. All 400 tests passed in [the first PR 5 CI run](https://github.com/amsoccerman05/4418-team-hub/actions/runs/37412968590).
 - All 32 focused onboarding contract tests passed, including partitioning every known/unknown state without collapsing duplicate identities and rendering the default open queue with a separate history count.
-- Browser fixtures use only synthetic names and `example.test` addresses; they never send live invitations. Browser tests collect successfully, but browser interaction and visual review are still pending in a runner allowed to launch Chromium. The local executable exists, but its launch is blocked by the sandbox's socket restriction. No screenshot is claimed as rendered or reviewed.
+- Browser fixtures use only synthetic names and `example.test` addresses; they never send live invitations. The initial screenshots were rendered and inspected at 390/768/1440px, revealing tablet spacing and inherited-control-style issues. Corrections and keyboard-focus coverage must pass on the current PR head, with its new screenshots reviewed before release. Local Chromium is blocked by the sandbox's socket restriction; CI supplies the review images.
 - The existing batch and member UI tests were updated for the new composer/history navigation. New browser regressions cover 390/768/1440px roster and invitation views, unresolved duplicate identities, history/search transitions, empty states, refreshed readiness reversals, draft preservation, and pausing before hiding a running batch.
 
 Run in an approved browser runner:
