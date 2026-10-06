@@ -7,7 +7,7 @@ import { dirname, resolve, join, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { randomUUID, createHash } from 'node:crypto';
-import { CLI_VERSION, API_PORT, DB_PORT, ORIGIN, localStatus, localFetch, isolatedEnvironment } from './fabrication-safety.mjs';
+import { CLI_VERSION, API_PORT, DB_PORT, ORIGIN, localStatus, localFetch, isolatedEnvironment, edgeObservation, edgeHandlerReady, assertLocalPreflight } from './fabrication-safety.mjs';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const mode = process.argv[2] || '--run';
@@ -30,7 +30,8 @@ const secrets = [];
 const clean = text => secrets.reduce((out, secret) => out.replaceAll(secret, '[local-key]'), String(text))
   .replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, '[local-jwt]')
   .replace(/sb_(?:secret|publishable)_[A-Za-z0-9_-]+/g, '[local-key]');
-let edgeOutput = '';
+let edgeOutput = '', edgeOutputHead = '';
+function captureEdge(chunk) { const text = String(chunk); if (edgeOutputHead.length < 8000) edgeOutputHead += text.slice(0, 8000 - edgeOutputHead.length); edgeOutput = (edgeOutput + text).slice(-16000); }
 // Explicit gate release, not a timing-dependent sleep. Separate psql connection
 // holds the lock while real HTTP requests queue inside the deployed RPCs.
 async function gate(lock = '4418') {
@@ -150,7 +151,8 @@ verify_jwt = false
     const functionDir = join(root, 'supabase/functions/fabrication-files');
     mkdirSync(functionDir, { recursive: true });
     for (const name of ['index.ts', 'handler.ts', 'validation.ts']) copyFileSync(join(repo, 'supabase/functions/fabrication-files', name), join(functionDir, name));
-    const edgeEnv = join(root, 'synthetic-edge.env');
+    // start loads this documented path before the first worker can be warmed.
+    const edgeEnv = join(root, 'supabase/functions/.env');
     writeFileSync(edgeEnv, `FABRICATION_ALLOWED_ORIGINS=${ORIGIN}\n`, { mode: 0o600 });
     if (mode === '--prepare-only') {
       // This mode validates preparation only and must never be described as integration success.
@@ -179,12 +181,41 @@ verify_jwt = false
       sql("notify pgrst, 'reload schema';");
       edge = spawn(executable, ['functions', 'serve', 'fabrication-files', '--env-file', edgeEnv, '--workdir', root, '--network-id', network], common);
       children.add(edge); edge.once('close', () => children.delete(edge));
-      edge.stdout.on('data', b => { edgeOutput = (edgeOutput + b).slice(-24000); });
-      edge.stderr.on('data', b => { edgeOutput = (edgeOutput + b).slice(-24000); });
+      edge.stdout.on('data', captureEdge);
+      edge.stderr.on('data', captureEdge);
       edge.on('error', error => { edgeOutput += error.message; });
-      await waitFor(async () => {
-        try { const r = await localFetch(status.base, '/functions/v1/fabrication-files', { method: 'OPTIONS', headers: { Origin: ORIGIN } }); return r.status === 204 && r.headers.get('access-control-allow-origin') === ORIGIN; } catch { return false; }
-      }, 'real Edge runtime with local origin', 120_000);
+      const route = '/functions/v1/fabrication-files';
+      const probeHeaders = { Origin: ORIGIN, apikey: status.anonKey, 'Content-Type': 'application/json' };
+      let lastProbe = null, previousSummary = '', lastLoggedAt = 0, attempts = 0;
+      const deadline = Date.now() + 120_000;
+      while (Date.now() < deadline) {
+        attempts++;
+        if (edge.exitCode !== null) throw Error(`Local function server exited ${edge.exitCode}`);
+        try {
+          lastProbe = await edgeObservation(await localFetch(status.base, route, {
+            method: 'POST', headers: probeHeaders, body: '{}', signal: AbortSignal.timeout(8000),
+          }));
+        } catch (error) { lastProbe = { transport_error: String(error.message).slice(0, 300) }; }
+        const summary = JSON.stringify(lastProbe);
+        if (summary !== previousSummary || Date.now() - lastLoggedAt >= 15_000) {
+          console.log(`Edge readiness attempt ${attempts}: ${clean(summary)}`);
+          previousSummary = summary; lastLoggedAt = Date.now();
+        }
+        if (edgeHandlerReady(lastProbe)) break;
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      assert(edgeHandlerReady(lastProbe), `Real Edge handler did not become ready: ${JSON.stringify(lastProbe)}`);
+      const preflight = await edgeObservation(await localFetch(status.base, route, {
+        method: 'OPTIONS', headers: { Origin: ORIGIN, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'authorization,apikey,content-type' },
+      }));
+      console.log(`Local gateway preflight: ${clean(JSON.stringify(preflight))}`);
+      assertLocalPreflight(preflight);
+      const deniedOrigin = await edgeObservation(await localFetch(status.base, route, {
+        method: 'POST', headers: { ...probeHeaders, Origin: 'http://127.0.0.1:54340' }, body: '{}',
+      }));
+      assert.equal(deniedOrigin.status, 403, `Unapproved origin was not denied: ${JSON.stringify(deniedOrigin)}`);
+      assert.equal(deniedOrigin.code, 'origin_denied', `Expected application origin enforcement: ${JSON.stringify(deniedOrigin)}`);
+      console.log('PASS real handler readiness, allowed local preflight, and rejected-origin enforcement');
       const { runFabricationIntegration } = await import('./fabrication-stack.spec.mjs');
       const checks = await runFabricationIntegration({ ...status, sql, gate, waitFor, registerSecret: s => secrets.push(s) });
       assert.equal(sql("select pg_get_functiondef('auth.uid()'::regprocedure)"), authFunction, 'Auth function changed');
@@ -194,7 +225,7 @@ verify_jwt = false
   }
 } catch (error) {
   console.error(clean(error.message));
-  if (edgeOutput) console.error(`Local Edge diagnostics:\n${clean(edgeOutput)}`);
+  if (edgeOutput) console.error(`Local Edge startup diagnostics:\n${clean(edgeOutputHead)}\nLocal Edge recent diagnostics:\n${clean(edgeOutput)}`);
   process.exitCode = 1;
 } finally {
   await cleanup();

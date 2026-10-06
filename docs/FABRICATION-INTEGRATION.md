@@ -6,7 +6,7 @@ This harness is **authored, locally safety-tested, and prepared with the officia
 
 Locally verified:
 
-- Five Node safety tests: literal-loopback validation, CLI status/key checks, isolated environment, redirect refusal, and a hostile parent-proxy regression.
+- Seven Node safety tests: literal-loopback validation, CLI status/key checks, isolated environment, redirect refusal, a hostile parent-proxy regression, application-specific readiness, and gateway-normalized CORS checks.
 - JavaScript syntax checks for the runner and integration suite.
 - `--prepare-only` with official Supabase CLI **2.119.0**. Its actual `init`, `start`, `status`, `stop`, and `functions serve` help was inspected.
 - Generated DXF (116 bytes) and PDF (329 bytes) pass the unchanged feature's real validators. No existing document is opened or uploaded.
@@ -49,6 +49,8 @@ No `npm install` for this harness is necessary. It uses Node built-ins only. The
 ## What is real, and what is synthetic
 
 The suite uses a direct `node:http` socket connection to the actual local gateway. It does not honor parent-process proxy variables or a global fetch dispatcher. `Request`/`Response` only encode/decode the real HTTP payloads. It never imports the Edge handler, provides a fake `Services` object, replaces `fetch`, redefines `auth.uid()`, inserts fake Storage metadata, or bypasses the application RPCs for feature operations.
+
+Readiness requires the handler-specific `401/sign_in_required` response to an unauthenticated POST, not only a gateway preflight. A proper browser preflight then verifies POST and authorization/apikey/content-type headers, accepting either the exact local origin or the pinned CLI gateway's `*` normalization for these cookie-free bearer requests. An unapproved Origin must independently return the handler's `403/origin_denied`. Status, selected CORS headers, and at most 512 response-body characters are logged on changes and every 15 seconds while starting. The synthetic origin setting is written to the temporary `supabase/functions/.env` before `start`, and the same generated file is passed to `functions serve`.
 
 The successful upload path is:
 

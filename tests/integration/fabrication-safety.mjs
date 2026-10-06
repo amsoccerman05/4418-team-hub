@@ -90,3 +90,32 @@ export function localFetch(base, path, init = {}) {
     });
   })();
 }
+
+// Unauthenticated diagnostics only. Never include Authorization, cookies, tokens,
+// or unbounded bodies in readiness logs.
+export async function edgeObservation(response) {
+  const text = await response.text(); let body;
+  try { body = JSON.parse(text); } catch { body = null; }
+  return {
+    status: response.status,
+    allow_origin: response.headers.get('access-control-allow-origin'),
+    allow_methods: response.headers.get('access-control-allow-methods'),
+    allow_headers: response.headers.get('access-control-allow-headers'),
+    code: typeof body?.code === 'string' ? body.code.slice(0, 100) : null,
+    body: text.slice(0, 512),
+  };
+}
+export function edgeHandlerReady(observation) {
+  return observation.status === 401 && observation.code === 'sign_in_required';
+}
+export function assertLocalPreflight(observation) {
+  assert([200, 204].includes(observation.status), `Preflight status: ${JSON.stringify(observation)}`);
+  // The pinned local CLI gateway installs its own CORS plugin and can normalize
+  // the application header to '*'. Bearer-header requests here do not use cookies.
+  // Reject-origin enforcement is separately tested against the actual handler.
+  assert([ORIGIN, '*'].includes(observation.allow_origin), `Preflight origin: ${JSON.stringify(observation)}`);
+  const methods = (observation.allow_methods || '').toUpperCase().split(',').map(s => s.trim());
+  const headers = (observation.allow_headers || '').toLowerCase().split(',').map(s => s.trim());
+  assert(methods.includes('POST'), `Preflight POST missing: ${JSON.stringify(observation)}`);
+  for (const name of ['authorization', 'apikey', 'content-type']) assert(headers.includes(name), `Preflight ${name} missing: ${JSON.stringify(observation)}`);
+}

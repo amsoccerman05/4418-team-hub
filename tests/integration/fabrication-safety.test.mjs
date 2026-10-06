@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { localURL, localStatus, localFetch, isolatedEnvironment, API_PORT, DB_PORT } from './fabrication-safety.mjs';
+import { localURL, localStatus, localFetch, isolatedEnvironment, API_PORT, DB_PORT, ORIGIN, edgeObservation, edgeHandlerReady, assertLocalPreflight } from './fabrication-safety.mjs';
 const key = role => `eyJhbGciOiJIUzI1NiJ9.${Buffer.from(JSON.stringify({ iss: 'supabase-demo', role })).toString('base64url')}.synthetic`;
 const status = () => ({ API_URL: `http://127.0.0.1:${API_PORT}`, DB_URL: `postgresql://postgres:postgres@127.0.0.1:${DB_PORT}/postgres`, ANON_KEY: key('anon'), SERVICE_ROLE_KEY: key('service_role') });
 
@@ -44,4 +44,21 @@ test('parent Node proxy environment cannot redirect loopback API traffic', async
     const exit = await new Promise((resolve, reject) => { child.on('error', reject); child.on('close', resolve); });
     assert.equal(exit, 0, errors); assert.equal(proxyHits, 0);
   } finally { await Promise.all([server, proxy].map(s => new Promise(resolve => s.close(resolve)))); }
+});
+
+test('readiness requires the application response, not a gateway preflight header', async () => {
+  for (const origin of [ORIGIN, '*']) {
+    const observation = await edgeObservation(new Response(JSON.stringify({ code: 'sign_in_required', error: 'Sign in required.' }), { status: 401, headers: { 'Access-Control-Allow-Origin': origin } }));
+    assert(edgeHandlerReady(observation));
+  }
+  assert(!edgeHandlerReady({ status: 204, code: null }));
+  assert(!edgeHandlerReady({ status: 401, code: 'gateway_unauthorized' }));
+  assert(!edgeHandlerReady({ status: 403, code: 'origin_denied' }));
+  const observed = await edgeObservation(new Response('x'.repeat(1000), { status: 503 }));
+  assert.equal(observed.body.length, 512);
+});
+test('preflight accepts valid local gateway CORS normalization but rejects missing permissions', () => {
+  const preflight = { status: 204, allow_origin: ORIGIN, allow_methods: 'POST, OPTIONS', allow_headers: 'authorization, apikey, content-type' };
+  for (const origin of [ORIGIN, '*']) for (const status of [200, 204]) assert.doesNotThrow(() => assertLocalPreflight({ ...preflight, status, allow_origin: origin }));
+  for (const patch of [{ status: 403 }, { allow_origin: 'http://example.invalid' }, { allow_origin: ORIGIN + ', *' }, { allow_methods: 'GET' }, { allow_headers: 'content-type' }]) assert.throws(() => assertLocalPreflight({ ...preflight, ...patch }));
 });
