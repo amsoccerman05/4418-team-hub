@@ -20,6 +20,11 @@ async function fillCheck(dialog:Locator,title='Loaded roller function'){
 }
 async function dismiss(dialog:Locator){await dialog.getByRole('button',{name:'Close',exact:true}).click();await expect(dialog).toHaveCount(0);}
 
+async function assertDialogActionsInside(dialog:Locator){
+ const outer=await dialog.boundingBox();expect(outer).not.toBeNull();
+ for(const name of ['Close','Save']){const button=dialog.getByRole('button',{name,exact:true});await expect(button).toBeVisible();const box=await button.boundingBox();expect(box).not.toBeNull();expect(box!.y).toBeGreaterThanOrEqual(outer!.y);expect(box!.y+box!.height).toBeLessThanOrEqual(outer!.y+outer!.height-1);}
+}
+
 for(const width of [390,768,1440])test(`Assembly workspace and editor screenshots at ${width}px`,async({page})=>{
  await page.setViewportSize({width,height:980});const state=await setupAssemblyUI(page),errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto(assemblyRoute);await expect(workspace(page).getByRole('heading',{name:'Assembly & testing',exact:true})).toBeVisible();
@@ -27,9 +32,9 @@ for(const width of [390,768,1440])test(`Assembly workspace and editor screenshot
  await expect(workspace(page).getByText('1/2',{exact:true})).toHaveCount(3);await expect(workspace(page).getByText('1 failed · 0 blocked · 1 older revision')).toBeVisible();
  await expect(page.locator('main')).toHaveCount(1);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await page.screenshot({path:`test-results/assembly/workspace-${width}.png`,fullPage:true});
- let dialog=await openComponent(page);await page.screenshot({path:`test-results/assembly/component-${width}.png`});expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);await dismiss(dialog);
+ let dialog=await openComponent(page);await assertDialogActionsInside(dialog);await page.screenshot({path:`test-results/assembly/component-${width}.png`});expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);await dismiss(dialog);
  await workspace(page).getByRole('button',{name:'Record a check',exact:true}).click();dialog=page.getByRole('dialog');await fillCheck(dialog);await dialog.getByLabel('Part revision',{exact:true}).selectOption(assemblyId(410));
- await expect(dialog.getByText('This is an older revision.',{exact:false})).toBeVisible();await page.screenshot({path:`test-results/assembly/check-${width}.png`});expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);await dismiss(dialog);
+ await expect(dialog.getByText('This is an older revision.',{exact:false})).toBeVisible();await assertDialogActionsInside(dialog);await page.screenshot({path:`test-results/assembly/check-${width}.png`});expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);await dismiss(dialog);
  expect(state.mutations).toEqual([]);expect(state.canonicalWrites).toEqual([]);expect(errors).toEqual([]);expect(state.external.every(url=>url.includes('fonts.googleapis.com')||url.includes('fonts.gstatic.com'))).toBe(true);
 });
 
@@ -192,4 +197,11 @@ test('same-project Assembly to table navigation closes a canonical task draft',a
 
 test('failed snapshot refresh clears previously loaded choices and prevents stale insertion',async({page})=>{
  const state=await setupReviewSnapshots(page),original=state.review.updates[0].progress;await page.goto('/#planning/reviews');const dialog=await openWeeklyUpdate(page);await dialog.getByRole('button',{name:'Choose assembly snapshot'}).click();await expect(dialog.getByLabel('Captured snapshot')).toBeVisible();await page.route('**/rpc/assembly_context',r=>r.fulfill({status:403,json:{code:'AS403',message:'Access revoked'}}));await dialog.getByRole('button',{name:'Refresh snapshots'}).click();await expect(dialog.getByRole('alert')).toContainText('access');await expect(dialog.getByLabel('Captured snapshot')).toHaveCount(0);await expect(dialog.getByRole('button',{name:'Add selected snapshot to progress'})).toHaveCount(0);await expect(dialog.getByLabel('Progress this week')).toHaveValue(original);expect(state.reviewMutations).toEqual([]);
+});
+
+for(const width of [390,768,1440])test(`long check fields scroll independently and Save stays reachable at ${width}px`,async({page})=>{
+ await page.setViewportSize({width,height:700});const state=await setupAssemblyUI(page);await page.goto(assemblyRoute);await workspace(page).getByRole('button',{name:'Record a check',exact:true}).click();const dialog=page.getByRole('dialog');await fillCheck(dialog,'Short-screen synthetic fit check');await dialog.getByLabel('Part revision',{exact:true}).selectOption(assemblyId(411));await dialog.getByLabel('Rework task',{exact:false}).selectOption(assemblyId(302));
+ const fields=dialog.locator('.assembly-fields');expect(await fields.evaluate(el=>el.scrollHeight>el.clientHeight)).toBe(true);await fields.evaluate(el=>el.scrollTop=el.scrollHeight);await assertDialogActionsInside(dialog);
+ const control=await dialog.getByLabel('Rework task',{exact:false}).boundingBox(),footer=await dialog.locator('footer').boundingBox();expect(control).not.toBeNull();expect(footer).not.toBeNull();expect(control!.y+control!.height).toBeLessThanOrEqual(footer!.y+1);
+ await page.screenshot({path:`test-results/assembly/check-actions-${width}.png`});await dialog.getByRole('button',{name:'Save',exact:true}).click();await expect(dialog).toHaveCount(0);expect(state.mutations).toHaveLength(1);await expect(card(page,'Short-screen synthetic fit check')).toBeVisible();
 });
