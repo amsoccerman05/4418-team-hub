@@ -129,7 +129,7 @@ for(const width of [390,1440])test(`empty member filters explain the result and 
 
 for(const width of [390,1440])test(`invitation essentials optional details duplicate guidance and recipient review ${width}`,async({page})=>{
  await page.setViewportSize({width,height:900});await setup(page);const sent:any[]=[];
- await page.route('**/functions/v1/team-invitations',r=>{sent.push(r.request().postDataJSON());return r.fulfill({status:202,json:{status:'pending'}});});
+ await page.route('**/functions/v1/team-invitations',r=>{sent.push(r.request().postDataJSON());return r.fulfill({status:202,json:{id:r.request().postDataJSON().id,status:'pending'}});});
  await page.goto('/#team-management');await page.getByRole('button',{name:'+ Invite member',exact:true}).click();const d=page.getByRole('dialog',{name:'Invite member',exact:true});
  await expect(d.getByLabel('Account role',{exact:true})).toHaveValue('student');await expect(d.getByLabel('Functional area',{exact:true})).toBeHidden();
  await d.getByLabel('Display name',{exact:true}).fill('Fixture Teammate');await d.getByLabel('Invitation reason').fill('Joining team');
@@ -143,10 +143,10 @@ for(const width of [390,1440])test(`invitation essentials optional details dupli
 
 test('invitation validation retry preserves UUID while uncertain outcomes do not resend',async({page})=>{
  await setup(page);const calls:any[]=[];
- await page.route('**/functions/v1/team-invitations',async r=>{calls.push(r.request().postDataJSON());return calls.length===1?r.fulfill({status:400,json:{error:'Check the invitation details.'}}):r.fulfill({status:202,json:{status:'pending'}});});
+ await page.route('**/functions/v1/team-invitations',async r=>{calls.push(r.request().postDataJSON());return calls.length===1?r.fulfill({status:409,json:{code:'invalid_details',error:'Valid email, name and reason required'}}):r.fulfill({status:202,json:{id:r.request().postDataJSON().id,status:'pending'}});});
  await page.goto('/#team-management');await page.getByRole('button',{name:'+ Invite member',exact:true}).click();const d=page.getByRole('dialog',{name:'Invite member',exact:true});
  await d.getByLabel('Email',{exact:true}).fill('teammate@example.test');await d.getByLabel('Display name',{exact:true}).fill('Fixture Teammate');await d.getByLabel('Invitation reason').fill('Joining team');
- await d.getByRole('button',{name:'Send invitation'}).click();await expect(d.getByRole('alert')).toContainText('Check the invitation details.');await expect(d.getByLabel('Email',{exact:true})).toHaveValue('teammate@example.test');
+ await d.getByRole('button',{name:'Send invitation'}).click();await expect(d.getByRole('alert')).toContainText('Not sent. Check the name');await expect(d.getByLabel('Email',{exact:true})).toHaveValue('teammate@example.test');
  await d.getByRole('button',{name:'Send invitation'}).click();await expect(d).toHaveCount(0);expect(calls).toHaveLength(2);expect(calls[1].id).toBe(calls[0].id);
 });
 

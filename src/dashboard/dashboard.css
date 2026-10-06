@@ -107,3 +107,14 @@
  .my-dashboard .section-heading { gap: 12px; flex-wrap: wrap; }
 }
 .my-management .my-welcome h1 { font-size:clamp(28px,2.4vw,34px); line-height:1.25; text-transform:none; letter-spacing:-.8px; color:var(--suite-ink); margin-bottom:8px; }
+
+/* Personal assignments share the existing attention surface, without a second inbox. */
+.my-assignment-source { border-top: 1px solid var(--suite-border); }
+.my-assignment-source h3 { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0; padding: 16px 20px 0; font-size: 13px; }
+.my-assignment-source h3 span { color: var(--suite-muted); font-weight: 500; white-space: nowrap; }
+.my-assignment-source a > span { display: grid; gap: 5px; min-width: 0; }
+.my-assignment-source strong { font-size: 14px; font-weight: 600; }
+.my-assignment-source small { color: var(--suite-muted); font-size: 12px; font-weight: 400; line-height: 1.5; }
+.my-assignment-source small.is-urgent { color: #874019; font-weight: 550; }
+.my-assignment-state, .my-assignment-more { color: var(--suite-muted); font-size: 13px; line-height: 1.6; margin: 0; padding: 12px 20px 16px; }
+.my-attention .my-assignment-state a, .my-attention .my-assignment-more a { display: inline; padding: 0; min-height: auto; font-weight: 600; }

@@ -1,0 +1,32 @@
+.onboarding[hidden]{display:none!important}
+.onboarding{display:grid;gap:24px;min-width:0}
+.onboarding-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.team-management .onboarding h2,.team-management .onboarding h3,.team-management .onboarding h4{margin:0}
+.onboarding-heading h2{font-size:22px}.onboarding-heading h3{font-size:18px}.onboarding-heading p{color:var(--suite-muted);margin:6px 0 0}
+.onboarding-heading button,.onboarding-actions button{display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.onboarding-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.onboarding-stats>div{display:grid;grid-template-columns:1fr auto;gap:6px;padding:18px;border:1px solid var(--suite-border);border-radius:var(--radius-card);background:var(--suite-surface)}
+.onboarding-stats svg{grid-column:2;grid-row:1;color:var(--suite-primary)}.onboarding-stats strong{font-size:28px;line-height:1.2;font-variant-numeric:tabular-nums;color:var(--suite-ink)}.onboarding-stats span{grid-column:1/-1;color:var(--suite-muted);font-size:12px}
+.onboarding-batch{padding:22px;background:var(--suite-surface);border:1px solid var(--suite-border);border-radius:var(--radius-card);box-shadow:var(--suite-shadow)}
+.onboarding-paste{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:18px;margin:20px 0 12px;align-items:start}
+.onboarding-paste small{font-weight:450;font-size:12px;color:var(--suite-muted);line-height:1.5}
+.onboarding textarea{width:100%;min-width:0;box-sizing:border-box;resize:vertical;padding:10px;border:1px solid var(--suite-input-border);border-radius:var(--radius-input);font:inherit;color:var(--suite-text);background:var(--suite-surface)}
+.onboarding-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:16px}
+.onboarding-recipients{list-style:none;padding:0;margin:20px 0 0;display:grid;gap:16px}
+.onboarding-recipient{padding:18px;border:1px solid var(--suite-border);border-radius:var(--radius-card);background:var(--suite-secondary);min-width:0;overflow-wrap:anywhere}
+.onboarding-row-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}.onboarding-row-heading h4{font-size:15px}
+.onboarding-recipient.is-accepted{border-left:4px solid var(--suite-success)}.onboarding-recipient.is-review{border-left:4px solid var(--suite-warning)}.onboarding-recipient.is-not_sent{border-left:4px solid var(--suite-danger)}.onboarding-recipient.is-sending{border-left:4px solid var(--suite-primary)}
+.onboarding-recipient.is-accepted .onboarding-row-heading>.team-badge{background:var(--suite-success-bg);color:var(--suite-success)}.onboarding-recipient.is-review .onboarding-row-heading>.team-badge{background:var(--suite-warning-bg);color:var(--suite-warning)}
+.onboarding-recipient .team-fields{margin-bottom:0}.onboarding-recipient .team-fields label{font-size:12px}.onboarding-recipient details{margin:14px 0 0}.onboarding-recipient summary{font-size:13px}
+.onboarding .onboarding-remove{box-shadow:none;background:transparent;border-color:transparent;color:var(--suite-muted);font-size:12px;padding-inline:0;margin-top:10px}
+.onboarding-review-values{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:0}.onboarding-review-values>div{min-width:0}.onboarding-review-values dt{font-size:11px;color:var(--suite-muted)}.onboarding-review-values dd{margin:3px 0 0;font-size:13px}.onboarding-access-warning{color:var(--suite-warning);font-size:12px}
+.onboarding-row-issues{padding:12px 14px 12px 28px;margin:14px 0 0;color:var(--suite-danger);background:var(--suite-danger-bg);border-radius:8px;font-size:13px}
+.onboarding-result{font-size:13px;color:var(--suite-muted);line-height:1.6;margin-bottom:0!important}
+.team-management label.onboarding-confirm{display:flex;flex-direction:row;align-items:flex-start;gap:12px;padding:16px;margin-top:20px;background:var(--suite-info-bg);border-radius:var(--radius-card);font-size:13px;line-height:1.6}
+.onboarding-confirm input[type=checkbox]{flex:0 0 20px;width:20px;height:20px;min-height:20px;margin:2px 0 0;padding:0}
+.onboarding-batch-controls{padding-top:16px;border-top:1px solid var(--suite-border)}
+.onboarding-directory-filters{display:grid;grid-template-columns:1.4fr 1fr;gap:14px;padding:16px;margin:16px 0;background:var(--suite-surface);border:1px solid var(--suite-border);border-radius:var(--radius-card)}.onboarding-directory-filters label{font-size:12px}
+.onboarding-status-list{display:grid;gap:12px}.onboarding-status-row{display:grid;grid-template-columns:1fr 1.15fr 1fr;gap:20px;padding:20px;border:1px solid var(--suite-border);border-radius:var(--radius-card);background:var(--suite-surface);min-width:0}.onboarding-status-row>div{min-width:0}.onboarding-status-row h4{font-size:15px}.onboarding-status-row p,.onboarding-status-row small{color:var(--suite-muted);font-size:12px}.onboarding-status-row>div>strong{font-size:13px}.onboarding-ready{background:var(--suite-success-bg);color:var(--suite-success)}.onboarding-pending{background:var(--suite-info-bg);color:var(--suite-primary)}.onboarding-review{background:var(--suite-warning-bg);color:var(--suite-warning)}
+.onboarding-history{padding:8px 18px;border:1px solid var(--suite-border);border-radius:var(--radius-card);background:var(--suite-surface)}.onboarding-history li{font-size:13px;overflow-wrap:anywhere;margin-bottom:14px}.onboarding-history p{font-size:12px;color:var(--suite-muted)}
+@media(max-width:850px){.onboarding-status-row{grid-template-columns:1fr 1fr}.onboarding-status-row>div:first-child{grid-column:1/-1}.onboarding-paste{grid-template-columns:1fr}}
+@media(max-width:640px){.onboarding{gap:20px}.onboarding-batch{padding:16px}.onboarding-stats{gap:8px}.onboarding-stats>div{padding:12px}.onboarding-stats strong{font-size:24px}.onboarding-stats svg{width:16px;height:16px}.onboarding-stats span{font-size:10px}.onboarding-recipient{padding:14px}.onboarding-row-heading{align-items:flex-start}.onboarding-review-values,.onboarding-directory-filters,.onboarding-status-row{grid-template-columns:1fr}.onboarding-status-row{padding:16px;gap:14px}.onboarding-actions>button{flex:1 1 160px}.onboarding-batch-controls>button{flex-basis:100%}.onboarding textarea{font-size:16px}}

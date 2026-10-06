@@ -7,6 +7,8 @@ async function setup(page:Page,mentor=false){
  await page.route('**/rest/v1/**',async r=>{
  const path=new URL(r.request().url()).pathname;
  if(path.endsWith('/profiles'))return r.fulfill({json:{id:uid,role:c.role,active:true}});
+ if(path.endsWith('/planning_my_work_context'))return r.fulfill({json:{user_id:uid,season_id:null,seasons:[],boards:[],tasks:[]}});
+ if(path.endsWith('/pit_issues'))return r.fulfill({json:[],headers:{'content-range':'*/0'}});
  if(path.endsWith('/team_dashboard_context'))return r.fulfill({json:{...c,announcements:announcements.filter(a=>a.active)}});
  if(path.endsWith('/team_announcements'))return r.fulfill({json:announcements});
  if(path.endsWith('/team_positions'))return r.fulfill({json:[{key:'communications_lead',name:'Communications Lead'}]});
