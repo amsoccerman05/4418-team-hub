@@ -33,6 +33,14 @@ jobs:
           path: test-results/invite-cleanup/*.png
           if-no-files-found: error
           retention-days: 7
+      - name: Upload synthetic season goal review screenshots
+        if: ${{ always() && github.event_name == 'pull_request' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: season-goals-review-screenshots
+          path: test-results/season-goals-review/*.png
+          if-no-files-found: error
+          retention-days: 7
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
