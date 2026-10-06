@@ -1,0 +1,15 @@
+import {useEffect,useRef,useState} from 'react';
+import type {AssemblySnapshot} from './types';
+import {loadAssembly} from './service';
+import {snapshotText} from './model';
+import './assembly.css';
+/** An explicit draft insertion. It never saves a review or alters an exported deck. */
+export function AssemblySnapshotPicker({actorId,boardId,progress,onInsert}:{actorId:string;boardId:string;progress:string;onInsert:(text:string)=>void}){
+ const [snapshots,setSnapshots]=useState<AssemblySnapshot[]|null>(null),[selected,setSelected]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
+ const live=useRef(true),request=useRef<AbortController|null>(null),route=useRef(location.hash);
+ useEffect(()=>{live.current=true;return()=>{live.current=false;request.current?.abort();};},[]);
+ const current=()=>live.current&&location.hash===route.current;
+ async function load(){if(busy)return;const c=new AbortController();request.current=c;setBusy(true);setSnapshots(null);setSelected('');setError('');try{const data=await loadAssembly(actorId,boardId,c.signal,undefined,current);if(current()){setSnapshots(data.snapshots);setSelected(data.snapshots[0]?.id||'');}}catch(e){if(current())setError((e as Error).message);}finally{if(current())setBusy(false);}}
+ function insert(){if(busy)return;const snapshot=snapshots?.find(s=>s.id===selected);if(!snapshot||!current())return;if(progress.includes(snapshot.id)){setError('This snapshot is already included in the progress field.');return;}const text=[progress.trim(),snapshotText(snapshot)].filter(Boolean).join('\n\n');if(text.length>5000){setError('This snapshot and the current progress exceed 5,000 characters. Shorten the progress field or choose a shorter snapshot.');return;}setError('');onInsert(text);setNotice('Snapshot added to the draft. Review the text, then use Save weekly update.');}
+ return <aside className="assembly-snapshot-picker" aria-label="Assembly snapshot for weekly update"><strong>Assembly & testing snapshot</strong><p>Add a previously captured set of facts to this draft. Saved updates and decks retain the text you choose here.</p>{snapshots===null?<button type="button" disabled={busy} onClick={()=>void load()}>{busy?'Loading snapshots…':'Choose assembly snapshot'}</button>:snapshots.length?<><label>Captured snapshot<select value={selected} onChange={e=>setSelected(e.target.value)}>{snapshots.map(s=><option key={s.id} value={s.id}>{new Date(s.created_at).toLocaleString()} · {s.facts.parts_done}/{s.facts.parts_total} parts · {s.facts.checks_passed} checks passed</option>)}</select></label><div className="assembly-actions"><button type="button" disabled={busy} onClick={insert}>Add selected snapshot to progress</button><button type="button" disabled={busy} onClick={()=>void load()}>Refresh snapshots</button></div></>:<p>No snapshots yet. Capture one in this project's Assembly & testing view.</p>}{error&&<p role="alert" className="sr-error">{error}</p>}{notice&&<p role="status">{notice}</p>}</aside>;
+}
