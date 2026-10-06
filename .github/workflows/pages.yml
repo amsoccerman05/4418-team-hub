@@ -68,6 +68,24 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
+  fabrication-local-integration:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3
+        with:
+          version: '2.119.0'
+      - name: Check local-only integration guards
+        run: node --test tests/integration/fabrication-safety.test.mjs
+      - name: Verify disposable Supabase Auth, Edge, Storage, and PostgreSQL
+        run: node tests/integration/fabrication-local.mjs --run
   deploy:
     if: github.event_name != 'pull_request'
     needs: build
