@@ -95,6 +95,8 @@ async function mock(page: Page, role = "student") {
           active: true,
         };
       else if (path === "/rest/v1/rpc/notification_center") result = { unread: 0, attention: [], items: [], has_more: false };
+      else if (path === "/rest/v1/rpc/planning_my_work_context") result = {user_id:user.id,season_id:null,seasons:[],boards:[],tasks:[]};
+      else if (path === "/rest/v1/pit_issues") return route.fulfill({json:[],headers:{"content-range":"*/0","access-control-expose-headers":"content-range"}});
       else if (path.endsWith("/team_dashboard_context")) result = {name:'Team member',role,admin:false,personal:{percent:null,strikes:0,pending:0},next_meeting:null,orders:[],finance:{allowed:false,approvals:0,school:0},attention:null,robot:null,inventory:null,announcements:[]};
       else if (path.endsWith("/team_attendance_policy_context")) result = data.policy || {user_id:user.id,can_review:role==="mentor",can_read_team:role!=="student",can_manage_meetings:role!=="student",can_start_year:role==="mentor",strike_year_start:null,people:[],warnings:[]};
       else if (path.endsWith("/team_meetings")) result = data.meetings;
@@ -173,7 +175,7 @@ async function mock(page: Page, role = "student") {
   await page.goto("/");
   return { data, calls, handleRequest };
 }
-test("Attendance fixture accepts the header notification RPC and rejects unknown requests", async ({ page }) => {
+test("Attendance fixture accepts header and personal assignment reads but rejects unknown requests", async ({ page }) => {
   const { handleRequest } = await mock(page);
   await expect(page.getByRole("button", { name: "Notifications", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Notifications", exact: true }).click();

@@ -1,3 +1,5 @@
+import {isCurrentEditor,type EditorSession} from './editor-session';
+import {personalTaskFromRoute} from './personal-task-route';
 import {OwnerPicker,OwnerSummary} from './Owners';
 import {ContextActions} from './ContextActions';
 import {BoardGantt} from './BoardGantt';
@@ -17,11 +19,28 @@ import './planning.css';
 export function Planning({route}:{route:string}){
  const [data,setData]=useState<Context|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[edit,setEdit]=useState<Edit|null>(null),[view,setView]=useState('table'),[planView,setPlanView]=useState('table');
  const [search,setSearch]=useState(''),[owner,setOwner]=useState(''),[area,setArea]=useState(''),[status,setStatus]=useState(''),[priority,setPriority]=useState(''),[feedback,setFeedback]=useState('');
- const generation=useRef(0),selected=useRef<string|null>(null);
+ const generation=useRef(0),selected=useRef<string|null>(null),openedTaskRoute=useRef<string|null>(null);
  const tab=route.split('/')[1]||'dashboard',boardId=route.split('/')[2];
- async function refresh(sid=selected.current){const g=++generation.current;setError('');try{const c=await loadPlanning(sid,tab==='my-work');if(g===generation.current){setData(c);selected.current=c.season_id;}}catch(e){if(g===generation.current)setError((e as Error).message);}}
+ const editorMounted=useRef(true);
+ useEffect(()=>{editorMounted.current=true;return()=>{editorMounted.current=false;};},[]);
+ const editorSession=useRef<EditorSession>({route,edit});editorSession.current={route,edit};
+ const expectedEditor={route,edit};
+ const editorStillCurrent=()=>isCurrentEditor(expectedEditor,editorSession.current,location.hash,editorMounted.current);
+ async function refresh(sid=selected.current,isCurrent:()=>boolean=()=>true){const g=++generation.current;setError('');try{const c=await loadPlanning(sid,tab==='my-work');if(g===generation.current&&isCurrent()){setData(c);selected.current=c.season_id;}}catch(e){if(g===generation.current&&isCurrent())setError((e as Error).message);}}
  useEffect(()=>{setData(null);void refresh();return()=>{generation.current++;};},[tab==='my-work']);
  useEffect(()=>{setSearch('');setOwner('');setArea('');setStatus('');setPriority('');setEdit(null);setFeedback('');},[boardId,tab]);
+ const personalTaskRoute=tab==='my-work'&&boardId?route:null;
+ useEffect(()=>{
+  if(!personalTaskRoute){openedTaskRoute.current=null;return;}
+  if(!data)return;
+  const task=personalTaskFromRoute(personalTaskRoute,data);
+  if(!task){setEdit(null);return;}
+  if(openedTaskRoute.current===personalTaskRoute)return;
+  openedTaskRoute.current=personalTaskRoute;
+  setEdit({entity:'task',p:{...task}});
+ },[personalTaskRoute,data]);
+ const closeEditor=()=>{if(!editorStillCurrent())return;setEdit(null);if(personalTaskRoute){history.replaceState(null,'',location.pathname+location.search+'#planning/my-work');window.dispatchEvent(new HashChangeEvent('hashchange'));}};
+
  const season=data?.seasons.find(s=>s.id===data.season_id),board=data?.boards.find(b=>b.id===boardId),readOnly=season?.status==='archived',manage=!!data?.can_manage;
  async function updateTask(t:Task,patch:Partial<Task>){if(busy)return;setBusy(true);setError('');setFeedback('');try{await savePlanning('task',{...t,...patch});await refresh();setFeedback('Task saved.');return true;}catch(e){await refresh();setError((e as Error).message);return false;}finally{setBusy(false);}}
  async function updateItem(i:Item,patch:Partial<Item>){if(busy)return;setBusy(true);setError('');setFeedback('');try{await savePlanning('item',{...i,...patch});await refresh();setFeedback('Plan item saved.');return true;}catch(e){setError((e as Error).message);return false;}finally{setBusy(false);}}
@@ -61,7 +80,7 @@ export function Planning({route}:{route:string}){
  <div className="planning-filters"><label>Search tasks<input type="search" placeholder="Find a task…" value={search} onChange={e=>setSearch(e.target.value)}/></label>{([['Owner / Person',owner,setOwner,Object.fromEntries(data.members.map(m=>[m.id,m.name]))],['Area',area,setArea,Object.fromEntries(data.areas.map(a=>[a.id,a.name]))],['Status',status,setStatus,taskStatuses],['Priority',priority,setPriority,priorities]] as const).map(([label,value,set,options])=><label key={label}>{label}<select aria-label={label} value={value} onChange={e=>set(e.target.value)}><option value="">All</option>{Object.entries(options).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label>)}{filtersActive&&<button className="planning-filter-reset" onClick={clearFilters}>Clear filters</button>}</div>
  {!data.tasks.some(t=>t.board_id===boardId)&&<p className="planning-empty">No tasks yet. {manage&&board.active&&(!readOnly||board.kind==='area')?'Use New task or Add task to break this board’s work into clear next steps.':'Tasks added to this board will appear here.'}</p>}
  {view==='gantt'?<BoardGantt key={board.id} tasks={tasks} data={data} onOpen={openTask}/>:view==='table'?<>{rows(tasks)}{canCreateTask&&<QuickAdd key={board.id} kind="task" onAdd={title=>quickCreate('task',title,{status:'todo'})}/>}</>:<div className="planning-kanban" aria-label="Kanban board">{Object.entries(taskStatuses).map(([k,v])=><section key={`${board.id}-${k}`} className="planning-column" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();const t=data.tasks.find(t=>t.id===e.dataTransfer.getData('application/x-planning-task')&&t.board_id===boardId);if(t&&canEdit(t))void move(t,k);}}><h3 data-status={k}>{v} · <span>{tasks.filter(t=>t.status===k).length}</span></h3>{tasks.filter(t=>t.status===k).map(card)}{!tasks.some(t=>t.status===k)&&<p className="planning-column-empty">No {v.toLowerCase()} tasks</p>}{canCreateTask&&<QuickAdd kind="task" onAdd={title=>quickCreate('task',title,{status:k})}/>}</section>)}</div>}</>:<p className="planning-empty">Board unavailable. <a href="#planning/boards">View boards</a></p>)}
- {tab==='my-work'&&<>{['Overdue','Today','This week','Later','Blocked'].map(group=>{const ts=data.tasks.filter(t=>t.owner_ids.includes(data.user_id)&&t.status!=='done'&&data.boards.some(b=>b.id===t.board_id&&b.active)&&workGroup(t)===group);return ts.length?<section className="planning-work-group" data-group={group} key={group}><h3>{group} · {ts.length}</h3><div className="planning-grid">{ts.map(card)}</div></section>:null;})}{!data.tasks.some(t=>t.owner_ids.includes(data.user_id)&&t.status!=='done'&&data.boards.some(b=>b.id===t.board_id&&b.active))&&<p className="planning-empty">You’re caught up. Tasks assigned to you will appear here.</p>}</>}
- </>}{edit&&<Editor key={`${edit.entity}-${edit.p.id||'new'}`} edit={edit} data={data} onClose={()=>setEdit(null)} onSaved={async message=>{await refresh();if(message)setFeedback(message);}}/>}</>}
+ {tab==='my-work'&&<>{personalTaskRoute&&!personalTaskFromRoute(personalTaskRoute,data)&&<p className="planning-empty" role="status">This assigned task is no longer available. <a href="#planning/my-work">View your current work</a>.</p>}{['Overdue','Today','This week','Later','Blocked'].map(group=>{const ts=data.tasks.filter(t=>t.owner_ids.includes(data.user_id)&&t.status!=='done'&&data.boards.some(b=>b.id===t.board_id&&b.active)&&workGroup(t)===group);return ts.length?<section className="planning-work-group" data-group={group} key={group}><h3>{group} · {ts.length}</h3><div className="planning-grid">{ts.map(card)}</div></section>:null;})}{!data.tasks.some(t=>t.owner_ids.includes(data.user_id)&&t.status!=='done'&&data.boards.some(b=>b.id===t.board_id&&b.active))&&<p className="planning-empty">You’re caught up. Tasks assigned to you will appear here.</p>}</>}
+ </>}{edit&&<Editor key={`${edit.entity}-${edit.p.id||'new'}`} edit={edit} data={data} onClose={closeEditor} onSaved={async message=>{if(!editorStillCurrent())return;await refresh(selected.current,editorStillCurrent);if(editorStillCurrent()&&message)setFeedback(message);}}/>}</>}
  </section>;
 }
