@@ -57,6 +57,14 @@ jobs:
           path: test-results/sprint-review/*.png
           if-no-files-found: error
           retention-days: 7
+      - name: Upload synthetic fabrication review screenshots
+        if: ${{ always() && github.event_name == 'pull_request' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: fabrication-review-screenshots
+          path: test-results/fabrication/*.png
+          if-no-files-found: error
+          retention-days: 7
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

@@ -1,3 +1,7 @@
 [functions.team-invitations]
 # The handler validates the caller with Auth /user before its manager-authorized RPC.
 verify_jwt = false
+
+[functions.fabrication-files]
+# Auth.getUser verifies the token; scoped RPCs recheck the current active profile/project.
+verify_jwt = false
