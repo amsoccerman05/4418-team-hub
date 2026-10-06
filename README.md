@@ -87,3 +87,12 @@ Launcher deployment does not require SSO or API integrations. Attendance setup i
 ## Family event guides
 
 KCMT 2026 has a team event overview at `/#events/kcmt-2026` and a public family guide at `/event.html#kcmt-2026`. The guide includes the tentative organizer schedule, optional Friday activities, venue and clearly labeled family logistics awaiting confirmation. It requires no sign-in and reads only a separately curated static public document; it never reads team records or Planning tasks. See [event-page content and release guidance](docs/EVENT-PAGES.md) before adding or publishing information.
+
+
+## Fabrication V1 — local draft
+
+Fabrication reuses existing Planning project boards and supports multiple immutable part revisions per project, a cross-project Ready queue, operator claims, current-revision acknowledgement, and private DXF/PDF transfer. Drawing units and stock-thickness units are separate. All active eligible team members may operate their own claim; existing readonly, project and season restrictions remain in force.
+
+This feature requires the reviewed additive Fabrication migration and private file gateway before deployment. They have **not** been applied to production. See [release and cost review](docs/FABRICATION-RELEASE-REVIEW.md), [backend contract](docs/FABRICATION-BACKEND.md), and [file gateway/format limits](docs/FABRICATION-FILES.md). Only synthetic records and files are used in tests.
+
+Focused checks: `npx playwright test tests/fabrication-db.spec.ts tests/fabrication-model.spec.ts tests/fabrication-files.spec.ts --workers=1`. Browser flow checks: `npx playwright test tests/fabrication-ui.spec.ts --workers=1`; synthetic review screenshots go under ignored `test-results/fabrication/`. Native concurrent transactions: `FABRICATION_PG_BIN=/path/to/postgresql-17/bin node tests/native/fabrication-concurrency.mjs`.
