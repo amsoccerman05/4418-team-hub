@@ -1,4 +1,4 @@
-import {test,expect,type Page} from '@playwright/test';
+import {test,expect,type Download,type Page} from '@playwright/test';
 import {createHash} from 'node:crypto';
 import {revisionIssue} from '../src/fabrication/Editor';
 import {fabricationUIFixture,fabActor,fabId,fabPart,fabProject,fabSeason,fixtureActions,syntheticDxf} from './fixtures/fabrication-ui';
@@ -29,7 +29,16 @@ async function setup(page:Page,adjust?:(context:FabricationContext)=>void){
  }
  await page.route('**/rpc/fabrication_mutate',r=>r.fulfill({json:apply(r.request().postDataJSON())}));
  await page.route('**/rpc/fabrication_mutation_status',r=>{const p=r.request().postDataJSON();return r.fulfill({json:receipts.get(p.request_id)||{request_id:p.request_id,status:'unknown',action:null,entity_id:null,version:null}});});
- await page.route('**/functions/v1/fabrication-files',r=>{const request=r.request();if(request.headers()['content-type']?.includes('multipart/form-data'))return r.fulfill({json:applyUpload(parseUpload(request.postData()!))});const p=request.postDataJSON();if(p.action==='cancel'){const receipt=receipts.get(p.request_id)||{request_id:p.request_id,status:'cancelled' as const,action:null,entity_id:null,version:null};receipts.set(p.request_id,receipt);return r.fulfill({json:receipt});}if(p.action==='download'){downloads.push(p);const body=p.file_kind==='dxf'?syntheticDxf:'%PDF-1.4\nsynthetic fixture\n%%EOF';return r.fulfill({body,headers:{'Content-Type':'application/octet-stream','Content-Disposition':`attachment; filename="synthetic-${p.revision_id}.${p.file_kind}"`,'X-Fabrication-Revision':p.revision_id,'X-Fabrication-Kind':p.file_kind,'X-Fabrication-SHA256':createHash('sha256').update(body).digest('hex')}});}return r.fulfill({status:400,json:{code:'FB422',message:'Unknown synthetic action'}});});
+ await page.route('**/functions/v1/fabrication-files',r=>{const request=r.request();if(request.headers()['content-type']?.includes('multipart/form-data'))return r.fulfill({json:applyUpload(parseUpload(request.postData()!))});const p=request.postDataJSON();if(p.action==='cancel'){const receipt=receipts.get(p.request_id)||{request_id:p.request_id,status:'cancelled' as const,action:null,entity_id:null,version:null};receipts.set(p.request_id,receipt);return r.fulfill({json:receipt});}if(p.action==='download'){downloads.push(p);const body=p.file_kind==='dxf'?syntheticDxf:'%PDF-1.4\nsynthetic fixture\n%%EOF';
+   // Mirror the gateway's CORS contract: fetch otherwise hides the verification headers.
+   return r.fulfill({body,headers:{
+    'Content-Type':p.file_kind==='dxf'?'application/octet-stream':'application/pdf','Content-Length':String(Buffer.byteLength(body)),
+    'Content-Disposition':`attachment; filename="synthetic-${p.revision_id}.${p.file_kind}"`,
+    'X-Fabrication-Revision':p.revision_id,'X-Fabrication-Kind':p.file_kind,'X-Fabrication-SHA256':createHash('sha256').update(body).digest('hex'),
+    'Access-Control-Allow-Origin':new URL(page.url()).origin,
+    'Access-Control-Expose-Headers':'Content-Disposition, X-Fabrication-Revision, X-Fabrication-Kind, X-Fabrication-SHA256, Content-Length',
+    'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Vary':'Origin',
+   }});}return r.fulfill({status:400,json:{code:'FB422',message:'Unknown synthetic action'}});});
  return {context,mutations,uploads,downloads,versionReads,external,receipts,apply,applyUpload};
 }
 function parseUpload(body:string):FabricationUpload{const field=(name:string)=>new RegExp(`name="${name}"\\r\\n\\r\\n([\\s\\S]*?)\\r\\n--`).exec(body)?.[1]||'';return {request_id:field('request_id'),expected_actor:field('expected_actor'),p:JSON.parse(field('p')) as FabricationSubmission};}
@@ -73,7 +82,13 @@ test('malformed routes never load a queue; denied and empty contexts remain clea
  const state=await setup(page);let reads=0;await page.route('**/rpc/fabrication_context',r=>{reads++;return r.fulfill({status:403,json:{code:'FB403',message:'Unavailable'}});});await page.goto(`/#fabrication/projects/${fabProject}/extra`);await expect(page.getByText('This Fabrication link is invalid.',{exact:false})).toBeVisible();expect(reads).toBe(0);await page.goto('/#fabrication');await expect(page.getByRole('alert')).toContainText('access');await expect(page.getByRole('button',{name:'Intake side plate, left',exact:true})).toHaveCount(0);await page.unroute('**/rpc/fabrication_context');state.context.projects=[];state.context.parts=[];state.context.revisions=[];await page.route('**/rpc/fabrication_context',r=>r.fulfill({json:state.context}));await page.getByRole('button',{name:'Retry Fabrication'}).click();await expect(page.getByRole('heading',{name:'No project boards yet'})).toBeVisible();
 });
 test('immutable revision download verifies exact revision and never requests public storage',async({page})=>{
- const state=await setup(page);await page.goto('/#fabrication');const dialog=await openPart(page),downloaded=page.waitForEvent('download');await dialog.getByRole('region',{name:'Immutable revision history'}).getByRole('button',{name:'Download DXF revision 1',exact:true}).click();const download=await downloaded;expect(download.suggestedFilename()).toBe(`synthetic-${fabId(400)}.dxf`);expect(await download.failure()).toBeNull();expect(state.downloads).toMatchObject([{revision_id:fabId(400),file_kind:'dxf'}]);expect(state.mutations).toHaveLength(0);expect(state.external.some(u=>u.includes('/storage/'))).toBe(false);
+ const state=await setup(page);await page.goto('/#fabrication');const dialog=await openPart(page),downloads:Download[]=[];
+ page.on('download',download=>downloads.push(download));
+ await dialog.getByRole('region',{name:'Immutable revision history'}).getByRole('button',{name:'Download DXF revision 1',exact:true}).click();
+ // Surface the service's verification error immediately instead of timing out on a missing download.
+ await expect.poll(async()=>downloads.length>0||await dialog.getByRole('alert').isVisible(),{message:'Expected a verified revision download or an explicit error.'}).toBe(true);
+ expect(await dialog.getByRole('alert').allTextContents()).toEqual([]);expect(downloads).toHaveLength(1);
+ const download=downloads[0];expect(download.suggestedFilename()).toBe(`synthetic-${fabId(400)}.dxf`);expect(await download.failure()).toBeNull();expect(state.downloads).toMatchObject([{revision_id:fabId(400),file_kind:'dxf'}]);expect(state.mutations).toHaveLength(0);expect(state.external.some(u=>u.includes('/storage/'))).toBe(false);
 });
 test('account switch hides the former draft, files and recovery receipt immediately',async({page})=>{
  const state=await setup(page);await page.goto('/#fabrication');await page.getByRole('button',{name:'Add part to Intake'}).click();const dialog=page.getByRole('dialog');await dialog.getByLabel('Part name',{exact:true}).fill('Former actor private draft');await page.evaluate(({actor,id})=>sessionStorage.setItem('4418-fabrication-receipts-v1',JSON.stringify([{expected_actor:actor,request_id:id}])),{actor:fabActor,id:fabId(900)});state.context.user_id=fabId(2);state.context.projects=[];state.context.parts=[];state.context.revisions=[];await changeActor(page,fabId(2));await expect(dialog).toHaveCount(0);await expect(page.getByText('Former actor private draft',{exact:true})).toHaveCount(0);await expect(page.getByRole('region',{name:'Pending fabrication save'})).toHaveCount(0);await expect(page.getByRole('button',{name:'Intake side plate, left',exact:true})).toHaveCount(0);

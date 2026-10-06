@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
-import { handle, type Services, type Receipt, type Reservation } from '../supabase/functions/fabrication-files/handler';
+import { createClient } from '@supabase/supabase-js';
+import { handle, immutableObjectConflict, type Services, type Receipt, type Reservation } from '../supabase/functions/fabrication-files/handler';
 import { BODY_MAX_BYTES, FileError, sha256, validateDxf, validatePdf, validateFilename, validateFile, type Manifest } from '../supabase/functions/fabrication-files/validation';
 
 const actor = '10000000-0000-0000-0000-000000000001', board = '20000000-0000-0000-0000-000000000001';
@@ -207,4 +208,21 @@ test('adapter has only scoped backend operations, verified getUser, private stor
   expect(adapter).toContain('upsert: false'); expect(adapter).toContain('metadata: { sha256: digest }');
   expect(adapter).toContain("rpc('fabrication_cancelled_upload_paths'"); expect(adapter).toContain("'npm:@supabase/supabase-js@2.116.0'");
   expect(readFileSync('src/fabrication/service.ts', 'utf8')).not.toMatch(/SERVICE_ROLE_KEY|storage\.from|upsert:/);
+});
+
+
+test('immutable retries recognize current and legacy Storage SDK conflict shapes', async () => {
+  for (const entry of [
+    { status: 409, body: { code: 'ResourceAlreadyExists', message: 'The resource already exists' } },
+    { status: 400, body: { statusCode: '400', error: 'Duplicate', message: 'The resource already exists' } },
+    { status: 400, body: { code: 'Duplicate', message: 'Duplicate object' } },
+  ]) {
+    const client = createClient('https://fabrication-storage.invalid', 'synthetic-public-key', {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+      global: { fetch: async () => new Response(JSON.stringify(entry.body), { status: entry.status, headers: { 'content-type': 'application/json' } }) },
+    });
+    const result = await client.storage.from('fabrication-private').upload('synthetic/drawing.dxf', new Uint8Array([1]), { upsert: false });
+    expect(immutableObjectConflict(result.error)).toBe(true);
+  }
+  for (const error of [null, {}, { status: 400, code: 'InvalidMimeType', message: 'MIME rejected' }, { status: 403, code: 'AccessDenied' }, { status: 500, message: 'The resource already exists' }]) expect(immutableObjectConflict(error)).toBe(false);
 });

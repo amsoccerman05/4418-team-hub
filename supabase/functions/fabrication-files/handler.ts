@@ -3,6 +3,15 @@ export type Receipt = { request_id: string; status: 'pending' | 'applied' | 'can
 export type Reservation = { receipt: Receipt; reservation: null | { lease_id: string; revision_id: string; bucket: 'fabrication-private'; dxf_path: string; pdf_path: string | null; manifest: Manifest } };
 export type Download = { bucket: string; path: string; name: string; size: number; sha256: string; content_type: string; revision_number: number };
 export type Cleanup = { bucket: string; paths: string[] };
+/** A conflict only permits reauthorization and byte verification, never success or overwrite. */
+export function immutableObjectConflict(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const e = error as { status?: number; statusCode?: string | number; code?: string; error?: string; message?: string };
+  if (String(e.statusCode) === '409' || e.status === 409) return true;
+  if (String(e.statusCode) !== '400' && e.status !== 400) return false;
+  return ['Duplicate', 'ResourceAlreadyExists', 'KeyAlreadyExists', 'already_exists'].includes(e.code || e.error || '')
+    || e.message === 'The resource already exists' || e.message === 'Asset Already Exists';
+}
 export type Services = {
   verify(jwt: string): Promise<{ id: string }>;
   reserve(actor: string, requestId: string, p: Record<string, unknown>, manifest: Manifest): Promise<Reservation>;

@@ -1,5 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.116.0';
-import { handle, type Services } from './handler.ts';
+import { handle, immutableObjectConflict, type Services } from './handler.ts';
 import { FileError } from './validation.ts';
 
 const url = Deno.env.get('SUPABASE_URL') || '';
@@ -60,8 +60,7 @@ const services: Services = {
     });
     if (!error) return 'created';
     // An existing immutable object is never replaced. Handler reauthorizes then checks its bytes.
-    const duplicate = error as { statusCode?: string | number; error?: string };
-    if (String(duplicate.statusCode) === '409' || duplicate.error === 'Duplicate') return 'exists';
+    if (immutableObjectConflict(error)) return 'exists';
     throw new FileError('storage_write_unconfirmed', 502, 'The upload could not be confirmed. Check its status before retrying.');
   },
   async get(path, limit) {
