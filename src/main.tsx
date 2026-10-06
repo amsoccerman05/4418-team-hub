@@ -12,6 +12,7 @@ import { PlanningNav } from "./planning/PlanningNav";
 import { Planning } from "./planning/Planning";
 import {EventOverview} from "./events/EventOverview";
 import {Outreach} from "./outreach/Outreach";
+import {SprintReviewWorkspace} from './planning/reviews/SprintReview';
 function App() {
   const auth=useHubAuth();
   const [route, setRoute] = useState(location.hash);
@@ -22,6 +23,7 @@ function App() {
   }, []);
   const events = route === "#events" || route.startsWith("#events/");
   const planning = route === '#planning' || route.startsWith('#planning/');
+  const reviews = route === '#planning/reviews' || route.startsWith('#planning/reviews/');
   const notifications=route==='#notifications'||route.startsWith('#notifications/');
   const management = route === "#team-management";
   const outreach = route === '#outreach' || route.startsWith('#outreach/');
@@ -33,7 +35,7 @@ function App() {
       <a className="skip-link" href="#main" onClick={event => {event.preventDefault();document.getElementById("main")?.focus();}}>
         Skip to content
       </a>
-      <SuiteHeader app={planning?'Planning':workspace?'Attendance':'Team Hub'} context={events?'Events':notifications?'Notifications':planning?({'plan':'Season Plan','goals':'Season Goals','boards':'Boards','my-work':'My Work'}[route.split('/')[1]]||'Dashboard'):management?'Team Management':outreach?'Sponsor & Outreach':announcements?'Announcements':workspace?'Attendance':'My 4418'} notifications={!planning?<NotificationBell/>:undefined} name={auth.name} onSignOut={auth.signOut} busy={auth.busy}/>
+      <SuiteHeader app={planning?'Planning':workspace?'Attendance':'Team Hub'} context={events?'Events':notifications?'Notifications':planning?({'plan':'Season Plan','goals':'Season Goals','reviews':'Sprint Review','boards':'Boards','my-work':'My Work'}[route.split('/')[1]]||'Dashboard'):management?'Team Management':outreach?'Sponsor & Outreach':announcements?'Announcements':workspace?'Attendance':'My 4418'} notifications={!planning?<NotificationBell/>:undefined} name={auth.name} onSignOut={auth.signOut} busy={auth.busy}/>
 
       <div className={`hub-shell${planning?' planning-shell':''}`}>{planning?<PlanningNav route={route}/>:<HubNav route={route}/>}<main id="main" tabIndex={-1}>
         {auth.error&&<p role="alert">{auth.error}</p>}
@@ -44,7 +46,8 @@ function App() {
           workspace={workspace}
           tab={route.split("/")[1] || ""}
         />}
-        {auth.signed && auth.userId && planning && <Planning route={route} actorId={auth.userId}/> }
+        {auth.signed && auth.userId && planning && !reviews && <Planning route={route} actorId={auth.userId}/> }
+        {auth.signed && auth.userId && reviews && <SprintReviewWorkspace actorId={auth.userId} route={route}/> }
         {auth.signed && management && <TeamManagement workspace /> }
         {auth.signed && outreach && <Outreach actorId={auth.userId||''} route={route}/> }
 
