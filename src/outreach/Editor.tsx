@@ -4,9 +4,10 @@ import type {OutreachContext,OutreachEntity,SavePayload,SaveResult} from './type
 import {outreachService} from './service';
 import {errorMessage,OutreachError,requestScope,type OutreachScope} from './request-scope';
 import {money,stages,today} from './model';
+import {buildOutreachPayload,canOpenEditor} from './editor-payload';
 
 export type EditorConfig={entity:OutreachEntity|'income_link';initial:SavePayload;title:string};
-export function OutreachEditor({config,context,scope,onClose,onSaved}:{config:EditorConfig;context:OutreachContext;scope:OutreachScope;onClose:()=>void;onSaved:(result:SaveResult)=>void}) {
+export function OutreachEditor({config,context,scope,onClose,onSaved,onAccessChanged}:{config:EditorConfig;context:OutreachContext;scope:OutreachScope;onClose:()=>void;onSaved:(result:SaveResult)=>void;onAccessChanged:()=>void}) {
   const {entity,initial}=config,dialog=useRef<HTMLDialogElement>(null),active=useRef(false),busyRef=useRef(false),requests=useRef(new Set<AbortController>());
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[uncertain,setUncertain]=useState<string|null>(null),[conflict,setConflict]=useState(false),[checking,setChecking]=useState(false);
   const [kind,setKind]=useState(String(initial.kind||'cash')),[status,setStatus]=useState(String(initial.status||'promised'));
@@ -19,6 +20,7 @@ export function OutreachEditor({config,context,scope,onClose,onSaved}:{config:Ed
   const owners=<>{unavailableOwner&&<option value="__unavailable__" disabled>Owner unavailable · choose an owner or Unassigned</option>}<option value="">Unassigned</option>{context.owners.map(owner=><option key={owner.id} value={owner.id}>{owner.name}</option>)}</>;
   const save=async(form:HTMLFormElement)=>{
     if(busyRef.current||uncertain||conflict||!current())return;
+    if(!canOpenEditor(context,entity,initial)){setError('This record is read-only for your account. Close the form and reload.');setConflict(true);return;}
     const ownerControl=form.elements.namedItem('owner_id') as HTMLSelectElement|null;
     if(ownerControl?.value==='__unavailable__'){setError('Choose a current owner or explicitly select Unassigned before saving.');return;}
     busyRef.current=true;setBusy(true);setError('');const operationId=crypto.randomUUID(),request=makeScope(),f=new FormData(form);
@@ -27,18 +29,13 @@ export function OutreachEditor({config,context,scope,onClose,onSaved}:{config:Ed
       let result:SaveResult;
       if(entity==='income_link')result=await outreachService.linkIncome(text('pledge_id'),value('income_id'),operationId,request.scope);
       else {
-        let values:Record<string,unknown>={};
-        if(entity==='organization')values={kind:value('kind'),name:value('name'),website:value('website'),notes:value('notes'),active:initial.active??true};
-        if(entity==='contact')values={organization_id:initial.organization_id,name:value('name'),title:value('title'),email:value('email'),phone:value('phone'),notes:value('notes'),active:initial.active??true};
-        if(entity==='engagement')values={organization_id:initial.organization_id,season_id:context.season_id,stage:value('stage'),owner_id:nullable('owner_id'),next_follow_up_on:nullable('next_follow_up_on'),notes:value('notes')};
-        if(entity==='conversation')values={engagement_id:initial.engagement_id,contact_id:nullable('contact_id'),occurred_on:value('occurred_on'),channel:value('channel'),summary:value('summary')};
-        if(entity==='pledge')values={engagement_id:initial.engagement_id,kind:value('kind'),amount:value('kind')==='cash'?Number(value('amount')):null,description:value('description'),promised_on:value('promised_on'),expected_on:nullable('expected_on'),status:value('status')};
-        if(entity==='recognition')values={engagement_id:initial.engagement_id,pledge_id:nullable('pledge_id'),owner_id:nullable('owner_id'),kind:value('kind'),description:value('description'),due_on:nullable('due_on'),status:value('status'),fulfilled_on:value('status')==='fulfilled'?nullable('fulfilled_on'):null,fulfillment_note:value('fulfillment_note')};
-        result=await outreachService.save(entity,{id:initial.id,version:initial.version,...values},operationId,request.scope);
+        const fields=Object.fromEntries(Array.from(f.entries()).map(([key,value])=>[key,String(value)]));
+        result=await outreachService.save(entity,buildOutreachPayload(entity,initial,context,fields),operationId,request.scope);
       }
       if(current())onSaved(result);
     } catch(e) {
       if(!current())return;
+      if(e instanceof OutreachError&&e.kind==='denied'){active.current=false;onAccessChanged();return;}
       setError(errorMessage(e));
       if(e instanceof OutreachError&&e.kind==='uncertain')setUncertain(operationId);
       if(e instanceof OutreachError&&(e.kind==='conflict'||e.kind==='denied'||e.kind==='unavailable'))setConflict(true);
@@ -58,29 +55,29 @@ export function OutreachEditor({config,context,scope,onClose,onSaved}:{config:Ed
     <div className="outreach-dialog-heading"><div><span className="outreach-eyebrow">Private team record</span><h2 id="outreach-editor-title">{config.title}</h2></div><button type="button" className="outreach-icon-button" aria-label="Close form" onClick={dismiss}><X size={20}/></button></div>
     <form onSubmit={e=>{e.preventDefault();void save(e.currentTarget);}}>
       <fieldset disabled={disabled}>
-      {entity==='organization'&&<>
+      {(entity==='organization'||entity==='prospect')&&<>
         <label>Profile type<select name="kind" defaultValue={text('kind','organization')}><option value="organization">Organization</option><option value="person">Individual sponsor</option></select></label>
         <label>Name<input name="name" required maxLength={150} defaultValue={text('name')} autoComplete="off"/></label>
         <label>Website<input name="website" type="url" placeholder="https://example.org" pattern="https://.*" maxLength={500} defaultValue={text('website')}/><small>Use a public HTTPS website.</small></label>
-        <label>Profile notes<textarea name="notes" rows={3} maxLength={4000} defaultValue={text('notes')}/></label>
+        {context.can_manage&&entity==='organization'&&<label>Profile notes<textarea name="notes" rows={3} maxLength={4000} defaultValue={text('notes')}/></label>}{entity==='prospect'&&<><label>Next follow-up<input name="next_follow_up_on" type="date" defaultValue={text('next_follow_up_on')}/></label><p className="outreach-form-note">This creates a prospect assigned to you for the selected season. Check the shared sponsor list first to avoid duplicate outreach.</p></>}
       </>}
       {entity==='contact'&&<>
         <label>Contact name<input name="name" required maxLength={150} defaultValue={text('name')} autoComplete="off"/></label>
         <label>Title or role<input name="title" maxLength={150} defaultValue={text('title')}/></label>
         <div className="outreach-form-pair"><label>Email<input name="email" type="email" maxLength={254} defaultValue={text('email')} autoComplete="off"/></label><label>Phone<input name="phone" type="tel" maxLength={80} defaultValue={text('phone')} autoComplete="off"/></label></div>
-        <label>Contact notes<textarea name="notes" rows={3} maxLength={4000} defaultValue={text('notes')}/></label>
-        <p className="outreach-form-note">Store only the contact details your team needs for this relationship.</p>
+        {context.can_manage&&<label>Contact notes<textarea name="notes" rows={3} maxLength={4000} defaultValue={text('notes')}/></label>}
+        <p className="outreach-form-note">Business contact details are visible to the team for outreach coordination.</p>
       </>}
       {entity==='engagement'&&<>
-        <div className="outreach-form-pair"><label>Relationship stage<select name="stage" defaultValue={text('stage','prospect')}>{Object.entries(stages).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label><label>Relationship owner<select name="owner_id" defaultValue={unavailableOwner?'__unavailable__':text('owner_id')}>{owners}</select></label></div>
+        <div className="outreach-form-pair"><label>Relationship stage<select name="stage" defaultValue={text('stage','prospect')}>{Object.entries(stages).filter(([key])=>context.can_manage||key!=='committed'||initial.stage==='committed').map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>{context.can_manage&&<label>Relationship owner<select name="owner_id" defaultValue={unavailableOwner?'__unavailable__':text('owner_id')}>{owners}</select></label>}</div>
         <label>Next follow-up<input name="next_follow_up_on" type="date" defaultValue={text('next_follow_up_on')}/></label>
-        <label>Season notes<textarea name="notes" rows={4} maxLength={4000} defaultValue={text('notes')}/></label>
+        {context.can_manage&&<label>Season notes<textarea name="notes" rows={4} maxLength={4000} defaultValue={text('notes')}/></label>}{!context.can_manage&&<p className="outreach-form-note">Assignments and private relationship notes are managed by mentors.</p>}
       </>}
       {entity==='conversation'&&<>
-        <div className="outreach-form-pair"><label>Date<input name="occurred_on" type="date" required defaultValue={text('occurred_on',today())}/></label><label>Channel<select name="channel" defaultValue={text('channel','email')}><option value="email">Email</option><option value="phone">Phone</option><option value="meeting">Meeting</option><option value="other">Other</option></select></label></div>
+        <div className="outreach-form-pair"><label>Date<input name="occurred_on" type="date" max={today()} required defaultValue={text('occurred_on',today())}/></label><label>Channel<select name="channel" defaultValue={text('channel','email')}><option value="email">Email</option><option value="phone">Phone</option><option value="meeting">Meeting</option><option value="other">Other</option></select></label></div>
         <label>Contact<select name="contact_id" defaultValue={text('contact_id')}><option value="">General conversation</option>{contacts.map(contact=><option key={contact.id} value={contact.id}>{contact.name}</option>)}</select></label>
         <label>Conversation summary<textarea name="summary" rows={5} required maxLength={4000} defaultValue={text('summary')} placeholder="What was discussed, what was agreed, and what happens next?"/></label>
-        <p className="outreach-form-note">This adds a dated note to the history. To correct a previous note, add a follow-up note.</p>
+        <p className="outreach-form-note">Record an email or conversation that already happened. This form does not send an email. Its details are visible to you and mentors; teammates see who contacted the sponsor, when, and by which channel. Add a follow-up note to correct an earlier entry.</p>
       </>}
       {entity==='pledge'&&<>
         <div className="outreach-form-pair"><label>Commitment type<select name="kind" value={kind} onChange={e=>setKind(e.target.value)}><option value="cash">Cash pledge</option><option value="in_kind">In-kind support</option></select></label>{kind==='cash'&&<label>Pledged amount (USD)<input name="amount" type="number" min="0.01" step="0.01" required defaultValue={text('amount')}/></label>}</div>

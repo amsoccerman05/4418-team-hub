@@ -4,27 +4,27 @@ import {mkdtempSync,rmSync,copyFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {createRequire} from 'node:module';
-import {outreachFixture,outreachId as id,outreachActor as actor} from './fixtures/outreach';
+import {outreachFixture,outreachStudentFixture,outreachStudent as student,outreachId as id,outreachActor as actor} from './fixtures/outreach';
 let dir='',api:any;
 test.beforeAll(()=>{
  dir=mkdtempSync(join(tmpdir(),'outreach-model-'));const bundle=join(dir,'api.cjs');
- buildSync({stdin:{contents:`export * from './src/outreach/model';export * from './src/outreach/service';export * from './src/outreach/receipts';export {OutreachPortfolio,OutreachProfile,Outreach} from './src/outreach/Outreach';export {createElement} from 'react';export {renderToStaticMarkup} from 'react-dom/server';`,resolveDir:resolve('.')},bundle:true,platform:'node',format:'cjs',jsx:'automatic',loader:{'.css':'empty'},define:{'import.meta.env':'{}'},outfile:bundle,logLevel:'silent'});
+ buildSync({stdin:{contents:`export * from './src/outreach/model';export * from './src/outreach/service';export * from './src/outreach/receipts';export * from './src/outreach/editor-payload';export {OutreachEditor} from './src/outreach/Editor';export {OutreachPortfolio,OutreachProfile,Outreach,ConversationHistory} from './src/outreach/Outreach';export {createElement} from 'react';export {renderToStaticMarkup} from 'react-dom/server';`,resolveDir:resolve('.')},bundle:true,platform:'node',format:'cjs',jsx:'automatic',loader:{'.css':'empty'},define:{'import.meta.env':'{}'},outfile:bundle,logLevel:'silent'});
  api=createRequire(import.meta.url)(bundle);
 });
-test.afterEach(()=>{for(const owner of [actor,id(2)])for(const r of api.pendingReceipts(owner))api.settleReceipt(owner,r.requestId);});
+test.afterEach(()=>{for(const owner of [actor,id(2),student])for(const r of api.pendingReceipts(owner))api.settleReceipt(owner,r.requestId);});
 test.afterAll(()=>rmSync(dir,{recursive:true,force:true}));
 const render=(component:any,props:any)=>api.renderToStaticMarkup(api.createElement(component,props));
 const deferred=()=>{let resolve!:(v:any)=>void,reject!:(e:any)=>void;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
-function scope(){const controller=new AbortController();let live=true;return {controller,leave:()=>{live=false;controller.abort();},value:{actorId:actor,signal:controller.signal,isCurrent:()=>live}};}
-function client(response:any={data:{id:id(900),version:1},error:null,status:200}) {
- const calls:any[]=[],listeners=new Set<(event:string,session:any)=>void>();let session:any={user:{id:actor},access_token:'synthetic-actor-token'},sessionWait:Promise<any>|null=null,brokerWait:Promise<any>|null=null;
+function scope(identity=actor){const controller=new AbortController();let live=true;return {controller,leave:()=>{live=false;controller.abort();},value:{actorId:identity,signal:controller.signal,isCurrent:()=>live}};}
+function client(response:any={data:{id:id(900),version:1},error:null,status:200},identity=actor) {
+ const calls:any[]=[],listeners=new Set<(event:string,session:any)=>void>();let session:any={user:{id:identity},access_token:'synthetic-actor-token'},sessionWait:Promise<any>|null=null,brokerWait:Promise<any>|null=null;
  const transport={auth:{getSession:async()=>sessionWait?await sessionWait:{data:{session},error:null},onAuthStateChange:(callback:any)=>{listeners.add(callback);return {data:{subscription:{unsubscribe:()=>listeners.delete(callback)}}};}},rpc:(name:string,args:any)=>{const call:any={name,args,headers:{}};calls.push(call);const request:any={setHeader:(name:string,value:string)=>{call.headers[name]=value;return request;},abortSignal:(signal:AbortSignal)=>{call.signal=signal;return request;},retry:(enabled:boolean)=>{call.retry=enabled;return request;},then:async(resolve:any,reject:any)=>{try{if(brokerWait)await brokerWait;call.signal.throwIfAborted();call.sent=true;let result=typeof response==='function'?await response(call):await response;call.signal.throwIfAborted();return resolve(result);}catch(e){return reject(e);}}};return request;}};
  return {transport,calls,waitSession:(p:Promise<any>)=>{sessionWait=p;},waitBroker:(p:Promise<any>)=>{brokerWait=p;},switchActor:(next:string|null)=>{session=next?{user:{id:next},access_token:'synthetic-other-token'}:null;for(const fn of listeners)fn('SIGNED_IN',session);}};
 }
 
 test('private context requires matching actor, version, live capability and complete valid relationships',()=>{
  const c=outreachFixture();expect(api.parseContext(c,actor)).toEqual(c);expect(api.parseContext(outreachFixture(false),actor)).toBeTruthy();
- for(const change of [{user_id:id(2)},{contract_version:2},{can_manage:false},{owners:null},{can_link_finance:false},{contacts:[{...c.contacts[0],organization_id:id(999)}]},{engagements:[{...c.engagements[0],season_id:id(11)}]},{conversations:[{...c.conversations[0],contact_id:c.contacts[2].id}]},{income_links:[...c.income_links,{...c.income_links[0],id:id(999)}]}])expect(api.parseContext({...c,...change},actor)).toBeNull();
+ for(const change of [{user_id:id(2)},{contract_version:1},{can_manage:false},{owners:null},{can_link_finance:false},{contacts:[{...c.contacts[0],organization_id:id(999)}]},{engagements:[{...c.engagements[0],season_id:id(11)}]},{conversations:[{...c.conversations[0],contact_id:c.contacts[2].id}]},{income_links:[...c.income_links,{...c.income_links[0],id:id(999)}]}])expect(api.parseContext({...c,...change},actor)).toBeNull();
 });
 test('dates, fulfillment and no-season payloads fail closed instead of normalizing contradictory records',()=>{
  const c=outreachFixture();
@@ -99,4 +99,39 @@ test('opaque receipts survive module reload without exposing other actors or ret
 });
 test('Finance link malformed version remains unresolved and never becomes a confirmed receipt',async()=>{
  const mock=client({data:{id:id(999),version:2},error:null,status:200});await expect(api.createOutreachService(mock.transport).linkIncome(id(500),id(700),id(901),scope().value)).rejects.toMatchObject({kind:'uncertain'});expect(api.pendingReceipts(actor)).toEqual([{actorId:actor,requestId:id(901),entityId:id(500),operation:'income_link',expectedVersion:1}]);
+});
+test('student projection includes every contact but rejects private fields, financial rows and assignment authority',()=>{
+ const c=outreachStudentFixture(),mentor=outreachFixture();expect(api.parseContext(c,student)).toEqual(c);expect(c.contacts.map(row=>row.id)).toEqual(mentor.contacts.map(row=>row.id));
+ for(const change of [{financials_redacted:false},{can_link_finance:true},{pledges:mentor.pledges},{recognition:mentor.recognition},{income:mentor.income},{organizations:[{...c.organizations[0],notes:'Private leak'}]},{contacts:[{...c.contacts[0],notes:'Private contact note'}]},{engagements:[{...c.engagements[0],can_assign:true}]},{conversations:[{...c.conversations[0],summary:'Other student email body',summary_redacted:false}]},{contacts:[{...c.contacts[0],can_edit:true}]}])expect(api.parseContext({...c,...change},student)).toBeNull();
+ const own=c.conversations.find(row=>row.created_by===student)!;expect(api.parseContext({...c,conversations:[{...own,can_edit:true}]},student)).toBeNull();
+});
+test('student screens show shared contacts and manual activity honestly without financial zeroes or private content',()=>{
+ const c=outreachStudentFixture(),portfolio=render(api.OutreachPortfolio,{context:c,open:()=>{}}),profile=render(api.OutreachProfile,{context:c,organization:c.organizations[0],open:()=>{}}),history=render(api.ConversationHistory,{conversations:c.conversations,contacts:c.contacts});
+ expect(portfolio).toContain('Shared sponsor profiles');expect(portfolio).toContain('Last recorded contact');expect(portfolio).not.toMatch(/Cash pledged|Promises to fulfill|\$0|\$5,750|DEMO-INCOME/);
+ expect(profile).toContain('Jamie Example');expect(profile).toContain('jamie@sponsor.example.invalid');expect(profile).toContain('Log sent email');expect(profile).toContain('Private relationship notes are restricted');expect(profile).not.toContain('Commitments &amp; recognition');expect(profile).not.toContain('local manufacturing supporter');expect(profile).not.toContain('Synthetic secondary contact');expect(profile).not.toContain('Edit sponsor profile');
+ expect(history).toContain('Manually recorded by Taylor Student (demo)');expect(history).toContain('Conversation details are visible only to the author and mentors');expect(history).toContain('Synthetic student email: shared the team introduction');expect(history).not.toContain('Engineering liaison asked for project milestones');expect(history).not.toMatch(/<button|Edit conversation/);
+});
+test('unassigned student profile stays useful and read-only while owned or assigned records expose permitted controls',()=>{
+ const c=outreachStudentFixture();expect(api.canOpenEditor(c,'prospect')).toBe(true);expect(api.canOpenEditor(c,'organization')).toBe(false);expect(api.canOpenEditor(c,'organization',c.organizations[1])).toBe(true);expect(api.canOpenEditor(c,'organization',c.organizations[0])).toBe(false);
+ expect(api.canOpenEditor(c,'contact',{organization_id:id(100),version:0})).toBe(true);expect(api.canOpenEditor(c,'contact',c.contacts[0])).toBe(false);expect(api.canOpenEditor(c,'conversation',{engagement_id:id(300),version:0})).toBe(true);expect(api.canOpenEditor(c,'conversation',{engagement_id:id(304),version:0})).toBe(false);expect(api.canOpenEditor(c,'pledge',{engagement_id:id(300),version:0})).toBe(false);
+ const html=render(api.OutreachProfile,{context:c,organization:c.organizations[4],open:()=>{}});expect(html).toContain('Shared contact profile');expect(html).toContain('contact-4@sponsor.example.invalid');expect(html).not.toMatch(/>Edit profile<|>Add contact<|>Log sent email<|>Edit next steps</);
+});
+test('student form payloads omit redacted notes, ownership, archive state and spoofed authorship',()=>{
+ const c=outreachStudentFixture(),fields={name:'Demo name',kind:'organization',website:'https://demo.example.invalid',notes:'forged private note',owner_id:id(2),active:'false',created_by:actor,stage:'contacted',next_follow_up_on:'2026-10-10',email:'demo@example.invalid',phone:'202-555-0199',title:'Demo contact'};
+ for(const [entity,initial] of [['organization',c.organizations[1]],['contact',c.contacts.find(row=>row.created_by===student)],['engagement',c.engagements[0]]] as const){const payload=api.buildOutreachPayload(entity,initial,c,fields);for(const key of ['notes','active','owner_id','created_by'])expect(payload).not.toHaveProperty(key);expect(payload.id).toBe(initial!.id);}
+ const prospect=api.buildOutreachPayload('prospect',{id:id(900),version:0,engagement_id:id(901)},c,fields);expect(prospect).toEqual({id:id(900),version:0,engagement_id:id(901),season_id:id(10),kind:'organization',name:'Demo name',website:'https://demo.example.invalid',next_follow_up_on:'2026-10-10'});
+ const html=render(api.OutreachEditor,{config:{entity:'engagement',title:'Edit next steps',initial:c.engagements[1]},context:c,scope:scope(student).value,onClose:()=>{},onSaved:()=>{},onAccessChanged:()=>{}});expect(html).not.toContain('name="owner_id"');expect(html).not.toContain('name="notes"');expect(html).not.toContain('value="committed"');
+});
+test('new prospects bind both IDs to one student request without automatic email or Finance operations',async()=>{
+ const c=outreachStudentFixture(),p=api.buildOutreachPayload('prospect',{id:id(900),version:0,engagement_id:id(902)},c,{name:'Demo Prospect',kind:'organization',website:''}),mock=client(undefined,student);
+ await api.createOutreachService(mock.transport).save('prospect',p,id(901),scope(student).value);expect(mock.calls).toHaveLength(1);expect(mock.calls[0].name).toBe('outreach_save');expect(mock.calls[0].args).toEqual({entity:'prospect',p,request_id:id(901),expected_actor:student});expect(mock.calls[0].retry).toBe(false);expect(api.pendingReceipts(student)).toEqual([]);
+});
+test('lost student assignment rejects the stale save and refreshed capabilities remove editing and logging',async()=>{
+ const c=outreachStudentFixture(),s=scope(student),mock=client({data:null,error:{code:'42501',message:'Assignment changed'},status:403},student);
+ await expect(api.createOutreachService(mock.transport).save('conversation',{id:id(900),version:0,engagement_id:id(300),summary:'Draft before reassignment'},id(901),s.value)).rejects.toMatchObject({kind:'denied'});expect(api.pendingReceipts(student)).toEqual([]);
+ c.engagements[0]={...c.engagements[0],owner_id:id(4),can_edit:false,can_log:false};c.organizations[0].can_add_contact=false;expect(api.parseContext(c,student)).toBeTruthy();expect(api.canOpenEditor(c,'conversation',{engagement_id:id(300),version:0})).toBe(false);const html=render(api.OutreachProfile,{context:c,organization:c.organizations[0],open:()=>{}});expect(html).toContain('Shared contact profile');expect(html).not.toContain('Log sent email');
+});
+test('student unknown prospect outcomes retain the original actor receipt through explicit cancellation',async()=>{
+ const mock=client({data:null,error:{code:'',message:'Network failure'},status:0},student),s=scope(student);await expect(api.createOutreachService(mock.transport).save('prospect',{id:id(900),version:0,engagement_id:id(902)},id(901),s.value)).rejects.toMatchObject({kind:'uncertain'});expect(api.pendingReceipts(student)).toEqual([{actorId:student,requestId:id(901),entityId:id(900),operation:'prospect',expectedVersion:1}]);expect(api.pendingReceipts(actor)).toEqual([]);
+ const status=client({data:{status:'not_found'},error:null,status:200},student);await api.createOutreachService(status.transport).status(id(901),s.value);expect(api.pendingReceipts(student)).toHaveLength(1);const cancel=client({data:{status:'canceled'},error:null,status:200},student);await api.createOutreachService(cancel.transport).cancel(id(901),s.value);expect(cancel.calls[0].args.request_id).toBe(id(901));expect(api.pendingReceipts(student)).toEqual([]);
 });

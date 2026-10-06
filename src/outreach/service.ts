@@ -32,7 +32,7 @@ export function createOutreachService(client:Pick<SupabaseClient,'auth'|'rpc'>|n
       assertCurrent(live);
       if(result.error) {
         if(receipt&&((result.status>=400&&result.status<500&&result.status!==408)||/^(22|23|40|42|P0)/.test(result.error.code)))settleReceipt(scope.actorId,receipt.requestId);
-        if(result.error.code==='42501'||result.status===401||result.status===403)throw new OutreachError('denied','This workspace requires an active admin or mentor account.');
+        if(result.error.code==='42501'||result.status===401||result.status===403)throw new OutreachError('denied','Your access to this record may have changed. Close the form and reload the workspace.');
         if(result.error.code==='40001')throw new OutreachError('conflict','This record changed since you opened it. Close this form and reload before editing again.');
         if(result.error.code==='PGRST202'||result.error.code==='42883')throw new OutreachError('unavailable','Sponsor & Outreach is not available on this connection yet.');
         if(result.status>=400&&result.status<500&&result.status!==408)throw new OutreachError('rejected','The change was rejected. Check the fields, or close this form and reload the latest records.');
