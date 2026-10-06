@@ -201,7 +201,7 @@ test('failed snapshot refresh clears previously loaded choices and prevents stal
 
 for(const width of [390,768,1440])test(`long check fields scroll independently and Save stays reachable at ${width}px`,async({page})=>{
  await page.setViewportSize({width,height:700});const state=await setupAssemblyUI(page);await page.goto(assemblyRoute);await workspace(page).getByRole('button',{name:'Record a check',exact:true}).click();const dialog=page.getByRole('dialog');await fillCheck(dialog,'Short-screen synthetic fit check');await dialog.getByLabel('Part revision',{exact:true}).selectOption(assemblyId(411));await dialog.getByLabel('Rework task',{exact:false}).selectOption(assemblyId(302));
- const fields=dialog.locator('.assembly-fields');expect(await fields.evaluate(el=>el.scrollHeight>el.clientHeight)).toBe(true);await fields.evaluate(el=>el.scrollTop=el.scrollHeight);await assertDialogActionsInside(dialog);
+ const fields=dialog.locator('.assembly-fields-scroll');expect(await fields.evaluate(el=>el.scrollHeight>el.clientHeight)).toBe(true);await fields.evaluate(el=>el.scrollTop=el.scrollHeight);await assertDialogActionsInside(dialog);
  const control=await dialog.getByLabel('Rework task',{exact:false}).boundingBox(),footer=await dialog.locator('footer').boundingBox();expect(control).not.toBeNull();expect(footer).not.toBeNull();expect(control!.y+control!.height).toBeLessThanOrEqual(footer!.y+1);
  await page.screenshot({path:`test-results/assembly/check-actions-${width}.png`});await dialog.getByRole('button',{name:'Save',exact:true}).click();await expect(dialog).toHaveCount(0);expect(state.mutations).toHaveLength(1);await expect(card(page,'Short-screen synthetic fit check')).toBeVisible();
 });

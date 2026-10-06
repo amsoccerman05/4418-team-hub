@@ -10,3 +10,8 @@
 .assembly-dialog footer{position:static;flex:none;flex-direction:row;flex-wrap:wrap;bottom:auto;margin:0;padding:14px 22px;background:#fff}
 .assembly-dialog footer>button{min-height:44px;min-width:84px}
 @media(max-width:600px){.assembly-dialog form{padding:0}.assembly-dialog .assembly-fields{padding:16px}.assembly-dialog footer{padding:12px 16px}}
+
+.assembly-dialog-long[open]{height:min(880px,calc(100dvh - 32px))}
+.assembly-dialog form{overflow:visible;flex:1 1 auto}
+.assembly-dialog .assembly-fields-scroll{flex:1 1 auto;min-height:0;overflow:auto;scroll-padding-block:16px}
+.assembly-dialog .assembly-fields{flex:none;overflow:visible;min-height:auto}
