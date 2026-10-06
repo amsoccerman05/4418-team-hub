@@ -97,6 +97,6 @@ This feature requires the reviewed additive Fabrication migration and private fi
 
 Focused checks: `npx playwright test tests/fabrication-db.spec.ts tests/fabrication-model.spec.ts tests/fabrication-files.spec.ts --workers=1`. Browser flow checks: `npx playwright test tests/fabrication-ui.spec.ts --workers=1`; synthetic review screenshots go under ignored `test-results/fabrication/`. Native concurrent transactions: `FABRICATION_PG_BIN=/path/to/postgresql-17/bin node tests/native/fabrication-concurrency.mjs`.
 
-## Assembly & Testing — local draft
+## Assembly & Testing
 
-Planning project boards now include an Assembly & testing view with manufactured-part facts, manual purchased-component status, links to existing Planning tasks, revision-specific checks/rework evidence, and explicit immutable snapshots for Sprint Review drafts. This is stacked on the unmerged Fabrication draft. No production migration or deployment is performed. See [scope, access, and release requirements](docs/ASSEMBLY-TESTING.md).
+Planning project boards now include an Assembly & testing view with manufactured-part facts, manual purchased-component status, links to existing Planning tasks, revision-specific checks/rework evidence, and explicit immutable snapshots for Sprint Review drafts. The additive Assembly migration depends on Fabrication. See [scope, access, and release requirements](docs/ASSEMBLY-TESTING.md).

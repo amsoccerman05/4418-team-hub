@@ -285,5 +285,7 @@ export async function runFabricationIntegration({ base, anonKey, sql, gate, wait
   assert.equal(count('fabrication_private.reservations', 'not exists(select 1 from fabrication_private.requests q where q.actor_id=reservations.actor_id and q.request_id=reservations.request_id)'), 0);
   assert.equal(count('auth.users'), 6);
   pass('all synthetic leases reach terminal outcomes; test-only fault controls removed');
+  const { runAssemblyIntegration } = await import('./assembly-stack.spec.mjs');
+  checks.push(...await runAssemblyIntegration({ base, anonKey, sql, gate, waitFor, users, season, foreignBoard: board, foreignRevision: initial.revision_id, upload, submission }));
   return checks;
 }

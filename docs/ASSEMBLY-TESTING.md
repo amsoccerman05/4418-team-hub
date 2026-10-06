@@ -1,12 +1,12 @@
-# Assembly & Testing: local draft
+# Assembly & Testing
 
 ## Status and dependency
 
-This is a reviewable local extension of the existing Planning project page. It is not a separate application. Nothing in this draft has been pushed, deployed, or applied to production.
+Assembly & Testing extends the existing Planning project page. Source review and exact-head CI evidence are tracked in [PR 10](https://github.com/amsoccerman05/4418-team-hub/pull/10).
 
-Base: local Fabrication commit `0857dfc172f277bda790c6d141adae252939eb82`, whose tree is identical to Fabrication PR 9 head `f6c8a428fb62cbb32d1ca3ab21563cb65b57e9c1` (tree `9b2a6e3f5f99525b48b666fcd137f9f51361d97a`). Fabrication is an explicit stacked dependency. Rebase onto its released equivalent before preparing a separate PR.
+Base: local Fabrication commit `0857dfc172f277bda790c6d141adae252939eb82`, whose tree is identical to Fabrication PR 9 head `f6c8a428fb62cbb32d1ca3ab21563cb65b57e9c1` (tree `9b2a6e3f5f99525b48b666fcd137f9f51361d97a`). Fabrication is the explicit dependency. [PR 9](https://github.com/amsoccerman05/4418-team-hub/pull/9) merged into main at `2a3e3a252d2fc608c4d1c39e4302bdf65a51162c`; Assembly publication uses that remote ancestry.
 
-The Assembly migration depends on the canonical Planning, task assignee, Sprint Review, and Fabrication migrations. The frontend must not be released without the additive migration, its authorization review, and a disposable integration test. This document is not authorization to run a production migration.
+The Assembly migration depends on the canonical Planning, task assignee, Sprint Review, and Fabrication migrations. The frontend must not be released without the additive migration, its authorization review, and a disposable integration test. Review the exact target and access changes before running a production migration.
 
 ## Project workflow
 

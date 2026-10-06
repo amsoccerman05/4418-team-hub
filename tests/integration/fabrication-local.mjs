@@ -93,7 +93,10 @@ const sourcePaths = [
   'supabase/migrations/202610040001_planning_task_assignees.sql',
   'supabase/migrations/20261006073717_sprint_review_v1.sql',
   'supabase/migrations/20261006201639_fabrication_v1.sql',
+  'supabase/migrations/20261006213850_assembly_testing_v1.sql',
   ...['index.ts', 'handler.ts', 'validation.ts'].map(f => `supabase/functions/fabrication-files/${f}`),
+  'src/planning/assembly/model.ts',
+  ...['fabrication-local.mjs', 'fabrication-safety.mjs', 'fabrication-stack.spec.mjs', 'assembly-stack.spec.mjs'].map(f => `tests/integration/${f}`),
 ];
 const hashes = Object.fromEntries(sourcePaths.map(path => [path, createHash('sha256').update(readFileSync(join(repo, path))).digest('hex')]));
 try {
