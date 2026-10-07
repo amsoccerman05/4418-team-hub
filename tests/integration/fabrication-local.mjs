@@ -165,7 +165,7 @@ policy = "per_worker"
 inspector_port = 54338
 [functions.fabrication-files]
 verify_jwt = false
-${mealsEnabled ? '[functions.team-meals]\nverify_jwt = false\n' : ''}`);
+${mealsEnabled ? '[functions.team-meals]\nverify_jwt = false\nimport_map = "./functions/team-meals/deno.json"\n' : ''}`);
     const functionDir = join(root, 'supabase/functions/fabrication-files');
     mkdirSync(functionDir, { recursive: true });
     for (const name of ['index.ts', 'handler.ts', 'validation.ts']) copyFileSync(join(repo, 'supabase/functions/fabrication-files', name), join(functionDir, name));

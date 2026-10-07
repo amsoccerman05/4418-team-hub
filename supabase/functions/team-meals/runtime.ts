@@ -12,11 +12,15 @@ export type MealPoolConfiguration = {
     idleTimeoutMillis: number; statement_timeout: number; query_timeout: number;
     ssl: false | { rejectUnauthorized: true; ca?: string };
 };
+export type MealRuntimePhase = 'activation_flag' | 'mode' | 'public_url' | 'origins' | 'database_url' | 'auth' | 'ip_strategy' | 'mail' | 'envelope_key' | 'dispatch' | 'pool' | 'gateway' | 'ready';
+export type MealRuntimeDiagnostic = { state: 'disabled' | 'enabled'; phase: MealRuntimePhase };
 export type MealRuntimeDependencies = {
     env: MealEnvironment;
     createPool: (configuration: MealPoolConfiguration) => MealSqlPool | Promise<MealSqlPool>;
     /** Isolated tests inject a no-network fake. Never selected by caller data. */
     fetcher?: typeof fetch;
+    /** Server-only fixed-enum startup telemetry. Never receives errors or values. */
+    onDiagnostic?: (diagnostic: MealRuntimeDiagnostic) => void;
 };
 export type MealRuntime = {
     state: 'disabled' | 'enabled';
@@ -108,49 +112,68 @@ function trustedIp(env: MealEnvironment, local: boolean): (request: Request) => 
  * made. Merely deploying this module leaves all SQL mail quotas at zero. */
 export async function createMealRuntime(dependencies: MealRuntimeDependencies): Promise<MealRuntime> {
     const { env } = dependencies;
-    if (env.get('MEALS_ENABLED') !== 'true') return disabled();
+    let phase: MealRuntimePhase = 'activation_flag';
+    const diagnostic = (state: 'disabled' | 'enabled') => {
+        try { dependencies.onDiagnostic?.({ state, phase }); } catch { /* Telemetry cannot change safety decisions. */ }
+    };
+    const reject = () => { diagnostic('disabled'); return disabled(); };
     try {
+        if (env.get('MEALS_ENABLED') !== 'true') return reject();
+        phase = 'mode';
         const mode = required(env, 'MEALS_RUNTIME_MODE');
-        if (mode !== 'production' && mode !== 'local-test') return disabled();
+        if (mode !== 'production' && mode !== 'local-test') return reject();
         const local = mode === 'local-test';
+        phase = 'public_url';
         const page = trustedUrl(required(env, 'MEALS_PUBLIC_BASE_URL'), local, true);
+        phase = 'origins';
         const origins: unknown = JSON.parse(required(env, 'MEALS_ALLOWED_ORIGINS'));
         if (!Array.isArray(origins) || !origins.length || origins.length > 10 || !origins.every(value => typeof value === 'string' && trustedUrl(value, local, false).origin === value) || !origins.includes(page.origin))
-            return disabled();
+            return reject();
+        phase = 'database_url';
         const databaseUrl = new URL(required(env, 'MEALS_DATABASE_URL', 'SUPABASE_DB_URL'));
         if (!['postgres:', 'postgresql:'].includes(databaseUrl.protocol) || !databaseUrl.username || databaseUrl.pathname.length < 2 || databaseUrl.search || databaseUrl.hash ||
-            (local ? !localHost(databaseUrl.hostname, env.get('MEALS_LOCAL_DATABASE_HOST')) : LOOPBACK.has(databaseUrl.hostname) || databaseUrl.hostname.endsWith('.invalid') || !databaseUrl.password)) return disabled();
+            (local ? !localHost(databaseUrl.hostname, env.get('MEALS_LOCAL_DATABASE_HOST')) : LOOPBACK.has(databaseUrl.hostname) || databaseUrl.hostname.endsWith('.invalid') || !databaseUrl.password)) return reject();
+        phase = 'auth';
         const auth = trustedUrl(required(env, 'MEALS_AUTH_URL', 'SUPABASE_URL'), local, false, env.get('MEALS_LOCAL_AUTH_HOST'));
         const fetcher = dependencies.fetcher ?? fetch;
         const verify = createMealManagerVerifier({ authBaseUrl: auth.origin, publicApiKey: required(env, 'MEALS_AUTH_PUBLIC_KEY', 'SUPABASE_PUBLISHABLE_KEY', 'SUPABASE_ANON_KEY'), fetcher,
             ...(local && env.get('MEALS_LOCAL_AUTH_HOST') ? { localTestHost: env.get('MEALS_LOCAL_AUTH_HOST') } : {}),
         });
+        phase = 'ip_strategy';
         const ip = trustedIp(env, local);
+        phase = 'mail';
         let mailer: MealMailer = new DisabledMealMailer();
         let envelopeKey: string | undefined;
         if (env.get('MEALS_MAIL_ENABLED') === 'true') {
             const mailMode = required(env, 'MEALS_MAIL_MODE');
             if (local) {
-                if (mailMode !== 'mock' || env.get('RESEND_API_KEY') || env.get('NOTIFICATIONS_FROM')) return disabled();
+                if (mailMode !== 'mock' || env.get('RESEND_API_KEY') || env.get('NOTIFICATIONS_FROM')) return reject();
                 mailer = new MockMealMailer();
                 envelopeKey = env.get('MEALS_ENVELOPE_KEY');
             } else {
-                if (mailMode !== 'resend') return disabled();
+                if (mailMode !== 'resend') return reject();
+                phase = 'envelope_key';
                 envelopeKey = required(env, 'MEALS_ENVELOPE_KEY');
-                if (!validEnvelopeKey(envelopeKey, false)) return disabled();
+                if (!validEnvelopeKey(envelopeKey, false)) return reject();
+                phase = 'mail';
                 mailer = new ResendMealMailer({ enabled: true, apiKey: required(env, 'RESEND_API_KEY'), from: required(env, 'NOTIFICATIONS_FROM'), fetcher });
-                if (mailer.mode !== 'resend') return disabled();
+                if (mailer.mode !== 'resend') return reject();
             }
         }
-        if (envelopeKey !== undefined && !validEnvelopeKey(envelopeKey, local)) return disabled();
+        phase = 'envelope_key';
+        if (envelopeKey !== undefined && !validEnvelopeKey(envelopeKey, local)) return reject();
+        phase = 'dispatch';
         const dispatchEnabled = env.get('MEALS_DISPATCH_ENABLED') === 'true';
         const workerSecret = dispatchEnabled ? required(env, 'MEALS_WORKER_SECRET') : '';
-        if (dispatchEnabled && (mailer.mode === 'disabled' || !/^[A-Za-z0-9._~-]{32,512}$/.test(workerSecret))) return disabled();
+        if (dispatchEnabled && (mailer.mode === 'disabled' || !/^[A-Za-z0-9._~-]{32,512}$/.test(workerSecret))) return reject();
+        phase = 'pool';
         const pool = await dependencies.createPool({ connectionString: databaseUrl.toString(), max: 2, connectionTimeoutMillis: 5000,
             idleTimeoutMillis: 10000, statement_timeout: 8000, query_timeout: 10000,
             ssl: local ? false : { rejectUnauthorized: true, ...(env.get('MEALS_DATABASE_CA') ? { ca: env.get('MEALS_DATABASE_CA') } : {}) },
         });
+        phase = 'gateway';
         const gateway = createPostgresMealGateway({ pool, allowedOrigins: origins, publicBaseUrl: page.toString(), mailer, envelopeKey, deferDelivery: local && env.get('MEALS_LOCAL_DEFER_DELIVERY') === 'true', authorizeManager: verify });
+        phase = 'ready'; diagnostic('enabled');
         return { state: 'enabled', async handle(request) {
             const url = new URL(request.url);
             // Dispatch is a separate exact path, never a public JSON operation.
@@ -165,5 +188,5 @@ export async function createMealRuntime(dependencies: MealRuntimeDependencies): 
             if (!['/team-meals', '/team-meals/', '/functions/v1/team-meals', '/functions/v1/team-meals/'].includes(url.pathname)) return response(404, 'not_found', 'Not found.');
             return gateway.handle(request, { ip: ip(request) });
         } };
-    } catch { return disabled(); }
+    } catch { return reject(); }
 }

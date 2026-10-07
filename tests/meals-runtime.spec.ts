@@ -149,3 +149,19 @@ test('worker accepts authenticated empty JSON from pg_net and rejects extra/over
     expect((await runtime.handle(dispatch('{}', `Bearer ${'s'.repeat(32)}`, 'text/plain'))).status).toBe(400);
     expect((await runtime.handle(dispatch('oversized'.repeat(500), 'Bearer wrong'))).status).toBe(403);
 });
+
+test('startup diagnostics expose fixed stages only and public failures remain generic', async () => {
+    const events: unknown[] = []; const f = fixture(); const secret = 'private-provider-contact@example.invalid';
+    const runtime = await createMealRuntime({ ...f.dependencies(), createPool: async () => { throw new Error(`driver failed ${secret}`); }, onDiagnostic: event => events.push(event) });
+    expect(runtime.state).toBe('disabled'); expect(events).toEqual([{ state: 'disabled', phase: 'pool' }]);
+    const response = await runtime.handle(request()); expect(response.status).toBe(503);
+    const publicBody = await response.text(); expect(publicBody).toContain('not_configured'); expect(publicBody).not.toContain('pool');
+    expect(JSON.stringify(events) + publicBody).not.toContain(secret);
+    events.length = 0;
+    await createMealRuntime({ ...f.dependencies({ ...base, MEALS_AUTH_URL: 'invalid-private-value' }), onDiagnostic: event => events.push(event) });
+    expect(events).toEqual([{ state: 'disabled', phase: 'auth' }]);
+    events.length = 0;
+    await createMealRuntime({ ...f.dependencies(), onDiagnostic: event => events.push(event) });
+    expect(events).toEqual([{ state: 'enabled', phase: 'ready' }]);
+    expect((await createMealRuntime({ ...f.dependencies(), onDiagnostic: () => { throw new Error(secret); } })).state).toBe('enabled');
+});

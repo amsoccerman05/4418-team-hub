@@ -28,12 +28,21 @@ export async function runMealsEdgeIntegration({ base, anonKey, sql, users, envel
   const dispatch = (authorization = workerSecret, extra = {}) => localFetch(base, `${route}/dispatch`, {
     method: 'POST', headers: { apikey: anonKey, Authorization: `Bearer ${authorization}`, 'Content-Type': 'application/json', ...extra }, body: '{}',
   });
-  const start = Date.now();
+  const start = Date.now(); let lastSummary = '', lastLoggedAt = 0;
+  const safeReadinessCodes = new Set(['not_configured','temporarily_unavailable','origin_forbidden','rate_limited','BOOT_ERROR','WORKER_ERROR','WORKER_LIMIT']);
   while (true) {
-    const response = await request({ operation: 'list' }); const status = response.status; await response.text();
+    const response = await request({ operation: 'list' }); const status = response.status;
+    let payload;try { payload=await response.json(); } catch { payload=null; }
+    // Enumerated diagnostics only: never print Auth responses, request bodies,
+    // connection strings, tokens, provider payloads or arbitrary error messages.
+    const candidate=payload?.error?.code ?? payload?.code;
+    const code=safeReadinessCodes.has(candidate)?candidate:'unspecified';
     if (status === 200) break;
-    assert(Date.now() - start < 90000, `Actual team-meals Edge entrypoint failed readiness, HTTP ${status}`);
-    await new Promise(resolve => setTimeout(resolve, 300));
+    const summary=`HTTP ${status}; code=${code}`;
+    if(summary!==lastSummary||Date.now()-lastLoggedAt>=15000){console.log(`Meals Edge readiness: ${summary}`);lastSummary=summary;lastLoggedAt=Date.now();}
+    assert(code!=='not_configured', `Actual team-meals Edge activation failed: ${summary}`);
+    assert(Date.now() - start < 90000, `Actual team-meals Edge entrypoint failed readiness: ${summary}`);
+    await new Promise(resolve => setTimeout(resolve, 1000));
   }
   const preflight = await localFetch(base, route, { method: 'OPTIONS', headers: { apikey: anonKey, Origin: ORIGIN,
     'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type,authorization' } });

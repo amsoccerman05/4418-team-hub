@@ -12,10 +12,15 @@ export default function handler(request: Request): Response | Promise<Response> 
     return active ? active.handle(request) : mealsUnavailable();
 }
 if (typeof Deno !== 'undefined') {
-    const ready = createMealRuntime({ env: Deno.env, async createPool(configuration) {
+    const ready = createMealRuntime({ env: Deno.env, onDiagnostic(diagnostic) {
+        // Fixed enum only. No exception, URL, environment value or private data.
+        console.info(JSON.stringify({ event: 'team_meals_runtime', ...diagnostic }));
+    }, async createPool(configuration) {
         // Per-function deno.json pins this to npm:pg@8.23.1. The driver is loaded
         // only after every activation guard passes, never on a disabled deploy.
+        console.info(JSON.stringify({ event: 'team_meals_runtime', phase: 'driver_import', state: 'starting' }));
         const { Pool } = await import('pg');
+        console.info(JSON.stringify({ event: 'team_meals_runtime', phase: 'driver_import', state: 'loaded' }));
         const pool = new Pool(configuration);
         // Idle socket errors must not emit driver credentials or kill the worker.
         pool.on('error', () => {});

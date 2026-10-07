@@ -11,3 +11,4 @@ verify_jwt = false
 # configured Auth /user and SQL rechecks active mentor/admin roles on every call.
 # Runtime, real mail and dispatch each remain disabled until explicitly enabled.
 verify_jwt = false
+import_map = "./functions/team-meals/deno.json"
