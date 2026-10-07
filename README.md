@@ -110,3 +110,7 @@ Requires the additive design-decision migration before use; it has not been appl
 ## Upcoming meeting editing and Attendance help — review draft
 
 Attendance includes a student-facing **How to use Attendance** tab and contextual help. Existing meeting leadership can edit the title, type, or available start/end fields of one meeting before it starts. Schedule changes preserve rosters and requests, require review, and invalidate the temporary check-in code; recorded attendance and decisions lock the schedule. See [scope, safety, release status, and verification](docs/ATTENDANCE-MEETING-EDITING.md). The additive editing migration is prepared but has not been applied to production.
+
+## Saturday meal signups — local draft
+
+A separate accountless parent meal page and signed-in mentor/admin coordinator view are prepared for local review only. `npm run dev:meals` starts the synthetic loopback-only preview; `.invalid` test addresses go to a memory-only mock mailbox and no email is sent. No production meal API is configured by default, no migration was applied, and no actual family data was imported. See [scope, privacy and release requirements](docs/MEALS-REVIEW.md) and [database draft](docs/MEALS-DATABASE.md). Existing KCMT event pages/forms and the separately held year-round parent hub remain unchanged.

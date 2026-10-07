@@ -10,3 +10,9 @@ playwright-report/
 .env.local
 .env.live-test
 .env*.local
+
+# Also ignore a development-only dependency symlink.
+/node_modules
+
+# Generated local meal design review artifacts.
+/review/

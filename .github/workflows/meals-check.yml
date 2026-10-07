@@ -1,0 +1,64 @@
+name: Saturday meals draft checks
+on:
+  pull_request:
+    paths:
+      - 'src/meals/**'
+      - 'supabase/functions/team-meals/**'
+      - 'supabase/drafts/saturday-meals.sql'
+      - 'tests/meals-*.spec.ts'
+      - 'tests/helpers/meal-store.ts'
+      - 'tests/native/meals-*.mjs'
+      - 'tests/integration/meals-*'
+      - 'scripts/*meals*.mjs'
+      - 'meals*.html'
+      - 'meals*.config.ts'
+      - 'package*.json'
+      - 'src/main.tsx'
+      - 'src/HubNav.tsx'
+      - '.github/workflows/meals-check.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: saturday-meals-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Typecheck and build (no production configuration)
+        run: npm run build
+      - name: Backend strict typecheck
+        run: npx tsc --noEmit --target ES2022 --lib ES2022,DOM,DOM.Iterable --module ESNext --moduleResolution Bundler --strict --skipLibCheck --allowImportingTsExtensions supabase/functions/team-meals/*.ts
+      - name: Meal database and gateway checks
+        run: npm run test:meals
+      - name: Render actual components with synthetic coverage
+        run: npm run test:meals:static
+      - name: Synthetic local HTTP flow
+        run: node scripts/smoke-meals-local.mjs
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+      - name: Browser interactions and responsive review
+        run: npm run test:meals:ui
+      - name: Generate standalone synthetic design preview
+        if: always()
+        run: node scripts/preview-meals.mjs
+      - name: Retain synthetic review evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: saturday-meals-review
+          path: |
+            review/meal-parent-preview.html
+            test-results/meals/**/*.png
+            test-results/meals-manager-*.png
+            test-results/meals-*/**/*
+          if-no-files-found: error
+          retention-days: 7

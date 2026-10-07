@@ -8,7 +8,11 @@
     "typecheck": "tsc --noEmit",
     "build": "npm run typecheck && vite build",
     "preview": "vite preview",
-    "test": "playwright test"
+    "test": "playwright test",
+    "dev:meals": "node scripts/dev-meals.mjs",
+    "test:meals": "playwright test --config meals.logic.config.ts",
+    "test:meals:ui": "playwright test tests/meals-ui.spec.ts tests/meals-manager.spec.ts",
+    "test:meals:static": "playwright test --config meals.static.config.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
