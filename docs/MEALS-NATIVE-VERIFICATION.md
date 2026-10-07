@@ -77,7 +77,7 @@ Evidence as of 2026-10-07 for published runtime source `d7a02c7` in [PR #15](htt
 - All 141 browser-free meal logic checks pass locally and in the published candidate's CI.
 - All 17 native PostgreSQL concurrency/durable-handler groups passed in [CI run 37678831155](https://github.com/amsoccerman05/4418-team-hub/actions/runs/37678831155), including replacement leases and stale completion fencing. Native PostgreSQL binaries remain unavailable in the local editing environment.
 - All five real Auth/PostgREST meal groups passed in that disposable-stack run. Docker and the Supabase CLI remain unavailable in the local editing environment.
-- The actual served Deno Edge readiness check failed with HTTP 503. In [diagnostic CI run 37681291197](https://github.com/amsoccerman05/4418-team-hub/actions/runs/37681291197), the driver loaded and runtime reached ready, but HTTP listing still returned `temporarily_unavailable` from the database path. The five served groups are not established as passing; fixed-category connection/query diagnostics are being added.
+- The actual served Deno Edge readiness check failed with HTTP 503. In [diagnostic CI run 37681291197](https://github.com/amsoccerman05/4418-team-hub/actions/runs/37681291197), the driver loaded and runtime reached ready, and HTTP listing returned `temporarily_unavailable`. [Run 37682588301](https://github.com/amsoccerman05/4418-team-hub/actions/runs/37682588301) then established `connect/dns` as the database failure category. A verified owned-container RFC1918 address is the narrow local-test fix; the next served-Edge CI must confirm it. The five served groups are not established as passing.
 - Deno generated the genuine transitive dependency lock in CI; its downloaded artifact digest was verified. The version-5 lock and import map now permit pg driver/runtime initialization; there is no evidence that lock format is the remaining database-path failure. No integrity hashes were fabricated.
 
 The draft SQL remains outside `supabase/migrations`. Production entry remains
@@ -132,8 +132,11 @@ original function target.
 
 The fixture creates a fresh wrapping key and worker secret in memory, registers
 them for diagnostic redaction, and writes a mode-0600 temporary environment file.
-The configured database/Auth hostnames are the exact Docker services owned by the
-run. Local-test mode can select only the `.invalid` mock mailer. No provider key,
+The configured Auth hostname is the exact Docker service owned by the run.
+The database target may be its service hostname or an RFC1918 address verified
+from that same owned container and network, then explicitly allowlisted in the
+local-test runtime. This avoids the confirmed Edge Node-DNS alias failure
+without changing production DNS/TLS or permitting public/link-local targets. Local-test mode can select only the `.invalid` mock mailer. No provider key,
 real sender, hosted database URL, or existing secret is copied.
 
 Five additional `Meals served Edge` groups cover actual HTTP startup/CORS and

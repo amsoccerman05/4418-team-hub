@@ -40,25 +40,27 @@ merge and deployment have not been performed.
   the mock-mailbox route. Existing KCMT/event sources and the held parent hub
   remain unaffected.
 
-## Remaining served-Edge database blocker
+## Remaining served-Edge DNS blocker
 
-The initial disposable-stack job failed `team-meals` HTTP readiness with 503.
-The next [diagnostic CI run 37681291197](https://github.com/amsoccerman05/4418-team-hub/actions/runs/37681291197)
-at `ddcaddad` confirms `driver_import: loaded` and runtime `enabled/ready`. This
-clears startup/import resolution as the observed failure. The real HTTP `list`
-request still returns the generic `temporarily_unavailable` response from the
-database path, so the five additional served-Edge groups have not completed.
+[Diagnostic CI run 37682588301](https://github.com/amsoccerman05/4418-team-hub/actions/runs/37682588301)
+at `3cc5637` confirms that the pg driver loads and runtime reaches ready, followed
+by repeated fixed-category database errors: `phase: connect`, `category: dns`.
+The failing HTTP listing is therefore blocked by the Edge process's database
+hostname resolution. Startup/import-map/lock loading is no longer the observed
+blocker. The preceding five real Auth/API groups passed; the five additional
+served-Edge groups have not yet completed.
 
-The preceding five real Auth/API groups passed. Neither those groups nor an
-in-process handler test establish a passing Deno HTTP-to-database integration.
-Safe database-boundary diagnostics are being added to distinguish connection,
-query and idle failures with fixed allowlisted categories only. SQL, bind values,
-raw errors, connection URLs, contacts and credentials are never logged.
+The narrow candidate fix lets the isolated harness supply an RFC1918 IPv4 address
+verified from its own Docker database container and network. Local-test mode must
+match that address exactly against its explicitly approved database host; public,
+link-local, malformed and mismatched addresses are rejected. Production hostname
+resolution/TLS and Auth-origin rules are unchanged. The address-based fix awaits
+the next actual served-Edge CI result, so those groups are not claimed as passing.
 
-The genuine version-5 lock and per-function import map now load far enough for
-the pg driver and runtime to initialize. There is no current evidence that the
-lock format is the cause of the remaining database-path failure. The next
-isolated-stack rerun must establish a successful request and all served groups.
+Safe database-boundary diagnostics use fixed connection/query/idle phases and
+allowlisted categories. SQL, bind values, raw errors, connection URLs, contacts
+and credentials are never logged. The genuine version-5 dependency lock loads
+far enough for the driver/runtime to initialize; no integrity data was edited.
 
 ## Implemented activation boundaries
 

@@ -47,7 +47,7 @@ included. All configuration is server-side, never in a Vite environment variable
 | `MEALS_IP_MODE` | Defaults to conservative shared bucketing. `trusted-proxy` needs the reviewed configuration below. |
 | `MEALS_TRUSTED_IP_HEADER` | Only a reviewed single-address `cf-connecting-ip` or `x-real-ip` header; never an X-Forwarded-For chain. |
 | `MEALS_TRUSTED_PROXY_VERIFIED` | Explicit assertion that deployment review proved the header is overwritten at every ingress and direct bypass is impossible. Required for the proxy option. |
-| `MEALS_LOCAL_DATABASE_HOST` | Local-test only: exact single-label Docker service host for the isolated database. |
+| `MEALS_LOCAL_DATABASE_HOST` | Local-test only: exact single-label Docker service host or explicit RFC1918 IPv4 address verified from the owned container on the isolated network. |
 | `MEALS_LOCAL_AUTH_HOST` | Local-test only: exact single-label Docker service host for isolated HTTP Auth. |
 | `MEALS_LOCAL_DEFER_DELIVERY` | Local-test only: queue the encrypted mock request for fixture inspection before worker dispatch. |
 
@@ -55,7 +55,7 @@ Explicit overrides take precedence. Empty or malformed overrides fail closed rat
 
 The production runtime does not accept `.invalid`/loopback application or Auth
 origins. Local mode accepts isolated `.invalid` HTTPS origins or loopback HTTP
-application origins and explicit local Docker Auth/DB hosts. Local mode refuses
+application origins and explicit local Docker Auth/DB hosts. When Edge's Node-compatible DNS cannot resolve the owned database alias, the isolated harness may pass its docker-inspected RFC1918 address as both the database hostname and exact approved local database host. Public, link-local and mismatched addresses are rejected. This database-only exception does not relax Auth or production transport rules. Local mode refuses
 Resend configuration even if provider variables were accidentally inherited.
 There is no configurable Resend endpoint or test mailbox HTTP route.
 

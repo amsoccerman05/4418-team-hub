@@ -46,6 +46,17 @@ function validEnvelopeKey(value: string, local: boolean): boolean {
 function localHost(hostname: string, approved: string | undefined): boolean {
     return LOOPBACK.has(hostname) || Boolean(approved && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,100}$/.test(approved) && hostname === approved);
 }
+/** The isolated Docker harness may replace its owned DB service hostname with
+ * the address verified by docker inspect when Edge's node:net DNS cannot resolve
+ * Docker aliases. This exact-match exception is never used in production/Auth. */
+function localDatabaseHost(hostname: string, approved: string | undefined): boolean {
+    if (localHost(hostname, approved)) return true;
+    if (!approved || hostname !== approved) return false;
+    const parts = hostname.split('.');
+    if (parts.length !== 4 || parts.some(part => !/^(?:0|[1-9]\d{0,2})$/.test(part) || Number(part) > 255)) return false;
+    const [first, second] = parts.map(Number);
+    return first === 10 || (first === 172 && second >= 16 && second <= 31) || (first === 192 && second === 168);
+}
 function trustedUrl(value: string, local: boolean, allowPath: boolean, approvedLocalHost?: string): URL {
     const url = new URL(value);
     if (url.username || url.password || url.hash || url.search || (!allowPath && url.pathname !== '/')) throw new Error('Invalid meal configuration');
@@ -132,7 +143,7 @@ export async function createMealRuntime(dependencies: MealRuntimeDependencies): 
         phase = 'database_url';
         const databaseUrl = new URL(required(env, 'MEALS_DATABASE_URL', 'SUPABASE_DB_URL'));
         if (!['postgres:', 'postgresql:'].includes(databaseUrl.protocol) || !databaseUrl.username || databaseUrl.pathname.length < 2 || databaseUrl.search || databaseUrl.hash ||
-            (local ? !localHost(databaseUrl.hostname, env.get('MEALS_LOCAL_DATABASE_HOST')) : LOOPBACK.has(databaseUrl.hostname) || databaseUrl.hostname.endsWith('.invalid') || !databaseUrl.password)) return reject();
+            (local ? !localDatabaseHost(databaseUrl.hostname, env.get('MEALS_LOCAL_DATABASE_HOST')) : LOOPBACK.has(databaseUrl.hostname) || databaseUrl.hostname.endsWith('.invalid') || !databaseUrl.password)) return reject();
         phase = 'auth';
         const auth = trustedUrl(required(env, 'MEALS_AUTH_URL', 'SUPABASE_URL'), local, false, env.get('MEALS_LOCAL_AUTH_HOST'));
         const fetcher = dependencies.fetcher ?? fetch;

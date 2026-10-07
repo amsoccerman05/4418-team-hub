@@ -10,6 +10,7 @@ import { randomUUID, createHash, randomBytes } from 'node:crypto';
 import { CLI_VERSION, API_PORT, DB_PORT, ORIGIN, localStatus, localFetch, isolatedEnvironment, edgeObservation, edgeHandlerReady, assertLocalPreflight } from './fabrication-safety.mjs';
 
 import { attendanceEditingSources } from './attendance-editing-fixture.mjs';
+import { ownedMealsDatabaseAddress } from './meals-network.mjs';
 import { volunteerHoursSources } from './volunteer-hours-stack.spec.mjs';
 
 const withVolunteerHours = process.env.VOLUNTEER_HOURS_INTEGRATION === '1';
@@ -111,7 +112,7 @@ const mealsSources = mealsEnabled ? [
   'supabase/drafts/saturday-meals.sql',
   ...mealsFunctionFiles.map(f => `supabase/functions/team-meals/${f}`),
   'src/meals/types.ts', 'tests/helpers/meal-delivery-fixture.ts',
-  'tests/integration/meals-fixture.mjs', 'tests/integration/meals-stack.spec.mjs', 'tests/integration/meals-edge.spec.mjs',
+  'tests/integration/meals-fixture.mjs', 'tests/integration/meals-stack.spec.mjs', 'tests/integration/meals-edge.spec.mjs', 'tests/integration/meals-network.mjs',
 ] : [];
 const hashes = Object.fromEntries([...sourcePaths, ...attendanceEditingSources, ...mealsSources, ...(withVolunteerHours ? volunteerHoursSources : [])].map(path => [path, createHash('sha256').update(readFileSync(join(repo, path))).digest('hex')]));
 try {
@@ -190,7 +191,8 @@ ${mealsEnabled ? '[functions.team-meals]\nverify_jwt = false\nimport_map = "./fu
       cli(['start', '--exclude', 'realtime,imgproxy,mailpit,postgres-meta,studio,logflare,vector,supavisor'], 12 * 60_000);
       const containerIDs = docker(['ps', '-q', '--filter', `network=${network}`]).split('\n').filter(Boolean);
       assert(containerIDs.length >= 5, 'Expected real local Supabase service containers');
-      for (const container of JSON.parse(docker(['inspect', ...containerIDs]))) {
+      const containers = JSON.parse(docker(['inspect', ...containerIDs]));
+      for (const container of containers) {
         for (const bindings of Object.values(container.NetworkSettings.Ports || {})) {
           for (const binding of bindings || []) assert(['127.0.0.1', '::1'].includes(binding.HostIp), `Non-loopback published port rejected for ${container.Name}`);
         }
@@ -200,11 +202,16 @@ ${mealsEnabled ? '[functions.team-meals]\nverify_jwt = false\nimport_map = "./fu
       if (mealsEnabled) {
         const envelopeKey = randomBytes(32).toString('base64'), workerSecret = randomBytes(32).toString('base64url');
         secrets.push(envelopeKey, workerSecret);
-        const databaseHost = `supabase_db_${project}`, authHost = `supabase_kong_${project}`;
+        const inspectedNetwork = JSON.parse(docker(['network', 'inspect', network]));
+        assert.equal(inspectedNetwork.length, 1, 'Expected one owned network inspection');
+        const databaseHost = ownedMealsDatabaseAddress(containers, inspectedNetwork[0], project);
+        const authHost = `supabase_kong_${project}`;
         mealEdgeContext = { envelopeKey, workerSecret };
         // Fresh generated values only. Local-test cannot select a real provider,
         // production endpoint, or existing credential. The fixture owns both
-        // approved Docker hosts and decrypts queued mail privately, never by API.
+        // approved Docker destinations and decrypts queued mail privately, never by API.
+        // The database address is taken only from matching owned network/container
+        // inspections; no caller or inherited environment can choose it.
         writeFileSync(edgeEnv, `FABRICATION_ALLOWED_ORIGINS=${ORIGIN}\nMEALS_ENABLED=true\nMEALS_RUNTIME_MODE=local-test\nMEALS_DATABASE_URL=postgresql://postgres:postgres@${databaseHost}:5432/postgres\nMEALS_LOCAL_DATABASE_HOST=${databaseHost}\nMEALS_AUTH_URL=http://${authHost}:8000\nMEALS_LOCAL_AUTH_HOST=${authHost}\nMEALS_AUTH_PUBLIC_KEY=${status.anonKey}\nMEALS_PUBLIC_BASE_URL=${ORIGIN}/meals.html\nMEALS_ALLOWED_ORIGINS='${JSON.stringify([ORIGIN])}'\nMEALS_MAIL_ENABLED=true\nMEALS_MAIL_MODE=mock\nMEALS_ENVELOPE_KEY=${envelopeKey}\nMEALS_LOCAL_DEFER_DELIVERY=true\nMEALS_DISPATCH_ENABLED=true\nMEALS_WORKER_SECRET=${workerSecret}\n`, { mode: 0o600 });
       }
 

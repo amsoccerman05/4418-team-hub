@@ -178,3 +178,21 @@ test('database diagnostic categories never contain driver SQL, contacts, tokens 
     expect(mealDatabaseErrorCategory(new Error(`unsupported feature is not a function ${secret}`))).toBe('runtime_unsupported');
     expect(mealDatabaseErrorCategory(null)).toBe('unclassified');
 });
+
+
+test('local Docker DB address exception requires an exact explicitly configured private IPv4', async () => {
+    for (const address of ['10.30.0.2', '172.16.0.3', '172.31.255.254', '192.168.50.2']) {
+        const f = fixture(); const runtime = await createMealRuntime(f.dependencies({ ...base, MEALS_DATABASE_URL: `postgresql://synthetic:synthetic@${address}:5432/postgres`, MEALS_LOCAL_DATABASE_HOST: address }));
+        expect(runtime.state, address).toBe('enabled'); expect(f.configurations[0].ssl).toBe(false);
+    }
+    for (const [address, approved] of [['172.20.0.2', undefined], ['172.20.0.2', '172.20.0.3'], ['172.15.0.2', '172.15.0.2'],
+        ['172.32.0.2', '172.32.0.2'], ['169.254.169.254', '169.254.169.254'], ['8.8.8.8', '8.8.8.8'], ['192.0.2.1', '192.0.2.1'],
+        ['10.30.0.256', '10.30.0.256'], ['10.030.0.2', '10.030.0.2']]) {
+        const f = fixture(); const runtime = await createMealRuntime(f.dependencies({ ...base, MEALS_DATABASE_URL: `postgresql://synthetic:synthetic@${address}:5432/postgres`, MEALS_LOCAL_DATABASE_HOST: approved }));
+        expect(runtime.state, String(address)).toBe('disabled'); expect(f.configurations).toHaveLength(0);
+    }
+    // The local DB exception cannot change the Auth/plain-HTTP trust contract.
+    const f = fixture(); expect((await createMealRuntime(f.dependencies({ ...base, MEALS_AUTH_URL: 'http://172.20.0.2:8000', MEALS_LOCAL_AUTH_HOST: '172.20.0.2' }))).state).toBe('disabled');
+    const prod = fixture(); const runtime = await createMealRuntime(prod.dependencies({ ...production, MEALS_LOCAL_DATABASE_HOST: '172.20.0.2' }));
+    expect(runtime.state).toBe('enabled'); expect(prod.configurations[0].ssl).toEqual({ rejectUnauthorized: true });
+});
