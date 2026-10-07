@@ -67,10 +67,10 @@ for (const width of [390, 1440]) test(`coordinator coverage and private adult co
   await expect(page.getByText('adult@example.test', { exact: true })).toBeVisible();
   for (const label of ['Email provider accepted', 'Email queued', 'Email failed', 'Email outcome uncertain']) await expect(page.getByText(label, { exact: true })).toBeVisible();
   await expect(page.getByText('20 servings remaining', { exact: true })).toBeVisible();
-  await page.getByLabel('Contribution status', { exact: true }).selectOption('expired');
+  await page.getByRole('combobox', { name: 'Contribution status', exact: true }).selectOption('expired');
   await expect(page.getByRole('article', { name: 'Contribution from Expired Adult' })).toBeVisible();
   await expect(page.getByRole('article', { name: 'Contribution from Test Adult' })).toHaveCount(0);
-  await page.getByLabel('Contribution status', { exact: true }).selectOption('all');
+  await page.getByRole('combobox', { name: 'Contribution status', exact: true }).selectOption('all');
   await page.getByRole('button', { name: 'Edit meal', exact: true }).click();
   await expect(page.getByText('Visible on the public signup page.', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Meal date and local time', { exact: true })).toHaveValue('2026-10-10T12:00');
@@ -109,7 +109,7 @@ test('cancellation requires a reason and affects only the selected contribution'
   await page.getByRole('button', { name: 'Cancel contribution from Test Adult', exact: true }).click();
   const form = page.getByRole('form', { name: 'Cancel contribution', exact: true });
   await expect(form.getByRole('button', { name: 'Confirm cancellation' })).toBeDisabled();
-  await form.getByLabel('Cancellation reason', { exact: true }).fill('Volunteer requested cancellation');
+  await form.getByRole('textbox', { name: 'Cancellation reason', exact: true }).fill('Volunteer requested cancellation');
   await form.getByRole('button', { name: 'Confirm cancellation' }).click();
   await expect(page.getByRole('status')).toHaveText('Contribution cancelled. Other contributions are unchanged.');
   expect(state.cancellations).toEqual([{ id: 'claim-1', version: 2, reason: 'Volunteer requested cancellation' }]);
@@ -122,9 +122,9 @@ test('uncertain cancellation keeps the reason and blocks duplicate actions', asy
   const state = await fixture(page); await open(page);
   state.cancelError = { code: 'uncertain_result', message: 'The result is uncertain.', status: 0 };
   await page.getByRole('button', { name: 'Cancel contribution from Test Adult', exact: true }).click();
-  await page.getByLabel('Cancellation reason', { exact: true }).fill('Volunteer requested cancellation');
+  await page.getByRole('textbox', { name: 'Cancellation reason', exact: true }).fill('Volunteer requested cancellation');
   await page.getByRole('button', { name: 'Confirm cancellation' }).click();
-  await expect(page.getByLabel('Cancellation reason', { exact: true })).toHaveValue('Volunteer requested cancellation');
+  await expect(page.getByRole('textbox', { name: 'Cancellation reason', exact: true })).toHaveValue('Volunteer requested cancellation');
   await expect(page.getByRole('button', { name: 'Confirm cancellation' })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Close cancellation form' })).toBeVisible();
   expect(state.cancellations).toHaveLength(1);
@@ -150,9 +150,9 @@ test('uncertain new-meal save blocks duplicate creation and preserves all fields
 test('meal cancellation records a reason without dropping any volunteer', async ({ page }) => {
   const state = await fixture(page); await open(page);
   await page.getByRole('button', { name: 'Edit meal', exact: true }).click();
-  await page.getByLabel('Signup state', { exact: true }).selectOption('cancelled');
+  await page.getByRole('combobox', { name: 'Signup state', exact: true }).selectOption('cancelled');
   await expect(page.getByText('Cancelling this date closes signups', { exact: false })).toBeVisible();
-  await page.getByLabel('Meal cancellation reason', { exact: true }).fill('Build session cancelled');
+  await page.getByRole('textbox', { name: 'Meal cancellation reason', exact: true }).fill('Build session cancelled');
   await expect(page.getByRole('button', { name: 'Save meal', exact: true })).toBeDisabled();
   await page.getByRole('checkbox', { name: /I understand this cancels all pending/ }).check();
   await page.getByRole('button', { name: 'Save meal', exact: true }).click();
@@ -221,7 +221,7 @@ test('uncommitted slots can be added and removed with categories and units retai
   await page.getByRole('button', { name: 'Add slot', exact: true }).click();
   const slot = page.getByRole('group', { name: 'Contribution slot 2', exact: true });
   await slot.getByLabel('Slot label', { exact: true }).fill('Fruit');
-  await slot.getByLabel('Category', { exact: true }).selectOption('side');
+  await slot.getByRole('combobox', { name: 'Category', exact: true }).selectOption('side');
   await slot.getByLabel('Quantity needed', { exact: true }).fill('3');
   await slot.getByLabel('Unit label', { exact: true }).fill('trays');
   await page.getByRole('button', { name: 'Save meal', exact: true }).click();
