@@ -1,5 +1,5 @@
-/** Mail content (including plaintext link tokens) exists only for an immediate
- * send attempt, never in an outbox record, application log, or persisted file. */
+/** Plaintext exists only in memory. Durable delivery uses an authenticated,
+ * short-lived envelope containing the immutable exact provider request. */
 export type VerificationMail = {
     to: string;
     claimId: string;
@@ -13,9 +13,24 @@ export type MailResult = {
     providerId: string;
 } | {
     status: 'failed' | 'uncertain';
+    retryable?: boolean;
+    code?: string;
 };
+export type ProviderUsage = {
+    dailyUsed: number; dailyLimit: number | null;
+    monthlyUsed: number; monthlyLimit: number | null;
+    fetchedAt: string; dailyResetsAt: string; monthlyResetsAt: string;
+};
+/** Synthetic-only allowance, never a production usage fallback. */
+export function mockProviderUsage(): ProviderUsage {
+    return { dailyUsed: 0, dailyLimit: 10000, monthlyUsed: 0, monthlyLimit: 100000,
+        fetchedAt: new Date().toISOString(), dailyResetsAt: new Date(Date.now() + 86400000).toISOString(), monthlyResetsAt: new Date(Date.now() + 32 * 86400000).toISOString() };
+}
 export interface MealMailer {
-    readonly mode: 'disabled' | 'mock';
+    readonly mode: 'disabled' | 'mock' | 'resend';
+    prepare?(mail: VerificationMail): string;
+    sendPrepared?(payload: string, idempotencyKey: string): Promise<MailResult>;
+    readUsage?(): Promise<ProviderUsage>;
     send(mail: VerificationMail, idempotencyKey: string): Promise<MailResult>;
 }
 export class DisabledMealMailer implements MealMailer {
@@ -27,6 +42,9 @@ export class DisabledMealMailer implements MealMailer {
 export class MockMealMailer implements MealMailer {
     readonly mode = 'mock' as const;
     readonly mailbox: VerificationMail[] = [];
+    prepare(mail: VerificationMail): string { return JSON.stringify(mail); }
+    sendPrepared(payload: string, key: string): Promise<MailResult> { return this.send(JSON.parse(payload), key); }
+    readUsage(): Promise<ProviderUsage> { return Promise.resolve(mockProviderUsage()); }
     readonly attempts: string[] = [];
     nextOutcome: 'sent' | 'failed' | 'uncertain' | 'throw' = 'sent';
     private results = new Map<string, MailResult>();

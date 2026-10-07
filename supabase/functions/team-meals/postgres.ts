@@ -1,5 +1,7 @@
 import type { ClaimInput, ManagedClaim, MealDraft, MealManagerSnapshot, PrivateClaim, PublicMeal } from '../../../src/meals/types.ts';
 import { GatewayError } from './gateway.ts';
+import type { MailResult, ProviderUsage } from './mail.ts';
+import type { DeliveryIdentity } from './envelope.ts';
 
 /** Inject a trusted direct server pool, never a browser/PostgREST query client.
  * Each connection must remain exclusively leased until COMMIT/ROLLBACK completes.
@@ -16,9 +18,11 @@ export type SqlHold = {
     status: 'pending_verification';
     hold_expires_at: string | null;
     replayed: boolean;
-    email_status: ManagedClaim['email_status'];
+    email_status: ManagedClaim['email_status'] | 'retry';
     can_send: boolean;
 };
+export type PreparedDelivery = DeliveryIdentity & { envelope: string };
+export type DeliveryLease = PreparedDelivery & { lease_token: string; attempts: number };
 export type HoldHashes = { request: Uint8Array; verify: Uint8Array; manage: Uint8Array; ip: Uint8Array };
 
 const domainErrors: Record<string, [number, string, string]> = {
@@ -31,6 +35,7 @@ const domainErrors: Record<string, [number, string, string]> = {
     'Requested quantity is no longer available': [409, 'capacity_changed', 'Availability changed. Choose a smaller quantity.'],
     'Whole meal needs coordinator review': [409, 'coordination_required', 'Some items are already covered. Please coordinate with the meal organizer.'],
     'Whole-meal quantity must be one': [409, 'coordination_required', 'Please coordinate whole-meal changes with the organizer.'],
+    'Email usage could not be verified': [503, 'mail_usage_unavailable', 'Email availability could not be confirmed. Please try again later or contact the coordinator.'],
     'Email service daily budget reached': [429, 'rate_limited', 'Too many requests. Try again later.'],
     'Too many requests; try later': [429, 'rate_limited', 'Too many requests. Try again later.'],
     'Meal changed; reload before saving': [409, 'version_conflict', 'This meal changed. Refresh before saving.'],
@@ -104,9 +109,9 @@ export class PostgresMealDatabase {
         return this.call('select meals_private.reserve_request($1::bytea) as result', [hash]);
     }
     list(): Promise<PublicMeal[]> { return this.call('select meals_private.list_public() as result'); }
-    createHold(input: ClaimInput, hashes: HoldHashes): Promise<SqlHold> {
-        return this.call('select meals_private.create_hold($1::uuid,$2::uuid,$3::boolean,$4::integer,$5::text,$6::text,$7::bytea,$8::bytea,$9::bytea,$10::bytea) as result',
-            [input.meal_id, input.slot_id, input.whole_meal, input.quantity, input.name, input.email, hashes.request, hashes.verify, hashes.manage, hashes.ip]);
+    createHold(input: ClaimInput, hashes: HoldHashes, delivery: PreparedDelivery, usage: ProviderUsage | null): Promise<SqlHold> {
+        return this.call('select meals_private.create_hold($1::uuid,$2::uuid,$3::boolean,$4::integer,$5::text,$6::text,$7::bytea,$8::bytea,$9::bytea,$10::bytea,$11::uuid,$12::uuid,$13::text,$14::jsonb) as result',
+            [input.meal_id, input.slot_id, input.whole_meal, input.quantity, input.name, input.email, hashes.request, hashes.verify, hashes.manage, hashes.ip, delivery.claim_id, delivery.id, delivery.envelope, usage ? JSON.stringify(usage) : null]);
     }
     verify(verifyHash: Uint8Array, accessHash: Uint8Array): Promise<PrivateClaim> {
         return this.call('select meals_private.verify($1::bytea,$2::bytea) as result', [verifyHash, accessHash]);
@@ -126,10 +131,14 @@ export class PostgresMealDatabase {
     change(hashes: [Uint8Array, Uint8Array], version: number, quantity: number | null, cancel: boolean): Promise<PrivateClaim> {
         return this.capability(hashes, hash => this.call('select meals_private.change_claim($1::bytea,$2::integer,$3::integer,$4::boolean) as result', [hash, version, quantity, cancel]));
     }
-    beginDelivery(id: string): Promise<boolean> { return this.call('select meals_private.begin_delivery($1::uuid) as result', [id]); }
-    async finishDelivery(id: string, status: 'sent' | 'failed' | 'uncertain'): Promise<void> {
-        await this.call('select meals_private.finish_delivery($1::uuid,$2::text) as result', [id, status]);
+    beginDelivery(id: string, usage: ProviderUsage | null): Promise<DeliveryLease | null> {
+        return this.call('select meals_private.begin_delivery($1::uuid,$2::jsonb) as result', [id, usage ? JSON.stringify(usage) : null]);
     }
+    finishDelivery(lease: DeliveryLease, result: MailResult): Promise<boolean> {
+        return this.call('select meals_private.finish_delivery($1::uuid,$2::uuid,$3::text,$4::boolean,$5::text) as result',
+            [lease.id, lease.lease_token, result.status, result.status !== 'sent' && result.retryable === true, result.status === 'sent' ? result.providerId : null]);
+    }
+    dueDeliveries(limit: number): Promise<string[]> { return this.call('select meals_private.due_deliveries($1::integer) as result', [limit]); }
     manager(manager: VerifiedMealManager): Promise<MealManagerSnapshot> {
         return this.call('select public.meals_manager_context() as result', [], manager);
     }

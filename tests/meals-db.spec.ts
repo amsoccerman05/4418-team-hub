@@ -1,12 +1,15 @@
 import { test, expect } from '@playwright/test';
 import { PGlite } from '@electric-sql/pglite';
 import { readFileSync } from 'node:fs';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+
+import { SQL_DELIVERY_ENVELOPE, syntheticProviderUsage, syntheticMailApproval } from './helpers/meal-delivery-fixture.ts';
 
 // Synthetic data only. PGlite validates SQL/ACL/transaction behavior; it does not
 // replace native concurrent-connection or deployed PostgREST/Edge tests.
 let db: PGlite;
 let meal: any;
+const deliveryLeases = new Map<string,string>();
 let mainSlot: string | undefined, drinkSlot: string | undefined;
 const id = (n: number) => `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`;
 const hash = (s: string) => createHash('sha256').update(s).digest();
@@ -23,8 +26,15 @@ async function list() { await server(); return (await query('select meals_privat
 async function hold(key = 'first', extra: Record<string, any> = {}) {
   await server();
   const p = { meal: meal.id, slot: mainSlot, whole: false, quantity: 2, name: 'Synthetic Parent', email: 'parent@example.invalid', ...extra };
-  return (await query('select meals_private.create_hold($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) result',
-    [p.meal,p.slot,p.whole,p.quantity,p.name,p.email,h('request:'+key),h('verify:'+key),h('manage:'+key),h('ip:'+key)]))[0].result;
+  return (await query('select meals_private.create_hold($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) result',
+    [p.meal,p.slot,p.whole,p.quantity,p.name,p.email,h('request:'+key),h('verify:'+key),h('manage:'+key),h('ip:'+key),randomUUID(),randomUUID(),SQL_DELIVERY_ENVELOPE,syntheticProviderUsage()]))[0].result;
+}
+async function beginDelivery(oid: string) {
+  await server();const lease=(await query('select meals_private.begin_delivery($1,$2) lease',[oid,syntheticProviderUsage()]))[0].lease;
+  if(lease)deliveryLeases.set(oid,lease.lease_token);return lease;
+}
+async function finishDelivery(oid: string,status='failed') {
+  await server();return query('select meals_private.finish_delivery($1,$2,$3,false,null)',[oid,deliveryLeases.get(oid),status]);
 }
 async function verify(key = 'first') { await server();return (await query('select meals_private.verify($1,$2) result',[h('verify:'+key),h('access:'+key)]))[0].result; }
 async function inspect(key = 'first', purpose = 'access') { await server();return (await query('select meals_private.inspect($1) result',[h(purpose+':'+key)]))[0].result; }
@@ -35,7 +45,7 @@ async function currentDraft(extra: Record<string,any> = {}) { const m=(await lis
 async function raw(sql: string, args: any[] = []) { await db.exec('reset role');return query(sql,args); }
 
 test.beforeEach(async () => {
-  mainSlot=undefined;drinkSlot=undefined;
+  mainSlot=undefined;drinkSlot=undefined;deliveryLeases.clear();
   db = new PGlite();
   await db.exec(`create role anon;create role authenticated;create role service_role;create schema auth;
     create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('test.uid',true),'')::uuid$$;
@@ -43,7 +53,7 @@ test.beforeEach(async () => {
     create table public.profiles(id uuid primary key,role text,active boolean);
     insert into profiles values('${id(1)}','mentor',true),('${id(2)}','admin',true),('${id(3)}','lead',true),('${id(4)}','student',true),('${id(5)}','mentor',false),('${id(6)}','readonly',true);`);
   await db.exec(readFileSync('supabase/drafts/saturday-meals.sql','utf8'));
-  await db.exec('update meals_private.mail_budget set daily_limit=50'); // Explicit synthetic test budget; draft defaults to zero.
+  await db.exec(syntheticMailApproval(50)); // Explicit synthetic test budget; draft defaults to zero.
   await as(1);meal=await save(draft());
   mainSlot=meal.slots.find((s:any)=>s.category==='main').id;drinkSlot=meal.slots.find((s:any)=>s.category==='drink').id;
 });
@@ -165,10 +175,10 @@ test('coordinator cancellation needs current version and reason, revokes capabil
 });
 
 test('idempotent claim retries do not reserve/send/budget twice and retain known failed or uncertain delivery status',async()=>{
-  const a=await hold();await server();expect((await query('select meals_private.begin_delivery($1) ok',[a.outbox_id]))[0].ok).toBe(true);
-  expect((await query('select meals_private.begin_delivery($1) ok',[a.outbox_id]))[0].ok).toBe(false);
+  const a=await hold();await server();expect(Boolean(await beginDelivery(a.outbox_id))).toBe(true);
+  expect(Boolean(await beginDelivery(a.outbox_id))).toBe(false);
   expect(await hold()).toMatchObject({claim_id:a.claim_id,email_status:'uncertain',replayed:true,can_send:false});
-  await server();await query('select meals_private.finish_delivery($1,$2)',[a.outbox_id,'failed']);
+  await server();await finishDelivery(a.outbox_id);
   expect(await hold()).toMatchObject({email_status:'failed',hold_expires_at:null,can_send:false});
   await expect(hold('first',{quantity:3})).rejects.toThrow(/key already used/);
   expect((await raw('select count(*)::int n from meals_private.claims'))[0].n).toBe(1);
@@ -184,20 +194,20 @@ test('dispatch lease rejects closed, cancelled, past-service and expired-hold st
     if(state==='closed'||state==='cancelled')await raw('update meals_private.meals set status=$1 where id=$2',[state,meal.id]);
     else if(state==='past-service')await raw("update meals_private.meals set service_at=clock_timestamp()-interval '1 minute' where id=$1",[meal.id]);
     else await raw("update meals_private.claims set hold_expires_at=clock_timestamp()-interval '1 second' where id=$1",[held.claim_id]);
-    await server();expect((await query('select meals_private.begin_delivery($1) ok',[held.outbox_id]))[0].ok).toBe(false);
-    expect((await raw('select status from meals_private.outbox where id=$1',[held.outbox_id]))[0].status).toBe('queued');
+    await server();expect(Boolean(await beginDelivery(held.outbox_id))).toBe(false);
+    expect((await raw('select status,envelope from meals_private.outbox where id=$1',[held.outbox_id]))[0]).toEqual({status:'failed',envelope:null});
   }
 });
 
 test('definite delivery failure releases pending capacity, revokes links and increments meal version once',async()=>{
   const held=await hold('failed',{quantity:10});const before=(await list())[0];await server();
-  await query('select meals_private.begin_delivery($1)',[held.outbox_id]);
-  await query('select meals_private.finish_delivery($1,$2)',[held.outbox_id,'failed']);
+  await beginDelivery(held.outbox_id);
+  await finishDelivery(held.outbox_id);
   const after=(await list())[0];expect(after.version).toBe(before.version+1);
   expect(after.slots.find((s:any)=>s.id===mainSlot)).toMatchObject({held:0,confirmed:0,remaining:10});
   await expect(verify('failed')).rejects.toThrow(/expired/);await expect(inspect('failed','manage')).rejects.toThrow(/expired/);
   expect(await hold('failed',{quantity:10})).toMatchObject({claim_id:held.claim_id,email_status:'failed',hold_expires_at:null,can_send:false});
-  await server();await query('select meals_private.finish_delivery($1,$2)',[held.outbox_id,'failed']);
+  await server();await finishDelivery(held.outbox_id);
   expect((await list())[0].version).toBe(after.version);
   await hold('replacement',{quantity:10});
   expect((await raw('select status from meals_private.claims where id=$1',[held.claim_id]))[0].status).toBe('expired');
@@ -206,9 +216,9 @@ test('definite delivery failure releases pending capacity, revokes links and inc
 });
 
 test('delivery failure arriving after verification preserves the confirmed pledge and management access',async()=>{
-  const held=await hold('confirmed',{quantity:10});await server();await query('select meals_private.begin_delivery($1)',[held.outbox_id]);
+  const held=await hold('confirmed',{quantity:10});await server();await beginDelivery(held.outbox_id);
   const verified=await verify('confirmed');const before=(await list())[0];await server();
-  await query('select meals_private.finish_delivery($1,$2)',[held.outbox_id,'failed']);
+  await finishDelivery(held.outbox_id);
   const after=(await list())[0];expect(after.version).toBe(before.version);
   expect(after.slots.find((s:any)=>s.id===mainSlot)).toMatchObject({held:0,confirmed:10,remaining:0});
   expect(await inspect('confirmed','manage')).toMatchObject({id:verified.id,status:'confirmed',version:verified.version});
@@ -233,7 +243,7 @@ test('daily budget defaults fail-closed; budget and email limits leave no partia
 test('cross-meal slots, malformed hashes, nulls, extra fields and audit failure cannot create partial writes',async()=>{
   await as(1);const other=await save({...draft(),slots:[{...draft().slots[0],id:undefined}]});
   await expect(hold('cross',{meal:other.id,slot:mainSlot})).rejects.toThrow(/Slot unavailable/);
-  await server();await expect(query('select meals_private.create_hold($1,$2,false,1,$3,$4,$5,$6,$7,$8)',[meal.id,mainSlot,'Synthetic','x@example.invalid',h('r'),null,h('m'),h('i')])).rejects.toThrow(/Invalid/);
+  await server();await expect(query('select meals_private.create_hold($1,$2,false,1,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)',[meal.id,mainSlot,'Synthetic','x@example.invalid',h('r'),null,h('m'),h('i'),randomUUID(),randomUUID(),SQL_DELIVERY_ENVELOPE,syntheticProviderUsage()])).rejects.toThrow(/Invalid/);
   await as(1);await expect(save({...draft(),extra:true})).rejects.toThrow(/Invalid/);
   await db.exec('reset role');await db.exec(`create function meals_private.fail_audit() returns trigger language plpgsql as $$begin raise exception 'synthetic audit failure';end$$;
     create trigger fail_audit before insert on meals_private.history for each row execute function meals_private.fail_audit();`);

@@ -114,3 +114,7 @@ Attendance includes a student-facing **How to use Attendance** tab and contextua
 ## Saturday meal signups — local draft
 
 A separate accountless parent meal page and signed-in mentor/admin coordinator view are prepared for local review only. `npm run dev:meals` starts the synthetic loopback-only preview; `.invalid` test addresses go to a memory-only mock mailbox and no email is sent. No production meal API is configured by default, no migration was applied, and no actual family data was imported. See [scope, privacy and release requirements](docs/MEALS-REVIEW.md) and [database draft](docs/MEALS-DATABASE.md). Existing KCMT event pages/forms and the separately held year-round parent hub remain unchanged.
+
+## Mentor volunteer hours — local review draft
+
+Attendance has a separate mentor/admin **Volunteer hours** view for actual volunteer clock-in/out, past entries, own corrections with history, and CSV exports. Active admins can see team aggregates. Running or voided entries never count as completed hours, and student attendance and strikes remain independent. The additive migration and UI are not deployed by this draft. See [mentor instructions, backend contract, verification, and release checklist](docs/VOLUNTEER-HOURS.md).

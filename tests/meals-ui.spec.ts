@@ -87,12 +87,13 @@ test('claim is submitted once and a receipt does not confirm the contribution',a
   const sent=state.calls.filter(call=>call.operation==='claim');expect(sent).toHaveLength(1);expect(sent[0]).toMatchObject({meal_id:'meal-one',slot_id:'meal-one-main',whole_meal:false,quantity:12,name:'Synthetic Adult',email:'synthetic-parent@example.invalid'});expect(sent[0].idempotency_key).toEqual(expect.any(String));
   await dialog.getByRole('button',{name:'Back to meal dates'}).click();await expect(page.locator('main')).not.toContainText('Synthetic Adult');expect(state.external).toEqual([]);
 });
-for(const status of ['sent','unavailable','uncertain'] as const)test(`email status ${status} never falsely reports confirmation or delivery`,async({page})=>{
+for(const status of ['sent','unavailable','uncertain','retry'] as const)test(`email status ${status} never falsely reports confirmation or delivery`,async({page})=>{
   const state=await setup(page);state.mailStatus=status;await page.goto('/meals.html');const dialog=await fillClaim(page);await dialog.getByRole('button',{name:'Email my verification link'}).click();
   await expect(dialog).toContainText('Not yet confirmed');await expect(dialog).not.toContainText('Your contribution is confirmed.');
   if(status==='sent')await expect(dialog).toContainText('This does not guarantee delivery');
   if(status==='unavailable')await expect(dialog.getByRole('heading',{name:'Email verification is unavailable'})).toBeVisible();
   if(status==='uncertain')await expect(dialog.getByRole('heading',{name:'Email delivery is not yet known'})).toBeVisible();
+  if(status==='retry'){await expect(dialog.getByRole('heading',{name:'Verification email needs a retry'})).toBeVisible();await expect(dialog).toContainText('waiting for a safe retry');}
 });
 test('failed submission preserves entered details and reuses its idempotency key',async({page})=>{
   const state=await setup(page);state.claimFailures=1;await page.goto('/meals.html');const dialog=await fillClaim(page);await dialog.getByRole('button',{name:'Email my verification link'}).click();await expect(dialog.getByRole('alert')).toContainText('Your details are still here');await expect(dialog.getByLabel('Your name')).toHaveValue('Synthetic Adult');await expect(dialog.getByLabel('Email address',{exact:true})).toHaveValue('synthetic-parent@example.invalid');await expect(dialog.getByLabel('Quantity')).toHaveValue('12');await expect(dialog.getByRole('alert')).toBeFocused();await expect(dialog.getByLabel('Your name')).toBeDisabled();await dialog.getByRole('button',{name:'Retry same request'}).click();await expect(dialog.getByRole('heading',{name:'Next, verify your email'})).toBeVisible();const calls=state.calls.filter(call=>call.operation==='claim');expect(calls).toHaveLength(2);expect(calls[0].idempotency_key).toBe(calls[1].idempotency_key);

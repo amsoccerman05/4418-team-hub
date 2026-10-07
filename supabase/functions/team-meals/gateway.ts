@@ -166,6 +166,7 @@ async function bodyJson(request: Request): Promise<Record<string, unknown>> {
 }
 export function createMealGateway(options: GatewayOptions) {
     const repository = options.repository, mailer = options.mailer ?? new DisabledMealMailer(), now = options.now ?? Date.now, limits = { ...DEFAULT_LIMITS, ...options.limits };
+    if (mailer.mode === 'resend') throw new Error('Real email requires the durable PostgreSQL gateway');
     const origins = new Set(options.allowedOrigins);
     const publicUrl = new URL(options.publicBaseUrl);
     if (!origins.has(publicUrl.origin))
@@ -320,7 +321,7 @@ export function createMealGateway(options: GatewayOptions) {
             if (op === 'manager') {
                 fields(body, ['operation']);
                 const claims = await tx.list('claims'), budget = await tx.get('counters', `mail-day:${Math.floor(time / DAY)}`);
-                return { meals: (await tx.list('meals')).sort((a, b) => a.service_at.localeCompare(b.service_at)).map(m => publicMeal(m, claims)), claims: claims.map(({ created_at: _c, updated_at: _u, cancellation_reason: _r, ...claim }) => claim), mail_mode: mailer.mode, daily_budget_remaining: Math.max(0, limits.dailyMailBudget - (budget?.count ?? 0)) } satisfies MealManagerSnapshot;
+                return { meals: (await tx.list('meals')).sort((a, b) => a.service_at.localeCompare(b.service_at)).map(m => publicMeal(m, claims)), claims: claims.map(({ created_at: _c, updated_at: _u, cancellation_reason: _r, ...claim }) => claim), mail_mode: mailer.mode === 'resend' ? 'live' : mailer.mode, daily_budget_remaining: Math.max(0, limits.dailyMailBudget - (budget?.count ?? 0)) } satisfies MealManagerSnapshot;
             }
             if (op === 'cancel_claim') {
                 fields(body, ['operation', 'id', 'version', 'reason']);

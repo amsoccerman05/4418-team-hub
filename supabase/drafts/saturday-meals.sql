@@ -66,16 +66,33 @@ create table meals_private.tokens (
   check (expires_at > created_at)
 );
 create index meals_tokens_claim on meals_private.tokens(claim_id);
--- Outbox stores delivery state and stable provider key, NEVER a token, link or body.
--- Mailer receives plaintext token transiently after commit. See MEALS-DATABASE.md.
+-- Exact immutable provider bytes are envelope-encrypted before the atomic hold
+-- transaction. Only the Edge runtime has the wrapping key; tokens remain hashed
+-- in tokens. Ciphertext is removed on terminal delivery/cancellation/expiry.
 create table meals_private.outbox (
-  id uuid primary key default gen_random_uuid(),
+  id uuid primary key,
   claim_id uuid not null references meals_private.claims(id),
-  status text not null default 'queued' check (status in ('queued','sent','failed','uncertain')),
+  status text not null default 'queued' check (status in ('queued','retry','sent','failed','uncertain')),
+  envelope text check (octet_length(envelope) <= 131072),
+  idempotency_key text not null unique,
+  budget_day date not null default (clock_timestamp() at time zone 'UTC')::date,
+  attempts integer not null default 0 check (attempts between 0 and 5),
+  delivery_uncertain boolean not null default false,
+  first_attempt_at timestamptz,
+  next_attempt_at timestamptz not null default clock_timestamp(),
+  retry_until timestamptz not null,
+  lease_token uuid,
+  lease_until timestamptz,
+  terminal_at timestamptz,
+  provider_id text check (length(provider_id)<=200),
   created_at timestamptz not null default clock_timestamp(),
   updated_at timestamptz not null default clock_timestamp(),
-  unique (claim_id)
+  unique (claim_id),
+  check ((lease_token is null) = (lease_until is null)),
+  check (terminal_at is null or envelope is null)
 );
+create index meals_outbox_due on meals_private.outbox(next_attempt_at) where envelope is not null and terminal_at is null;
+create index meals_outbox_budget_day on meals_private.outbox(budget_day);
 create table meals_private.idempotency (
   request_hash bytea primary key check (octet_length(request_hash) = 32),
   fingerprint bytea not null check (octet_length(fingerprint) = 32),
@@ -86,16 +103,23 @@ create table meals_private.mail_budget (
   singleton boolean primary key default true check (singleton),
   utc_day date not null default (clock_timestamp() at time zone 'UTC')::date,
   used integer not null default 0 check (used >= 0),
-  daily_limit integer not null default 0 check (daily_limit between 0 and 10000)
+  daily_limit integer not null default 0 check (daily_limit between 0 and 10000),
+  attempts_used integer not null default 0 check (attempts_used>=0),
+  mail_enabled boolean not null default false,
+  quota_approved_until timestamptz,
+  reserved_daily integer not null default 0 check (reserved_daily>=0),
+  reserved_monthly integer not null default 0 check (reserved_monthly>=0),
+  notification_daily_allowance integer not null default 0 check (notification_daily_allowance>=0)
 );
 insert into meals_private.mail_budget(singleton) values(true);
 create table meals_private.rate_windows (
-  kind text not null check (kind in ('ip','email','request')),
+  kind text not null check (kind in ('ip','email','request','global_request','ip_day','email_day')),
   key_hash bytea not null check (octet_length(key_hash) = 32),
   window_start timestamptz not null,
   used integer not null check (used > 0),
   primary key(kind, key_hash, window_start)
 );
+create index meals_rate_windows_expiry on meals_private.rate_windows(window_start);
 create table meals_private.history (
   id bigint generated always as identity primary key,
   meal_id uuid not null references meals_private.meals(id),
@@ -135,6 +159,10 @@ begin
   if expired_count > 0 then
     update meals_private.meals set version=version+1,updated_at=clock_timestamp() where id=p_meal;
   end if;
+  update meals_private.outbox o set envelope=null, terminal_at=coalesce(terminal_at,clock_timestamp()),
+    status=case when attempts=0 or status='retry' then 'failed' else status end,
+    lease_token=null,lease_until=null,updated_at=clock_timestamp()
+    where envelope is not null and exists(select 1 from meals_private.claims c where c.id=o.claim_id and c.meal_id=p_meal and c.status='expired');
   update meals_private.tokens t set revoked_at=clock_timestamp() where t.revoked_at is null and exists(
     select 1 from meals_private.claims c where c.id=t.claim_id and c.meal_id=p_meal and c.status='expired');
 end$$;
@@ -244,7 +272,7 @@ begin
       update meals_private.claims set status='cancelled',version=version+1,updated_at=clock_timestamp() where meal_id=mid and status in ('pending','confirmed') returning id,version
     ) insert into meals_private.history(meal_id,claim_id,actor_id,action,version,reason) select mid,id,actor,'meal_cancelled',version,btrim(p->>'cancellation_reason') from cancelled;
     update meals_private.tokens set revoked_at=clock_timestamp() where revoked_at is null and claim_id in (select id from meals_private.claims where meal_id=mid);
-    update meals_private.outbox set status='failed',updated_at=clock_timestamp() where status='queued' and claim_id in (select id from meals_private.claims where meal_id=mid);
+    update meals_private.outbox set status=case when status in ('queued','retry') then 'failed' else status end,envelope=null,terminal_at=coalesce(terminal_at,clock_timestamp()),lease_token=null,lease_until=null,updated_at=clock_timestamp() where envelope is not null and claim_id in (select id from meals_private.claims where meal_id=mid);
   end if;
   insert into meals_private.history(meal_id,actor_id,action,version) values(mid,actor,'meal_saved',v);
   return meals_private.public_meal(mid);
@@ -253,9 +281,16 @@ end$$;
 -- Separate short transaction at the gateway: a rejected operation must still
 -- consume its distributed per-IP request charge. Never store the raw IP.
 create function meals_private.reserve_request(p_ip_hash bytea) returns boolean language plpgsql security definer set search_path='' as $$
-declare n integer;
+declare n integer; global_n integer;
 begin
   if octet_length(p_ip_hash) is distinct from 32 then raise exception 'Invalid request hash'; end if;
+  -- Charge the bounded global bucket first. Once exhausted, attacker-selected
+  -- fresh IP hashes must not create an unbounded number of per-IP rows.
+  insert into meals_private.rate_windows(kind,key_hash,window_start,used)
+    values('global_request',sha256(convert_to('all-meal-requests','UTF8')),date_trunc('minute',clock_timestamp()),1)
+    on conflict(kind,key_hash,window_start) do update
+      set used=least(meals_private.rate_windows.used+1,601) returning used into global_n;
+  if global_n>600 then return false; end if;
   insert into meals_private.rate_windows(kind,key_hash,window_start,used)
     values('request',p_ip_hash,date_trunc('minute',clock_timestamp()),1)
     on conflict(kind,key_hash,window_start) do update
@@ -263,10 +298,48 @@ begin
   return n<=120;
 end$$;
 
+-- Called under the singleton budget lock. This is an atomic FEATURE budget,
+-- not a global account semaphore: Auth and existing notifications do not take
+-- this lock. Fresh provider usage, an approved reserve for those other senders,
+-- and a count-only notification backlog guard are conservative protections.
+-- Unknown/stale usage or expired operator approval fail closed. No contacts,
+-- notification bodies, Auth accounts, or credentials are read here.
+create function meals_private.mail_capacity(p_usage jsonb,p_new integer) returns boolean language plpgsql set search_path='' as $$
+declare b meals_private.mail_budget; notification_count bigint:=0; monthly_reserved bigint; carried bigint; v text; fetched timestamptz;
+begin
+  select * into b from meals_private.mail_budget where singleton;
+  if not b.mail_enabled or b.quota_approved_until is null or b.quota_approved_until<=clock_timestamp() or b.daily_limit=0 then return false; end if;
+  if p_usage is null or jsonb_typeof(p_usage)<>'object' then return false; end if;
+  foreach v in array array['dailyUsed','monthlyUsed'] loop
+    if jsonb_typeof(p_usage->v) is distinct from 'number' or (p_usage->>v)!~'^[0-9]+$' or (p_usage->>v)::numeric>2147483647 then return false; end if;
+  end loop;
+  foreach v in array array['dailyLimit','monthlyLimit'] loop
+    if not p_usage ? v or (p_usage->v<>'null'::jsonb and (jsonb_typeof(p_usage->v)<>'number' or (p_usage->>v)!~'^[0-9]+$' or (p_usage->>v)::numeric>2147483647)) then return false; end if;
+  end loop;
+  fetched:=(p_usage->>'fetchedAt')::timestamptz;
+  if fetched is null or not isfinite(fetched) or fetched>clock_timestamp()+interval '5 seconds' or fetched<clock_timestamp()-interval '60 seconds'
+    or (fetched at time zone 'UTC')::date<>(clock_timestamp() at time zone 'UTC')::date
+    or (p_usage->>'dailyResetsAt')::timestamptz is null or (p_usage->>'dailyResetsAt')::timestamptz<=clock_timestamp()+interval '10 seconds'
+    or (p_usage->>'monthlyResetsAt')::timestamptz is null or (p_usage->>'monthlyResetsAt')::timestamptz<=clock_timestamp()+interval '10 seconds' then return false; end if;
+  if to_regclass('public.team_notifications') is not null then
+    execute 'select count(*) from public.team_notifications where channel=''email'' and (status in (''pending'',''sending'',''review'') or first_attempt_at >= date_trunc(''day'',clock_timestamp() at time zone ''UTC'') at time zone ''UTC'')' into notification_count;
+  end if;
+  -- Feature reservations are deliberately counted again on top of usage. This
+  -- can leave unused capacity but cannot assume a provider snapshot includes a
+  -- concurrent send. Other senders still require operator monitoring/headroom.
+  select count(*) into carried from meals_private.outbox where budget_day<>(clock_timestamp() at time zone 'UTC')::date and envelope is not null and terminal_at is null;
+  select count(*) into monthly_reserved from meals_private.outbox where budget_day>=date_trunc('month',clock_timestamp() at time zone 'UTC')::date;
+  return (b.used+carried+p_new<=b.daily_limit)
+    and ((p_usage->>'dailyLimit') is null or (p_usage->>'dailyUsed')::bigint+b.used+carried+p_new+b.reserved_daily+greatest(b.notification_daily_allowance,notification_count)<=(p_usage->>'dailyLimit')::bigint)
+    and ((p_usage->>'monthlyLimit') is null or (p_usage->>'monthlyUsed')::bigint+monthly_reserved+carried+p_new+b.reserved_monthly+greatest(b.notification_daily_allowance,notification_count)<=(p_usage->>'monthlyLimit')::bigint);
+exception when others then return false;
+end$$;
+
 -- Gateway hashes normalized email+meal+idempotency-key and IP before calling.
 -- The gateway must validate Origin, request sizes, token entropy and human input.
 create function meals_private.create_hold(p_meal uuid,p_slot uuid,p_whole boolean,p_quantity integer,p_name text,p_email text,
-  p_request_hash bytea,p_verify_hash bytea,p_manage_hash bytea,p_ip_hash bytea) returns jsonb language plpgsql security definer set search_path='' as $$
+  p_request_hash bytea,p_verify_hash bytea,p_manage_hash bytea,p_ip_hash bytea,
+  p_claim uuid,p_outbox uuid,p_envelope text,p_usage jsonb) returns jsonb language plpgsql security definer set search_path='' as $$
 declare m meals_private.meals; c meals_private.claims; prior meals_private.idempotency; contact uuid; cid uuid; oid uuid; fp bytea;
   allocated integer; capacity integer; email_hash bytea; bucket timestamptz; n integer; day_now date; until_time timestamptz;
 begin
@@ -276,6 +349,9 @@ begin
     or octet_length(p_manage_hash) is distinct from 32 or p_manage_hash=p_verify_hash
     or octet_length(p_request_hash) is distinct from 32 or octet_length(p_verify_hash) is distinct from 32 or octet_length(p_ip_hash) is distinct from 32
     or (p_whole and (p_slot is not null or p_quantity<>1)) or (not p_whole and p_slot is null) then raise exception 'Invalid claim'; end if;
+  if p_claim is null or p_outbox is null or p_envelope is null or octet_length(p_envelope) not between 80 and 131072
+    or jsonb_typeof(p_envelope::jsonb)<>'object' or (p_envelope::jsonb->>'v') is distinct from '1'
+    or not (p_envelope::jsonb ?& array['iv','keyIv','wrappedKey','ciphertext']) then raise exception 'Invalid claim'; end if;
   p_email:=lower(btrim(p_email)); p_name:=btrim(p_name);
   fp:=sha256(convert_to(jsonb_build_array(p_meal,p_slot,p_whole,p_quantity,p_name,p_email)::text,'UTF8'));
   -- Consistent lock order: budget row, meal row, then claim/token rows.
@@ -287,7 +363,7 @@ begin
     if prior.fingerprint<>fp then raise exception 'Request key already used'; end if;
     select * into c from meals_private.claims where id=prior.claim_id;
     return jsonb_build_object('claim_id',c.id,'status','pending_verification','hold_expires_at',case when c.status='pending' and c.hold_expires_at>clock_timestamp() then c.hold_expires_at else null end,'replayed',true,
-      'email_status',(select status from meals_private.outbox where claim_id=c.id),'can_send',false);
+      'email_status',(select status from meals_private.outbox where claim_id=c.id),'outbox_id',(select id from meals_private.outbox where claim_id=c.id),'can_send',false);
   end if;
   if m.status<>'open' or m.service_at<=clock_timestamp() then raise exception 'Meal is not accepting contributions'; end if;
   perform meals_private.expire_holds(p_meal);
@@ -299,7 +375,9 @@ begin
     if allocated+p_quantity>capacity then raise exception 'Requested quantity is no longer available'; end if;
   end if;
   day_now:=(clock_timestamp() at time zone 'UTC')::date;
-  update meals_private.mail_budget set used=0,utc_day=day_now where utc_day<>day_now;
+  update meals_private.mail_budget set used=0,attempts_used=0,utc_day=day_now where utc_day<>day_now;
+  if p_usage is null then raise exception 'Email usage could not be verified'; end if;
+  if not meals_private.mail_capacity(p_usage,1) then raise exception 'Email service daily budget reached'; end if;
   update meals_private.mail_budget set used=used+1 where used<daily_limit returning used into n;
   if not found then raise exception 'Email service daily budget reached'; end if;
   bucket:=date_trunc('hour',clock_timestamp()); email_hash:=sha256(convert_to(p_email,'UTF8'));
@@ -309,13 +387,19 @@ begin
   insert into meals_private.rate_windows(kind,key_hash,window_start,used) values('ip',p_ip_hash,bucket,1)
     on conflict(kind,key_hash,window_start) do update set used=meals_private.rate_windows.used+1 returning used into n;
   if n>12 then raise exception 'Too many requests; try later'; end if;
+  insert into meals_private.rate_windows(kind,key_hash,window_start,used) values('email_day',email_hash,date_trunc('day',clock_timestamp() at time zone 'UTC') at time zone 'UTC',1)
+    on conflict(kind,key_hash,window_start) do update set used=meals_private.rate_windows.used+1 returning used into n;
+  if n>8 then raise exception 'Too many requests; try later'; end if;
+  insert into meals_private.rate_windows(kind,key_hash,window_start,used) values('ip_day',p_ip_hash,date_trunc('day',clock_timestamp() at time zone 'UTC') at time zone 'UTC',1)
+    on conflict(kind,key_hash,window_start) do update set used=meals_private.rate_windows.used+1 returning used into n;
+  if n>30 then raise exception 'Too many requests; try later'; end if;
   until_time:=least(clock_timestamp()+interval '15 minutes',m.service_at);
   insert into meals_private.parent_contacts(name,email) values(p_name,p_email) returning id into contact;
-  insert into meals_private.claims(meal_id,slot_id,contact_id,whole_meal,quantity,status,hold_expires_at)
-    values(p_meal,p_slot,contact,p_whole,p_quantity,'pending',until_time) returning id into cid;
+  insert into meals_private.claims(id,meal_id,slot_id,contact_id,whole_meal,quantity,status,hold_expires_at)
+    values(p_claim,p_meal,p_slot,contact,p_whole,p_quantity,'pending',until_time) returning id into cid;
   insert into meals_private.tokens(token_hash,claim_id,purpose,expires_at) values(p_verify_hash,cid,'verify',until_time);
   insert into meals_private.tokens(token_hash,claim_id,purpose,expires_at) values(p_manage_hash,cid,'manage',least(m.service_at,clock_timestamp()+interval '90 days'));
-  insert into meals_private.outbox(claim_id) values(cid) returning id into oid;
+  insert into meals_private.outbox(id,claim_id,envelope,idempotency_key,retry_until) values(p_outbox,cid,p_envelope,'meal-verification:'||p_outbox::text,until_time) returning id into oid;
   insert into meals_private.idempotency(request_hash,fingerprint,claim_id,expires_at) values(p_request_hash,fp,cid,clock_timestamp()+interval '24 hours');
   update meals_private.meals set version=version+1,updated_at=clock_timestamp() where id=p_meal;
   insert into meals_private.history(meal_id,claim_id,action,version) values(p_meal,cid,'hold_created',1);
@@ -380,7 +464,7 @@ begin
     version=version+1,updated_at=clock_timestamp() where id=c.id returning * into c;
   if p_cancel then
     update meals_private.tokens set revoked_at=clock_timestamp() where claim_id=c.id and revoked_at is null;
-    update meals_private.outbox set status='failed',updated_at=clock_timestamp() where claim_id=c.id and status='queued';
+    update meals_private.outbox set status=case when status in ('queued','retry') then 'failed' else status end,envelope=null,terminal_at=coalesce(terminal_at,clock_timestamp()),lease_token=null,lease_until=null,updated_at=clock_timestamp() where claim_id=c.id and envelope is not null;
   end if;
   update meals_private.meals set version=version+1,updated_at=clock_timestamp() where id=c.meal_id;
   insert into meals_private.history(meal_id,claim_id,action,version) values(c.meal_id,c.id,case when p_cancel then 'cancelled' else 'quantity_changed' end,c.version);
@@ -401,7 +485,7 @@ begin
   update meals_private.claims set status='cancelled',version=version+1,updated_at=clock_timestamp() where id=c.id returning * into c;
   update meals_private.tokens set revoked_at=clock_timestamp() where claim_id=c.id and revoked_at is null;
   update meals_private.meals set version=version+1,updated_at=clock_timestamp() where id=c.meal_id;
-  update meals_private.outbox set status='failed',updated_at=clock_timestamp() where claim_id=c.id and status='queued';
+  update meals_private.outbox set status=case when status in ('queued','retry') then 'failed' else status end,envelope=null,terminal_at=coalesce(terminal_at,clock_timestamp()),lease_token=null,lease_until=null,updated_at=clock_timestamp() where claim_id=c.id and envelope is not null;
   -- Reason is private coordinator audit only; never in public projection.
   insert into meals_private.history(meal_id,claim_id,actor_id,action,version,reason) values(c.meal_id,c.id,actor,'coordinator_cancelled',c.version,btrim(p_reason));
 end$$;
@@ -425,38 +509,93 @@ begin
   return meals_private.private_claim(c.id,until_time);
 end$$;
 
--- Claim delivery lease: exactly one caller can move queued -> uncertain BEFORE
--- network I/O. Never retry an ambiguous provider result with a regenerated link.
-create function meals_private.begin_delivery(p_outbox uuid) returns boolean language plpgsql security definer set search_path='' as $$
-declare mid uuid;
+-- A lease is committed before network I/O. Every subsequent attempt recovers
+-- the SAME envelope and idempotency key; a crashed caller never replaces tokens.
+-- Budget -> meal -> claim -> outbox is the common lock order. A 45-second lease
+-- outlives the provider's 8-second deadline, and fencing defeats stale finishes.
+create function meals_private.begin_delivery(p_outbox uuid,p_usage jsonb) returns jsonb language plpgsql security definer set search_path='' as $$
+declare c meals_private.claims; o meals_private.outbox; b meals_private.mail_budget; day_now date;
 begin
-  select c.meal_id into mid from meals_private.outbox o join meals_private.claims c on c.id=o.claim_id where o.id=p_outbox;
-  if not found then return false; end if;
-  -- Take the meal lock before any outbox lock, matching cancellation/cleanup.
-  perform 1 from meals_private.meals where id=mid for update;
-  if not exists(select 1 from meals_private.meals where id=mid and status='open' and service_at>clock_timestamp()) then return false; end if;
-  update meals_private.outbox set status='uncertain',updated_at=clock_timestamp() where id=p_outbox and status='queued' and exists(select 1 from meals_private.claims c where c.id=claim_id and c.status='pending' and c.hold_expires_at>clock_timestamp());
-  return found;
+  select * into b from meals_private.mail_budget where singleton for update;
+  select x.* into c from meals_private.outbox xout join meals_private.claims x on x.id=xout.claim_id where xout.id=p_outbox;
+  if not found then return null; end if;
+  perform 1 from meals_private.meals where id=c.meal_id for update;
+  perform meals_private.expire_holds(c.meal_id);
+  select * into c from meals_private.claims where id=c.id for update;
+  select * into o from meals_private.outbox where id=p_outbox for update;
+  if o.envelope is null or o.terminal_at is not null then return null; end if;
+  -- Never exhaust/terminalize a worker that still owns its active final lease.
+  if o.lease_until>clock_timestamp() then return null; end if;
+  if c.status<>'pending' or c.hold_expires_at<=clock_timestamp()+interval '10 seconds' or o.retry_until<=clock_timestamp()+interval '10 seconds'
+    or (o.first_attempt_at is not null and o.first_attempt_at<=clock_timestamp()-interval '23 hours') or o.attempts>=5
+    or not exists(select 1 from meals_private.meals where id=c.meal_id and status='open' and service_at>clock_timestamp()+interval '10 seconds') then
+    update meals_private.outbox set envelope=null,terminal_at=clock_timestamp(),lease_token=null,lease_until=null,
+      status=case when attempts=0 or status='retry' then 'failed' else status end,updated_at=clock_timestamp() where id=o.id;
+    if c.status='pending' and (o.attempts=0 or o.status='retry') then
+      update meals_private.claims set status='expired',version=version+1,updated_at=clock_timestamp() where id=c.id returning * into c;
+      update meals_private.tokens set revoked_at=clock_timestamp() where claim_id=c.id and revoked_at is null;
+      update meals_private.meals set version=version+1,updated_at=clock_timestamp() where id=c.meal_id;
+      insert into meals_private.history(meal_id,claim_id,action,version) values(c.meal_id,c.id,'delivery_expired',c.version);
+    end if;
+    return null;
+  end if;
+  if o.next_attempt_at>clock_timestamp() then return null; end if;
+  day_now:=(clock_timestamp() at time zone 'UTC')::date;
+  update meals_private.mail_budget set used=0,attempts_used=0,utc_day=day_now where utc_day<>day_now;
+  if not meals_private.mail_capacity(p_usage,0) then return null; end if;
+  if o.budget_day<>day_now then
+    update meals_private.mail_budget set used=used+1 where singleton;
+    update meals_private.outbox set budget_day=day_now where id=o.id;
+  end if;
+  update meals_private.mail_budget set attempts_used=attempts_used+1 where singleton and attempts_used<daily_limit*5;
+  if not found then return null; end if;
+  update meals_private.outbox set delivery_uncertain=delivery_uncertain or (attempts>0 and status='uncertain'),status='uncertain',attempts=attempts+1,first_attempt_at=coalesce(first_attempt_at,clock_timestamp()),
+    lease_token=gen_random_uuid(),lease_until=clock_timestamp()+interval '45 seconds',updated_at=clock_timestamp() where id=o.id returning * into o;
+  return jsonb_build_object('id',o.id,'claim_id',o.claim_id,'envelope',o.envelope,'idempotency_key',o.idempotency_key,'lease_token',o.lease_token,'attempts',o.attempts);
 end$$;
-create function meals_private.finish_delivery(p_outbox uuid,p_status text) returns void language plpgsql security definer set search_path='' as $$
-declare c meals_private.claims;
+create function meals_private.finish_delivery(p_outbox uuid,p_lease uuid,p_status text,p_retryable boolean,p_provider_id text default null) returns boolean language plpgsql security definer set search_path='' as $$
+declare c meals_private.claims; o meals_private.outbox; retry boolean; outcome text;
 begin
-  if p_status is null or p_status not in ('sent','failed','uncertain') then raise exception 'Invalid delivery status'; end if;
-  select x.* into c from meals_private.outbox o join meals_private.claims x on x.id=o.claim_id where o.id=p_outbox;
-  if not found then return; end if;
-  -- No outbox row has been locked yet: consistent meal -> claim -> outbox order.
+  if p_status is null or p_status not in ('sent','failed','uncertain') or p_retryable is null or length(p_provider_id)>200 then raise exception 'Invalid delivery status'; end if;
+  select x.* into c from meals_private.outbox xout join meals_private.claims x on x.id=xout.claim_id where xout.id=p_outbox;
+  if not found then return false; end if;
   perform 1 from meals_private.meals where id=c.meal_id for update;
   select * into c from meals_private.claims where id=c.id for update;
-  update meals_private.outbox set status=p_status,updated_at=clock_timestamp() where id=p_outbox and status='uncertain';
-  if not found then return; end if;
-  -- A definite failure releases an unverified allocation immediately. A verify
-  -- transaction that won the meal lock keeps its already-confirmed commitment.
-  if p_status='failed' and c.status='pending' then
+  select * into o from meals_private.outbox where id=p_outbox for update;
+  if o.lease_token is distinct from p_lease or p_lease is null or o.lease_until<=clock_timestamp() or o.terminal_at is not null then return false; end if;
+  retry:=p_status<>'sent' and p_retryable and o.attempts<5 and c.status='pending'
+    and least(c.hold_expires_at,o.retry_until)>clock_timestamp()+make_interval(secs=>20*power(2,o.attempts-1)::integer)+interval '10 seconds'
+    and o.first_attempt_at>clock_timestamp()-interval '23 hours';
+  -- A later definitive rejection does not prove an earlier timed-out attempt
+  -- was rejected. Keep uncertainty and a possibly delivered link valid.
+  outcome:=case when p_status='failed' and o.delivery_uncertain then 'uncertain' when retry and p_status='failed' then 'retry' else p_status end;
+  update meals_private.outbox set status=outcome,delivery_uncertain=delivery_uncertain or p_status='uncertain',lease_token=null,lease_until=null,
+    next_attempt_at=clock_timestamp()+make_interval(secs=>20*power(2,o.attempts-1)::integer),
+    envelope=case when retry then envelope else null end,terminal_at=case when retry then null else clock_timestamp() end,
+    provider_id=case when p_status='sent' then p_provider_id else provider_id end,updated_at=clock_timestamp() where id=o.id;
+  if outcome='failed' and c.status='pending' then
     update meals_private.claims set status='expired',version=version+1,updated_at=clock_timestamp() where id=c.id returning * into c;
     update meals_private.tokens set revoked_at=clock_timestamp() where claim_id=c.id and revoked_at is null;
     update meals_private.meals set version=version+1,updated_at=clock_timestamp() where id=c.meal_id;
     insert into meals_private.history(meal_id,claim_id,action,version) values(c.meal_id,c.id,'delivery_failed',c.version);
   end if;
+  return true;
+end$$;
+-- Private worker only. Include expiry rows so recovery also purges their
+-- ciphertext; callers must acquire begin_delivery rather than sending this list.
+create function meals_private.due_deliveries(p_limit integer) returns jsonb language plpgsql security definer set search_path='' as $$
+declare result jsonb;
+begin
+  delete from meals_private.rate_windows where (kind,key_hash,window_start) in (
+    select kind,key_hash,window_start from meals_private.rate_windows where window_start<clock_timestamp()-interval '2 days' order by window_start limit 1000
+  );
+  select coalesce(jsonb_agg(id),'[]'::jsonb) into result from (
+    select id from meals_private.outbox where envelope is not null and terminal_at is null
+      and (lease_until is null or lease_until<=clock_timestamp())
+      and (next_attempt_at<=clock_timestamp() or retry_until<=clock_timestamp())
+    order by case when retry_until<=clock_timestamp() then 0 else 1 end,next_attempt_at,id limit greatest(0,least(coalesce(p_limit,0),20))
+  ) due;
+  return result;
 end$$;
 
 -- Revoke default PUBLIC execution on every helper AND exposed manager wrapper.
@@ -471,7 +610,7 @@ grant execute on function public.meals_manager_context(),public.meals_manager_sa
 -- private schema through PostgREST and does not grant direct table access.
 grant usage on schema meals_private to service_role;
 grant execute on function meals_private.list_public(),meals_private.reserve_request(bytea),
-  meals_private.create_hold(uuid,uuid,boolean,integer,text,text,bytea,bytea,bytea,bytea),
+  meals_private.create_hold(uuid,uuid,boolean,integer,text,text,bytea,bytea,bytea,bytea,uuid,uuid,text,jsonb),
   meals_private.verify(bytea,bytea),meals_private.reopen_session(bytea,bytea),meals_private.inspect(bytea),meals_private.change_claim(bytea,integer,integer,boolean),
-  meals_private.begin_delivery(uuid),meals_private.finish_delivery(uuid,text) to service_role;
+  meals_private.begin_delivery(uuid,jsonb),meals_private.finish_delivery(uuid,uuid,text,boolean,text),meals_private.due_deliveries(integer) to service_role;
 commit;

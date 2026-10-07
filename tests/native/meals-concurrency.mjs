@@ -7,8 +7,9 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { execFileSync, spawn } from 'node:child_process';
 import { join, isAbsolute } from 'node:path';
 import { tmpdir } from 'node:os';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { installMealsFixture, syntheticMeal } from '../integration/meals-fixture.mjs';
+import { SQL_DELIVERY_ENVELOPE, syntheticProviderUsage } from '../helpers/meal-delivery-fixture.ts';
 
 const bin = process.env.MEALS_PG_BIN;
 assert(bin && isAbsolute(bin), 'Set MEALS_PG_BIN to an installed local PostgreSQL bin directory');
@@ -34,11 +35,13 @@ const claim = cid => result(sql(`select to_jsonb(c) from meals_private.claims c 
 const count = query => Number(sql(query));
 const save = (draft, who = 1) => `${actor(who)}select public.meals_manager_save(${json(draft)});`;
 function draft(mid, extra = {}) { const m = meal(mid); return { ...m, slots: m.slots.map(({ id, label, category, unit, needed }) => ({ id, label, category, unit, needed })), ...extra, whole_meal: undefined }; }
-const hold = (m, key, quantity = 1, whole = false) => `${service}select meals_private.create_hold(${lit(m.id)},${whole ? 'null' : lit(m.slots[0].id)},${whole},${quantity},'Synthetic Adult',${lit(`${key}@example.invalid`)},${hash('request:'+key)},${hash('verify:'+key)},${hash('manage:'+key)},${hash('ip:'+key)});`;
+const hold = (m, key, quantity = 1, whole = false) => `${service}select meals_private.create_hold(${lit(m.id)},${whole ? 'null' : lit(m.slots[0].id)},${whole},${quantity},'Synthetic Adult',${lit(`${key}@example.invalid`)},${hash('request:'+key)},${hash('verify:'+key)},${hash('manage:'+key)},${hash('ip:'+key)},${lit(randomUUID())},${lit(randomUUID())},${lit(SQL_DELIVERY_ENVELOPE)},${lit(syntheticProviderUsage())}::jsonb);`;
 const verify = key => `${service}select meals_private.verify(${hash('verify:'+key)},${hash('access:'+key)});`;
 const change = (key, version, quantity) => `${service}select meals_private.change_claim(${hash('access:'+key)},${version},${quantity},false);`;
-const beginDelivery = oid => `${service}select meals_private.begin_delivery(${lit(oid)});`;
-const finishDelivery = oid => `${service}select meals_private.finish_delivery(${lit(oid)},'failed');`;
+const deliveryLeases = new Map();
+const beginDelivery = oid => `${service}select coalesce(meals_private.begin_delivery(${lit(oid)},${lit(syntheticProviderUsage())}::jsonb),'null'::jsonb);`;
+function leaseDelivery(oid) { const lease=result(sql(beginDelivery(oid))); if(lease)deliveryLeases.set(oid,lease.lease_token);return lease; }
+const finishDelivery = oid => `${service}select meals_private.finish_delivery(${lit(oid)},${lit(deliveryLeases.get(oid))},'failed',false,null);`;
 function create(title, needed = 2) { return result(sql(save(syntheticMeal(title, needed)))); }
 const children = new Set();
 let started = false, startAttempted = false, checks = 0, pool, cleanupPromise;
@@ -131,8 +134,24 @@ try {
   assert.equal(count('select used from meals_private.mail_budget'), usedBefore + 1);
   const receipt = receipts.find(r => !r.replayed), leaseGate = await gate(lockMeal(replayMeal), 'lease-gate');
   const leases = Promise.all([asyncSQL(beginDelivery(receipt.outbox_id), 'lease-a'), asyncSQL(beginDelivery(receipt.outbox_id), 'lease-b')]); leases.catch(() => {});
-  await blocked('lease-a', 'lease-b'); await leaseGate.release(); assert.deepEqual((await leases).sort(), ['f', 't']);
+  await blocked('lease-a', 'lease-b'); await leaseGate.release(); const winners=(await leases).map(result);assert.equal(winners.filter(Boolean).length,1);assert(winners.find(Boolean).lease_token);
   pass('simultaneous duplicate request and dispatch leases reserve/budget/send at most once');
+
+  const recoveryMeal = create('Synthetic fenced retry', 1), recoverHold = result(sql(hold(recoveryMeal, 'fenced-retry')));
+  const recoveryBudget = count('select used from meals_private.mail_budget');
+  const firstLease = leaseDelivery(recoverHold.outbox_id);
+  sql(`update meals_private.outbox set lease_until=clock_timestamp()-interval '1 second' where id=${lit(recoverHold.outbox_id)}`);
+  const secondLease = leaseDelivery(recoverHold.outbox_id);
+  assert.equal(secondLease.envelope, firstLease.envelope); assert.equal(secondLease.idempotency_key, firstLease.idempotency_key);
+  assert.notEqual(secondLease.lease_token, firstLease.lease_token); assert.equal(secondLease.attempts, 2);
+  const fencedGate = await gate(lockMeal(recoveryMeal), 'fenced-gate');
+  const finish = lease => `${service}select meals_private.finish_delivery(${lit(lease.id)},${lit(lease.lease_token)},'sent',false,'synthetic-provider-id');`;
+  const finishes = Promise.all([asyncSQL(finish(firstLease), 'stale-finish'), asyncSQL(finish(secondLease), 'current-finish')]); finishes.catch(() => {});
+  await blocked('stale-finish', 'current-finish'); await fencedGate.release(); assert.deepEqual(await finishes, ['f', 't']);
+  const recovered = result(sql(`select to_jsonb(o) from meals_private.outbox o where id=${lit(recoverHold.outbox_id)}`));
+  assert.equal(recovered.status, 'sent'); assert.equal(recovered.envelope, null); assert.equal(recovered.lease_token, null);
+  assert.equal(count('select used from meals_private.mail_budget'), recoveryBudget);
+  pass('expired lease recovers identical encrypted payload/key; stale completion loses the fence without a second reservation');
 
   const exp = create('Synthetic verify expiry', 1), held = result(sql(hold(exp, 'expired')));
   const expGate = await gate(`update meals_private.claims set hold_expires_at=clock_timestamp()-interval '1 second' where id=${lit(held.claim_id)};${lockMeal(exp)}`, 'expiry-gate');
@@ -169,7 +188,7 @@ try {
   pass('quantity increase and another parent claim cannot both consume the last serving');
 
   for (const verifyFirst of [true, false]) {
-    const m = create(`Synthetic failure versus verify ${verifyFirst}`, 1), key = `failure-order-${verifyFirst}`, h = result(sql(hold(m, key))); sql(beginDelivery(h.outbox_id));
+    const m = create(`Synthetic failure versus verify ${verifyFirst}`, 1), key = `failure-order-${verifyFirst}`, h = result(sql(hold(m, key))); leaseDelivery(h.outbox_id);
     const g = await gate(verifyFirst ? verify(key) : finishDelivery(h.outbox_id), `failure-first-${verifyFirst}`);
     const other = asyncSQL(verifyFirst ? finishDelivery(h.outbox_id) : verify(key), `failure-wait-${verifyFirst}`);
     await blocked(`failure-wait-${verifyFirst}`); await g.release();

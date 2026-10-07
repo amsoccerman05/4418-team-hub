@@ -1,3 +1,4 @@
+import {syntheticMailApproval} from './helpers/meal-delivery-fixture';
 import { test, expect } from '@playwright/test';
 import { PGlite } from '@electric-sql/pglite';
 import { readFileSync } from 'node:fs';
@@ -20,7 +21,7 @@ test('UUID letter casing cannot reserve or send a duplicate idempotent claim', a
       create table public.profiles(id uuid primary key, role text, active boolean);
       insert into public.profiles values('${managerId}','mentor',true);`);
     await db.exec(readFileSync('supabase/drafts/saturday-meals.sql', 'utf8'));
-    await db.exec('update meals_private.mail_budget set daily_limit=100');
+    await db.exec(syntheticMailApproval(100));
     const saturday = new Date(Date.now() + 14 * 86400000);
     saturday.setUTCDate(saturday.getUTCDate() + (6 - saturday.getUTCDay() + 7) % 7);
     saturday.setUTCHours(12, 0, 0, 0);

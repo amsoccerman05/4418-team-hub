@@ -9,7 +9,7 @@ import { createMealManagerVerifier } from '../../supabase/functions/team-meals/a
 import { createPostgresMealGateway } from '../../supabase/functions/team-meals/postgres-gateway.ts';
 import { MockMealMailer } from '../../supabase/functions/team-meals/mail.ts';
 
-export async function runMealsIntegration({ base, anonKey, sql, registerSecret }) {
+export async function runMealsIntegration({ base, anonKey, sql, registerSecret, edge }) {
   assert.equal(localURL(base).origin, `http://127.0.0.1:${API_PORT}`, 'Only the owned disposable Auth stack is supported');
   const authBefore = sql("select pg_get_functiondef('auth.uid()'::regprocedure)");
   assert(!authBefore.includes('test.uid'), 'Real Supabase Auth is required');
@@ -108,5 +108,9 @@ export async function runMealsIntegration({ base, anonKey, sql, registerSecret }
     assert.equal(sql("select pg_get_functiondef('auth.uid()'::regprocedure)"), authBefore);
     pass('durable signup/verification appears in real manager RPC; real API cancellation revokes capability; mock mail only');
   } finally { await pool.end(); }
+  if (edge) {
+    const { runMealsEdgeIntegration } = await import('./meals-edge.spec.mjs');
+    checks.push(...await runMealsEdgeIntegration({ base, anonKey, sql, users, registerSecret, ...edge }));
+  }
   return checks;
 }

@@ -6,7 +6,8 @@ on:
       - 'supabase/functions/team-meals/**'
       - 'supabase/drafts/saturday-meals.sql'
       - 'tests/meals-*.spec.ts'
-      - 'tests/helpers/meal-store.ts'
+      - 'tests/helpers/meal-*.ts'
+      - 'supabase/config.toml'
       - 'tests/native/meals-*.mjs'
       - 'tests/integration/meals-*'
       - 'tests/integration/fabrication-local.mjs'
@@ -91,6 +92,16 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb
+        with:
+          deno-version: '2.8.0'
+      - name: Resolve or verify exact Edge dependency lock without executing application
+        run: |
+          if test -f supabase/functions/team-meals/deno.lock; then
+            node scripts/lock-meals-edge.mjs --verify
+          else
+            node scripts/lock-meals-edge.mjs
+          fi
       - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359
         with:
           version: '2.119.0'
@@ -98,3 +109,11 @@ jobs:
         run: node --test tests/integration/fabrication-safety.test.mjs
       - name: Verify synthetic meals with real disposable Auth and API
         run: MEALS_INTEGRATION=1 node tests/integration/fabrication-local.mjs --run
+      - name: Retain generated Edge dependency lock
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: saturday-meals-edge-lock
+          path: supabase/functions/team-meals/deno.lock
+          if-no-files-found: error
+          retention-days: 7

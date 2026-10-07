@@ -31,3 +31,22 @@ test('Auth verifier rejects unsafe destination configuration and does not cache 
   let calls=0;const verify=createMealManagerVerifier({authBaseUrl:'https://auth.example.invalid',publicApiKey:'synthetic',fetcher:async()=>{calls++;return calls===1?Response.json({id}):new Response('',{status:401});}});
   expect(await verify(request('Bearer same-session'))).toEqual({id});expect(await verify(request('Bearer same-session'))).toBeNull();expect(calls).toBe(2);
 });
+
+test('plain HTTP Docker Auth requires an exact explicit single-label local-test host', async () => {
+  const common = { publicApiKey: 'synthetic-public-key', fetcher: async () => Response.json({ id }) };
+  expect(() => createMealManagerVerifier({ ...common, authBaseUrl: 'http://kong:8000' })).toThrow(/trusted/);
+  const verify = createMealManagerVerifier({ ...common, authBaseUrl: 'http://kong:8000', localTestHost: 'kong' });
+  expect(await verify(request('Bearer synthetic-session'))).toEqual({ id });
+  for (const [authBaseUrl, localTestHost] of [
+    ['http://evil:8000', 'kong'], ['http://external.example.com', 'external.example.com'],
+    ['http://kong:8000', '*'], ['http://kong:8000', 'kong:8000'], ['http://kong:8000', 'kong/extra'],
+  ]) expect(() => createMealManagerVerifier({ ...common, authBaseUrl, localTestHost })).toThrow(/trusted/);
+});
+
+test('configured legacy service-role keys are rejected while legacy anon keys remain supported', async () => {
+  const common = { authBaseUrl: 'https://auth.example.invalid', fetcher: async () => Response.json({ id }) };
+  const legacy = (role: string) => `${btoa('{"alg":"HS256"}')}.${btoa(JSON.stringify({ role }))}.synthetic-signature`;
+  expect(() => createMealManagerVerifier({ ...common, publicApiKey: legacy('service_role') })).toThrow('public Auth API key');
+  expect(() => createMealManagerVerifier({ ...common, publicApiKey: 'header.malformed.signature' })).toThrow('public Auth API key');
+  expect(await createMealManagerVerifier({ ...common, publicApiKey: legacy('anon') })(request('Bearer synthetic-user-session'))).toEqual({ id });
+});

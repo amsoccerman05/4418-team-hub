@@ -1,3 +1,5 @@
+import {createMealGateway} from '../supabase/functions/team-meals/gateway';
+import {MemoryMealRepository} from '../supabase/functions/team-meals/store';
 import { test, expect } from '@playwright/test';
 import { fixture, seedMeal, claim } from './helpers/meal-store';
 
@@ -51,4 +53,11 @@ test('dispatch never invokes mailer for a closed, cancelled, past or expired com
     expect(state.outbox[0].state, scenario).toBe('queued');
     expect(state.outbox[0].attempt_id, scenario).toBeNull();
   }
+});
+
+// Real provider mail must never run through the disposable memory example.
+test('memory gateway rejects a live provider before any delivery',async()=>{
+  let attempts=0;
+  expect(()=>createMealGateway({repository:new MemoryMealRepository(),allowedOrigins:['https://example.invalid'],publicBaseUrl:'https://example.invalid/meals.html',mailer:{mode:'resend',send:async()=>{attempts++;return {status:'sent',providerId:'synthetic'};}}})).toThrow(/durable PostgreSQL/);
+  expect(attempts).toBe(0);
 });

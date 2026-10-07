@@ -1,140 +1,97 @@
-# Local meal gateway vertical slice
+# Saturday meals gateway
 
-This is executable local domain code, not an enabled production feature. `index.ts`
-returns 503, imports no provider/DB SDK, reads no environment credentials, and does
-not register a deployment listener. `mock.ts` is for synthetic local tests only.
-There is no real email adapter or deployment. The separate injectable
-`createPostgresMealGateway` now binds this same HTTP contract to the reviewed SQL
-primitives; see [the durable binding report](../../../docs/MEALS-DURABLE-BINDING.md)
-for tests, transaction/auth boundaries and remaining enablement gates. The loopback
-UI demo still uses its synthetic in-memory repository.
+This directory contains the accountless meal signup endpoint, server-verified
+coordinator endpoint, and durable email delivery worker. `index.ts` is a runnable
+Supabase Deno Edge entrypoint. It is **disabled by default**: no pool is constructed
+and no Auth or email request occurs without explicit valid runtime configuration.
+No production activation, secret configuration, schedule, hosted write, or real
+email delivery is part of this draft.
 
-## Boundary
+See [runtime and activation guide](../../../docs/MEALS-RUNTIME.md) for exact
+configuration names, safety gates, provider behavior and the remaining operational
+approval checklist. The repository's loopback UI demo still uses `mock.ts` and its
+synthetic in-memory repository. The deployed entrypoint uses `postgres-gateway.ts`
+and the reviewed relational SQL primitives; it never substitutes an in-memory
+store for PostgreSQL.
 
-`createMealGateway(options).handle(Request, { ip })` accepts a POST JSON object with
-`operation`. The IP is trusted transport metadata; headers such as X-Forwarded-For
-are deliberately ignored. If the transport does not supply an IP, all callers
-share one conservative rate-limit bucket.
+## HTTP boundary
 
-Operations: `list`; `claim` with `ClaimInput` fields; `verify` / `inspect` with
-`token`; `edit` with `token, quantity, version`; `cancel` with `token, version`;
-`manager`; `save_meal` with `meal: MealDraft`; `cancel_claim` with
-`id, version, reason`. Responses are the matching `src/meals/types.ts` DTO, or
-`{ error: { code, message } }` with an appropriate HTTP status.
+`POST /functions/v1/team-meals` accepts JSON operations:
 
-All POST requests require an exact configured Origin. CORS is allowlisted, never
-wildcarded. Requests have a 16 KiB streaming body limit, strict JSON content type,
-known-field validation, bounded strings and quantities, Saturday-in-timezone validation,
-and URL-query rejection.
-Responses are no-store and no-referrer. Frontends must use fragment links, erase
-the fragment before making requests, and never persist or log bearer capabilities.
-Public projection explicitly allowlists fields and contains no parent contact or
-claim identity. Coordinator contact access needs an injected authorization callback
-on every request; the default is denial. The mock takes an explicit process-local
-coordinator bearer from its loopback transport. That is not production authority.
+- Public `list` and `claim`
+- Private capability `verify`, `inspect`, `edit`, `cancel`
+- Coordinator `manager`, `save_meal`, `cancel_claim`
 
-## Capacity and commitment safety
+Public requests need no user account. All regular operations require an exact
+configured Origin, a JSON body limited to 16 KiB, known fields, bounded values,
+and a URL without query data. Responses are private/no-store and no-referrer.
+Coordinator bearers are verified with the configured Supabase Auth `/auth/v1/user`
+on every request; the SQL wrappers separately recheck the current active
+mentor/admin profile. Caller-provided role metadata never authorizes access.
 
-The in-memory repository serializes **all** transactions and rolls back failed
-work. This covers item capacity, whole-meal exclusivity, token changes, rate limits,
-idempotency, and budget reservations. Pending holds last 15 minutes (or until the
-meal, whichever is sooner); lazy expiry is applied before every operation and
-releases capacity. Failed mail expires its hold immediately. Pending never means
-confirmed. Only one-time email verification on an open meal confirms a contribution.
-Closing a date prevents pending verification, while already confirmed adults can
-still cancel through their valid private links.
+The runtime ignores all forwarding headers by default, using a conservative
+shared request/claim quota bucket. A separately reviewed proxy option can use one
+known overwritten single-address header. Neither caller headers nor body fields
+can select the strategy or Auth authority.
 
-Whole-meal requests require no active item claims. Active whole-meal commitments
-cannot have their headcount or slot specifications silently changed. Claimed item
-labels, categories, and units are protected. Slots referenced by historical item
-contributions cannot be deleted, even after cancellation or expiry. Claimed slots cannot be deleted or
-shrunk below reserved quantity. Date/time changes with active commitments require
-coordination. Optimistic versions protect edit/cancel/save operations. Meal revisions
-also change atomically with claim holds, verification, edits, cancellation, expiry,
-and failed-mail release, so an old manager cancellation acknowledgment cannot
-silently include a newly arrived or changed contribution. Cancelling
-a date with active claims requires a reason and `acknowledge_cancellation: true`;
-records remain private history and every capability is revoked. No cancellation
-notification is claimed or sent by this draft.
+`POST /functions/v1/team-meals/dispatch` is a separate worker endpoint. It requires
+its own explicit enable flag and configured bearer secret, rejects browser Origin
+headers and any nonempty JSON fields, and processes at most three due deliveries. It is not
+a public JSON operation. No schedule is created by the code.
 
-## Private link recovery
+## Private links and durable mail
 
-Every capability has 256 random bits from Web Crypto and is stored only as a
-purpose-separated SHA-256 digest. The initial synthetic email has two links:
+Verification and management links carry separate 256-bit random capabilities in
+URL fragments, never query strings. Clients erase fragments before API calls.
+Only purpose-separated hashes are used to look up capabilities in SQL. A
+verification link expires with its pending hold (at most 15 minutes). Successful
+verification creates a separate 30-minute access capability. The original private
+management link reopens that one confirmed signup until service time or 90 days,
+whichever comes first. Cancellation and expiry revoke capabilities.
 
-- One-time `#verify=` link: expires with the pending hold. Successful verification
-  returns a separate 30-minute access token, bounded by the service cutoff.
-- Reopenable `#manage=` link: usable only after confirmation; expires at the earlier
-  of the meal service time and 90 days after issue. It supports inspect, quantity
-  edit, and cancellation of that one claim. Whole-meal edits require coordination.
+The initial claim transaction atomically reserves capacity and budget and saves
+an AES-GCM envelope containing the exact immutable provider payload and stable
+idempotency key. This allows recovery after a crash without replacing any links.
+Plaintext contacts, tokens and message bodies are never written into the outbox
+or diagnostics. SQL removes the envelope on terminal outcome or expiry. A worker
+lease, generation check, bounded attempts, hold cutoff, and provider idempotency
+protect delivery recovery and simultaneous workers.
 
-Closing the browser loses the short session, but the adult can reopen the original
-email's private management link. Expired links require coordinator assistance; the
-draft does not invent an email resend or credential-recovery path. Cancellation,
-expired pending holds, and cancelled dates revoke every token for the claim.
-Plaintext tokens exist only in the response or immediate mail object and the
-memory-only synthetic mailbox. They are never written to repository records.
+`provider.ts` calls only Resend's fixed `/emails` and `/usage` endpoints. It uses
+the existing sender/key environment names, an eight-second timeout, no redirects,
+and no logs. Accepted means the provider returned a valid message ID, not that
+the email reached an inbox. Definite rejections, retryable rejections, and ambiguous
+acceptance stay distinct. Every permitted retry reuses the exact persisted body
+and key; the recovery deadline is far shorter than Resend's 24-hour key lifetime.
 
-## Mail and abuse controls
+SQL mail is independently off by default with a zero daily cap. Fresh provider
+account daily/monthly usage, approved headroom for other senders, feature
+reservations, current queued notifications, and a time-limited quota approval are
+required before accepting/sending live email. Missing, stale, malformed or
+unavailable provider usage fails closed. No shared Supabase Auth mail quota is
+used. A shared Resend account cannot make independent senders transactionally
+atomic; reserve headroom and operational monitoring remain required.
 
-The default mailer is disabled and the base gateway mail budget is zero. The explicit mock accepts `.invalid` recipients
-only and performs no network calls. A claim transaction reserves both a per-IP
-limit (12/hour), per-normalized-email limit (4/hour), and a global daily mail budget
-(50/day in the explicit local mock). General requests are limited to 120/minute/IP. Production limits require
-review for expected team traffic. Failed and uncertain sends still consume the
-reserved budget, conservatively protecting shared quota. No shared Auth email
-quota is used.
+## Safe local tests
 
-In the memory demo, idempotency is scoped to normalized email + meal + client key,
-with a request-body fingerprint and 24-hour expiry. The durable SQL binding retains
-expired entries as conservative replay tombstones pending an approved retention
-and recovery design. Reusing a key with a changed body is rejected.
-Another email cannot receive the first email's receipt or claim. Concurrent replays
-may truthfully observe queued → uncertain → sent progression, but never create a
-second hold or send attempt. A settled replay returns the known current mail state.
-
-Outbox metadata has `queued`, `sent`, `failed`, or `uncertain`; `sent` means provider
-accepted, **never delivered**. Before provider I/O, the attempt is durably marked
-uncertain. Exceptions remain uncertain and are never blindly retried. The mock is
-provider-idempotent as a second guard. Failed receipts explicitly say unavailable
-and have no hold; uncertain receipts explain uncertainty. Outbox records contain
-no plaintext links or message body. A crash between claim commit and send leaves
-a queued hold that expires; this draft deliberately has no background resend job.
-
-## Before any production binding
-
-- The durable SQL implementation is available in `postgres.ts` and
-  `postgres-gateway.ts`; validate its environment/driver integration and keep the
-  original memory demo separate. The memory `MealRepository` contract requires
-  serializable isolation with safe conflict handling, or a global lock. The durable
-  service instead calls the relational SQL primitives directly, preserving their
-  per-meal and shared-budget locks. Do not replace either boundary with unrelated
-  REST mutations.
-- Bind real coordinator authorization to verified server authority and current
-  permissions. Never rely on user-editable JWT metadata or the local demo header.
-- Review RLS/private-schema grants and role tests, retention, audit fields, bounded
-  indexed queries, distributed rate limits, proxy IP trust, and a real outbox
-  reconciliation/recovery design before making a live mail adapter.
-- Review sender domain, recipient consent, overall quota, and secrets separately.
-  No such setup, persistent credentials, live delivery, or deployment is authorized
-  or performed by this local slice.
+`local-test` mode supports only the no-network `MockMealMailer` and `.invalid`
+recipients. It cannot construct a Resend sender, and rejects real provider
+configuration. Explicit Docker host configuration allows the local Auth/DB
+containers; it cannot relax production HTTPS/TLS requirements. An optional
+local-only deferred-delivery flag permits an isolated fixture to inspect/decrypt
+its own synthetic queued envelope before testing the authenticated worker route.
+There is no HTTP mailbox or capability-inspection test endpoint.
 
 ## Verification
 
-`tests/meals-gateway.spec.ts` runs the real Request/Response gateway against the
-synthetic transactional repository. It covers privacy projection, expired and
-reopened links, concurrency, rollback, idempotency, authorization, cancellation
-acknowledgment, immutable commitments, quota reservation, mail failure/uncertainty,
-and malformed requests. Run via the root meal logic Playwright configuration.
+- `tests/meals-runtime.spec.ts`: runtime guard matrix, exact origins, real Auth
+  wiring, proxy trust, disabled state and protected dispatch routing
+- `tests/meals-provider.spec.ts`: immutable provider requests, all result classes,
+  no-network disabled paths, renderer safety, usage parsing/failure and freshness
+- `tests/meals-auth.spec.ts`: authoritative user verification and local-host guard
+- `tests/meals-postgres.spec.ts`: Request/Response through actual SQL primitives
+- Delivery recovery and native/served Edge integration tests cover encrypted
+  restart recovery, real multi-connection PostgreSQL and local Deno HTTP.
 
-`tests/meals-postgres.spec.ts` additionally exercises the same Request/Response
-contract through the actual SQL primitives, including persistence after disk
-close/reopen. Its injected synthetic manager authority does not establish real
-Supabase Auth network verification.
-
-Backend strict typecheck (root):
-
-    npx tsc --noEmit --target ES2022 --lib ES2022,DOM,DOM.Iterable --module ESNext --moduleResolution Bundler --strict --skipLibCheck --allowImportingTsExtensions supabase/functions/team-meals/*.ts
-
-Supabase documentation checked October 7, 2026: [Edge Functions overview](https://supabase.com/docs/guides/functions)
-and [changelog](https://supabase.com/changelog). No runtime SDK API is used here.
+Run the root meal logic suite and backend typecheck as documented in the runtime
+guide. Live email is deliberately never used by these tests.

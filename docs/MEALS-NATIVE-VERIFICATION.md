@@ -74,17 +74,15 @@ is implied.
 
 Local execution on 2026-10-07:
 
-- 17 SQL/PGlite tests pass after the request-quota and server-assigned-slot changes.
+- 31 legacy SQL/PGlite and durable gateway tests pass with encrypted-envelope preparation, quota approval flags, and fenced delivery leases.
 - Native runner/helper syntax checks and Node 24 adapter imports pass.
-- Native PostgreSQL execution is **not run locally** because `initdb`/`psql` are
-  unavailable in this workspace. The authorized CI runner must establish the
-  native outcome for the exact commit. Do not treat authored coverage as a pass.
-- Docker and the Supabase CLI are also unavailable locally; real Auth/PostgREST
-  smoke tests remain a separate deployment gate.
+- Baseline commit `200b641` passed all 16 native/durable groups on PostgreSQL 16.15 in [CI run 37664168013](https://github.com/amsoccerman05/4418-team-hub/actions/runs/37664168013). The encrypted-recovery update adds a 17th native group for lease replacement and stale completion fencing; that new revision requires a fresh CI result. `initdb`/`psql` remain unavailable locally.
+- Baseline commit `200b641` also passed all five real Auth/PostgREST meal groups against disposable Supabase PostgreSQL 17.11.0.002 in that CI run. The new revision additionally serves the actual Deno entrypoint and needs a fresh CI result; Docker and the Supabase CLI remain unavailable locally.
 
 The draft SQL remains outside `supabase/migrations`. Production entry remains
-inert, the SQL mail budget defaults to zero, and no deployment or live mail is
-part of this verification.
+disabled without explicit validated activation, the SQL mail budget defaults to
+zero/off with no quota approval, and no production deployment or live mail is part
+of this verification.
 
 ## Opt-in real Auth and PostgREST smoke
 
@@ -123,3 +121,35 @@ suite is not evidence that the real Auth/API smoke ran. The opt-in smoke remains
 result for the exact source hashes.
 
 Auth verification follows [Supabase's server-verified user guidance](https://supabase.com/docs/reference/javascript/auth-getuser).
+
+
+## Served Edge and encrypted-recovery update
+
+The opt-in harness now copies the complete `team-meals` function, pinned
+per-function `deno.json`, and its type dependency into the owned temporary stack.
+It serves the actual Deno entrypoint alongside the existing Fabrication function.
+Only the opt-in branch changes: ordinary existing integration runs retain their
+original function target.
+
+The fixture creates a fresh wrapping key and worker secret in memory, registers
+them for diagnostic redaction, and writes a mode-0600 temporary environment file.
+The configured database/Auth hostnames are the exact Docker services owned by the
+run. Local-test mode can select only the `.invalid` mock mailer. No provider key,
+real sender, hosted database URL, or existing secret is copied.
+
+Five additional `Meals served Edge` groups cover actual HTTP startup/CORS and
+real Auth authorization; atomic encrypted claim preparation and exact idempotent
+replay; protected concurrent dispatch through `{}` worker requests; one-use
+verification, returning management/edit/cancellation and fresh profile checks;
+and expired-envelope cleanup without a mail attempt. The fixture temporarily
+queues local-test delivery, privately decrypts its owned database envelope with
+the generated key, and then dispatches through the real worker route. There is
+no public mailbox or token-retrieval endpoint.
+
+The native suite now also replaces an expired delivery lease, verifies unchanged
+ciphertext and provider idempotency key, and races stale/current completion in
+separate PostgreSQL sessions. Only the current fence may finish, terminal delivery
+erases the envelope, and recovery does not reserve capacity/budget a second time.
+The native total is 17 grouped checks; the optional real Auth plus served Edge
+total is 10 groups. These expanded counts are authored coverage until current CI
+confirms execution.

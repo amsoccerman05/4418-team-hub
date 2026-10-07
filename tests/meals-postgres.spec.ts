@@ -8,6 +8,7 @@ import { PostgresMealDatabase, type MealSqlConnection, type MealSqlPool } from '
 import { MockMealMailer } from '../supabase/functions/team-meals/mail';
 import type { MealDraft, PublicMeal } from '../src/meals/types';
 import inertHandler from '../supabase/functions/team-meals/index';
+import { syntheticMailApproval } from './helpers/meal-delivery-fixture.ts';
 
 const ORIGIN = 'https://meals.example.invalid';
 const id = (n: number) => `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`;
@@ -61,7 +62,7 @@ async function seed() {
       create table public.profiles(id uuid primary key, role text, active boolean);
       insert into public.profiles values('${id(1)}', 'mentor', true), ('${id(2)}', 'admin', true), ('${id(3)}', 'student', true);`);
     await db.exec(readFileSync('supabase/drafts/saturday-meals.sql', 'utf8'));
-    await db.exec('update meals_private.mail_budget set daily_limit=100');
+    await db.exec(syntheticMailApproval(100));
     meal = await new PostgresMealDatabase(pool).saveMeal({ id: id(1) }, draft());
 }
 test.beforeEach(async () => { db = new PGlite(); leaseCount = 0; pool = pglitePool(() => db); mailer = new MockMealMailer(); gateway = makeGateway(); await seed(); });
@@ -190,7 +191,7 @@ test('email quota and zero mail budget rollback together; mock and production de
     expect((await raw('select used from meals_private.mail_budget'))[0].used).toBe(4);
     expect((await call(claim({ email: 'person@example.com' }))).body.error.code).toBe('synthetic_email_required');
     expect((await call(claim(), { use: makeGateway({ mailer: undefined }) })).status).toBe(503);
-    expect(inertHandler(new Request(ORIGIN)).status).toBe(503);
+    expect((await inertHandler(new Request(ORIGIN))).status).toBe(503);
 });
 
 test('durable data and hash-only capability work after a PGlite disk close/reopen', async () => {
