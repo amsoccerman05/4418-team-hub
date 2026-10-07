@@ -106,7 +106,7 @@ jobs:
         with:
           version: '2.119.0'
       - name: Check isolated-stack safety guards
-        run: node --test tests/integration/fabrication-safety.test.mjs tests/integration/meals-network.test.mjs
+        run: node --test tests/integration/fabrication-safety.test.mjs tests/integration/meals-network.test.mjs tests/integration/meals-edge-response.test.mjs
       - name: Verify synthetic meals with real disposable Auth and API
         run: MEALS_INTEGRATION=1 node tests/integration/fabrication-local.mjs --run
       - name: Retain generated Edge dependency lock

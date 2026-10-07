@@ -162,6 +162,8 @@ not promised to run autonomously.
 
 ## Verification and authoritative references
 
+The current checks and verification summary in [PR #15](https://github.com/amsoccerman05/4418-team-hub/pull/15) identify the exact tested source, outcomes and counts for the meal, full-repository and mentor-hours workflows.
+
 Focused checks: `npx playwright test --config meals.logic.config.ts` and backend
 strict typecheck:
 

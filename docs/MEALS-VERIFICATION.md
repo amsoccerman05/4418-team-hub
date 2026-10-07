@@ -1,85 +1,63 @@
-# Saturday meals verification — 2026-10-07
+# Saturday meals verification
 
-Status: **implemented, published as a draft, disabled and not deployed**.
-[PR #15](https://github.com/amsoccerman05/4418-team-hub/pull/15) includes the
-production-capable runtime at `d7a02c7`. That published commit has the same runtime
-source tree as the candidate tested in
-[meal CI run 37678831155](https://github.com/amsoccerman05/4418-team-hub/actions/runs/37678831155).
-Production schema/configuration, credentials, mail activation, worker scheduling,
-merge and deployment have not been performed.
+The implementation is published in [draft PR #15](https://github.com/amsoccerman05/4418-team-hub/pull/15).
+The pull request's current checks and verification summary identify the exact
+source commit, terminal outcomes, test counts and retained artifacts for the
+meal, full-repository and mentor-hours workflows. This document records test
+scope and safety boundaries rather than a snapshot of a running job.
 
-## Confirmed results
+## What the suites establish
 
-- Production TypeScript/Vite build and strict backend typecheck pass. The existing
-  large-bundle warning remains non-fatal.
-- 141 browser-free meal logic tests pass, covering model/transport, memory and
-  durable PostgreSQL gateways, authoritative Auth, runtime guards, real-provider
-  request construction and classifications, encrypted outbox recovery, quotas,
-  expiry, concurrency, idempotency and prior ambiguous delivery outcomes.
-- Four static React rendering/privacy cases pass. The focused browser/static
-  review reports 38 passing cases; these include actual parent/coordinator
-  interactions and responsive layouts, not just mocked component text.
-- The public 390px, claim 320px and coordinator 1440px screenshots were visually
-  reviewed and are clean. All review data is synthetic.
-- All 17 native PostgreSQL concurrency/durable-handler groups pass. This includes
-  replacement delivery leases, unchanged encrypted payload/key, stale completion
-  fencing, transaction rollback, identity cleanup and real multi-session races.
-- All five real Auth/PostgREST meal integration groups pass in the owned
-  disposable Supabase stack. They establish server user verification, fresh
-  profile authorization, private-schema API isolation and mock-mail lifecycle.
-- Genuine `deno.lock` generation passed under the pinned Deno toolchain in CI.
-  The artifact was downloaded, its digest verified, and its actual generated
-  bytes copied to `supabase/functions/team-meals/deno.lock`. Integrity hashes were
-  not hand-authored. This does not by itself establish compatibility with the
-  served Edge runtime.
-- The full repository suite (1,062 tests) and mentor-hours CI pass at `d7a02c7`.
-- The loopback HTTP smoke passes synthetic claim, captured mock email,
-  verification, returning management capability, edit, coordinator review,
-  cancellation/revocation and hostile-origin rejection. It sends no real email.
-- Production builds exclude coordinator demo HTML, demo manager credentials and
-  the mock-mailbox route. Existing KCMT/event sources and the held parent hub
-  remain unaffected.
+- Build and backend typecheck cover the production frontend bundle and complete
+  Edge function graph. The synthetic coordinator demo is excluded from production.
+- Meal logic exercises model/transport, memory and SQL gateways, Auth verification,
+  runtime configuration, provider classifications, immutable encrypted delivery,
+  idempotency, quotas, expiry and recovery regressions.
+- Static rendering covers component/privacy projections. Browser tests exercise
+  parent/coordinator actions and responsive layouts; synthetic screenshots support
+  separate visual review.
+- The loopback HTTP smoke uses the disposable memory demo for claim, mock email,
+  verification, management, edits, cancellation and origin rejection.
+- Native PostgreSQL checks use independent connections to prove actual capacity,
+  transaction, role, duplicate-claim, lease-replacement and stale-completion races.
+- The owned Supabase stack tests real Auth/PostgREST authorization and private-schema
+  isolation, then the actual Deno HTTP entrypoint through PostgreSQL and protected
+  worker dispatch. Mock mail remains `.invalid`-only; no provider request occurs.
+- Lock checks use genuine official Deno resolution and frozen verification of the
+  committed transitive dependency lock. No integrity hashes are hand-authored.
+- Full repository and mentor-hours workflows check unrelated behavior remains
+  intact alongside the meal changes.
 
-## Remaining served-Edge DNS blocker
+Passing one boundary is not evidence that another ran. In particular, PGlite and
+injected handlers do not substitute for native concurrency or served Deno HTTP.
 
-[Diagnostic CI run 37682588301](https://github.com/amsoccerman05/4418-team-hub/actions/runs/37682588301)
-at `3cc5637` confirms that the pg driver loads and runtime reaches ready, followed
-by repeated fixed-category database errors: `phase: connect`, `category: dns`.
-The failing HTTP listing is therefore blocked by the Edge process's database
-hostname resolution. Startup/import-map/lock loading is no longer the observed
-blocker. The preceding five real Auth/API groups passed; the five additional
-served-Edge groups have not yet completed.
+## Recorded integration diagnosis
 
-The narrow candidate fix lets the isolated harness supply an RFC1918 IPv4 address
-verified from its own Docker database container and network. Local-test mode must
-match that address exactly against its explicitly approved database host; public,
-link-local, malformed and mismatched addresses are rejected. Production hostname
-resolution/TLS and Auth-origin rules are unchanged. The address-based fix awaits
-the next actual served-Edge CI result, so those groups are not claimed as passing.
+An earlier [diagnostic run](https://github.com/amsoccerman05/4418-team-hub/actions/runs/37682588301)
+reported successful pg import/runtime initialization followed by `connect/dns`
+failures resolving the owned Docker database alias. The candidate harness uses
+an RFC1918 address verified against that exact running container and owned
+network. Local-test mode must match the address to its explicit allowlist;
+public, link-local, malformed and mismatched addresses are rejected. Production
+DNS/TLS and Auth-origin rules are unchanged. Refer to the candidate meal run above
+for the integration outcome after this change.
 
-Safe database-boundary diagnostics use fixed connection/query/idle phases and
-allowlisted categories. SQL, bind values, raw errors, connection URLs, contacts
-and credentials are never logged. The genuine version-5 dependency lock loads
-far enough for the driver/runtime to initialize; no integrity data was edited.
+Startup/database diagnostics contain fixed stages/categories only. No raw errors,
+SQL, bind values, connection URLs, contacts or credentials are logged. Public
+failures stay generic.
 
-## Implemented activation boundaries
+## Live activation limits
 
-`index.ts` registers a real Deno listener and binds a guarded PostgreSQL pool,
-Auth verifier, Resend adapter and authenticated recovery endpoint. It returns
-503 when explicitly required configuration is absent or invalid. This is a
-runnable disabled-by-default service, not an unbound placeholder.
+`index.ts` registers a runnable Deno service with a guarded PostgreSQL pool,
+server-verified manager Auth, Resend adapter and authenticated recovery endpoint.
+Runtime, live mail, dispatch and SQL mail approval remain independently disabled
+by default. Production schema/configuration, wrapping/worker keys, quota reserves,
+scheduled recovery, migration backup, merge and deployment need separate approval.
 
-The runtime flag, live-mail flag, dispatch flag and SQL mail-budget approval are
-independent. Encrypted immutable messages can be recovered with the same provider
-key under fenced leases and bounded retries. Fresh account-level daily/monthly
-usage and reserved capacity protect the shared mail account conservatively;
-missing or stale usage fails closed. Configuration, sender/key permissions,
-quota headroom, wrapping/worker keys, scheduled recovery and operational retention
-still require separate approval.
-
-No real Resend email or mailbox delivery has been tested or claimed. `sent` means
-provider accepted, never delivered/read. The tested adapter uses injected no-network
-responses; isolated Edge/SQL tests use `.invalid` mock mail only.
+Tests do not establish actual Resend or mailbox delivery. `sent` means provider
+accepted, never delivered/read. Provider unit tests inject no-network responses;
+isolated database/Edge tests use synthetic mock mail. No family data was imported
+and no production mail was sent by this work.
 
 ## Reproduce
 
@@ -94,18 +72,6 @@ npm run test:meals:ui
 node scripts/preview-meals.mjs
 ```
 
-Native PostgreSQL and real Auth/served-Edge commands and isolation requirements
-are in [native verification](MEALS-NATIVE-VERIFICATION.md). Dependency-lock
-resolution must use the pinned official toolchain in
-`scripts/lock-meals-edge.mjs`. See [runtime requirements](MEALS-RUNTIME.md) and
-[release review](MEALS-REVIEW.md) before enabling any live configuration.
-
-## Security regressions retained
-
-UUID spelling is normalized before idempotency hashing. An ambiguous commit or
-failed rollback never falls through to another capability purpose. Lease
-replacement cannot be completed by a stale worker; last-attempt cleanup respects
-an active lease. Monthly quota accounting includes outstanding reservations from
-the previous month. A later definite rejection cannot erase the uncertainty of
-an earlier potentially accepted message. These corrections remain covered by
-regression tests rather than relying on manual review alone.
+See [native verification](MEALS-NATIVE-VERIFICATION.md) for PostgreSQL and owned-stack
+commands, [runtime requirements](MEALS-RUNTIME.md) for configuration and operations,
+and [release review](MEALS-REVIEW.md) before enabling any live feature.

@@ -1,6 +1,6 @@
 # Saturday meals — disabled runtime draft
 
-The implementation is published in [draft PR #15](https://github.com/amsoccerman05/4418-team-hub/pull/15), including runtime commit `d7a02c7`. It has not been deployed, connected to production, or used with actual families. It does not modify the existing KCMT page/form or the separately held year-round parent hub. The latest evidence is recorded in [the verification report](MEALS-VERIFICATION.md) and [CI run 37678831155](https://github.com/amsoccerman05/4418-team-hub/actions/runs/37678831155).
+The implementation is published in [draft PR #15](https://github.com/amsoccerman05/4418-team-hub/pull/15). Its current checks and verification summary identify the exact source revision and results for the meal, full-repository and mentor-hours workflows. The feature has not been deployed or used with actual families. Existing KCMT pages/forms and the held parent hub remain unchanged.
 
 ## Review locally
 
@@ -41,10 +41,12 @@ Provider acceptance is `sent`, not delivered/read. An uncertain send must be rec
 
 1. Review the parent and coordinator experience, decide coordinator role scope, set the actual dates/headcounts, and approve public generic guidance.
 2. Review the implemented runtime/database/provider binding and complete approved configuration for exact origins, verified proxy handling if used, quota reserves, retention, wrapping key and authenticated recovery schedule. Cancellation communication remains a coordinator workflow; no automatic cancellation email is claimed.
-3. Retain the passing browser, 17-group native PostgreSQL and five-group real Auth/API evidence. Fix and rerun the actual served Deno Edge startup smoke, whose runtime now starts but database request path still returns HTTP 503; recheck all affected tests on the exact candidate.
+3. Verify the exact candidate's browser, native PostgreSQL, real Auth/API and served Deno HTTP results in the linked CI runs. Review the synthetic phone/desktop screenshots and any actionable findings before release.
 4. Public draft PR publication and synthetic CI are approved and have run in PR #15. Production schema/runtime/secret changes, merge/deployment, and controlled live email tests still need separate authorization.
 5. Recheck production dependencies and create an approved fresh backup before an additive migration. Keep the existing KCMT form and held parent hub untouched.
 
 ## Verification
 
-See [the verification report](MEALS-VERIFICATION.md): 141 meal logic tests, 17 native PostgreSQL groups, browser/static coverage and five real Auth/API groups passed for the published runtime source. Deno generated the genuine transitive dependency lock in CI. Parent/claim/coordinator screenshots were reviewed. The [diagnostic CI run](https://github.com/amsoccerman05/4418-team-hub/actions/runs/37681291197) confirms that the driver loads and the runtime reaches ready. The next [database diagnostic run](https://github.com/amsoccerman05/4418-team-hub/actions/runs/37682588301) confirmed a database DNS failure. The isolated harness now has a narrow candidate path using its verified owned-container RFC1918 address; served integration remains unverified until that fix passes CI. Provider acceptance and actual inbox delivery remain distinct, and no live delivery test has occurred.
+The [verification guide](MEALS-VERIFICATION.md) describes each test boundary and links the current candidate's authoritative run results. Local logic tests are distinct from multi-session PostgreSQL, browser interactions, real Auth/PostgREST and actual served Deno HTTP integration. The genuine dependency lock was produced by the official Deno toolchain; integrity hashes were not hand-authored.
+
+An earlier served-Edge run identified a Docker database-alias DNS failure after successful driver/runtime initialization. The isolated harness was changed to use an RFC1918 address verified from its owned database container and network; production DNS/TLS and Auth-origin rules were not relaxed. See the linked candidate run for the resulting integration outcome. No real email or mailbox delivery is implied by synthetic tests; provider acceptance and inbox delivery remain distinct.

@@ -6,6 +6,15 @@ import { localFetch, localURL, ORIGIN, API_PORT } from './fabrication-safety.mjs
 import { syntheticMeal } from './meals-fixture.mjs';
 import { createMealEnvelope } from '../../supabase/functions/team-meals/envelope.ts';
 
+/** JSON null is a valid successful void-operation receipt (e.g. cancellation).
+ * Assertions must not crash while constructing their diagnostic message. */
+export async function mealEdgeResponse(response, status = 200) {
+  const parsed = await response.json();
+  const code = parsed?.error?.code || parsed?.code || 'unspecified';
+  assert.equal(response.status, status, `Meals Edge HTTP ${response.status}; code=${code}`);
+  return parsed;
+}
+
 export async function runMealsEdgeIntegration({ base, anonKey, sql, users, envelopeKey, workerSecret, registerSecret }) {
   assert.equal(localURL(base).origin, `http://127.0.0.1:${API_PORT}`);
   assert(envelopeKey && workerSecret, 'Only generated owned-stack test configuration is supported');
@@ -16,11 +25,7 @@ export async function runMealsEdgeIntegration({ base, anonKey, sql, users, envel
   const request = (body, user, extra = {}) => localFetch(base, route, { method: 'POST', headers: {
     apikey: anonKey, Origin: ORIGIN, 'Content-Type': 'application/json', ...(user ? { Authorization: `Bearer ${user.token}` } : {}), ...extra,
   }, body: JSON.stringify(body) });
-  const body = async (response, status = 200) => {
-    const parsed = await response.json();
-    assert.equal(response.status, status, `Meals Edge HTTP ${response.status}; code=${parsed.error?.code || parsed.code || 'unspecified'}`);
-    return parsed;
-  };
+  const body = mealEdgeResponse;
   const call = (payload, user) => request(payload, user).then(response => body(response));
   const expectError = async (payload, status, code, user, extra) => {
     const result = await body(await request(payload, user, extra), status); assert.equal(result.error.code, code);
