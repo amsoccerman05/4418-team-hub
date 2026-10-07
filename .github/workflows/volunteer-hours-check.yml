@@ -6,6 +6,8 @@ on:
       - "supabase/migrations/**"
       - "tests/volunteer-hours-*.spec.ts"
       - "tests/native/volunteer-hours-concurrency.mjs"
+      - "tests/integration/volunteer-hours-stack.spec.mjs"
+      - "tests/integration/fabrication-local.mjs"
       - "volunteer.playwright.config.ts"
       - ".github/workflows/volunteer-hours-check.yml"
       - "package*.json"
@@ -38,3 +40,21 @@ jobs:
           path: test-results/
           if-no-files-found: ignore
           retention-days: 7
+
+  real-api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3
+        with:
+          version: "2.119.0"
+      - name: Check local-only integration guards
+        run: node --test tests/integration/fabrication-safety.test.mjs
+      - name: Verify volunteer hours through real disposable Auth and PostgREST
+        env:
+          VOLUNTEER_HOURS_INTEGRATION: "1"
+        run: node tests/integration/fabrication-local.mjs --run

@@ -219,10 +219,10 @@ for (const width of [390, 1440])
         .getByLabel("Actual end", { exact: true })
         .fill("2026-10-05T19:00");
       await dialog
-        .getByLabel("Activity", { exact: true })
+        .getByRole("combobox", { name: "Activity", exact: true })
         .selectOption("outreach");
       await dialog
-        .getByLabel("Season (optional)", { exact: true })
+        .getByRole("combobox", { name: "Season (optional)", exact: true })
         .selectOption(sid);
       await dialog
         .getByLabel("Notes (optional)", { exact: true })
@@ -246,11 +246,19 @@ for (const width of [390, 1440])
       await dialog
         .getByLabel("Correction reason", { exact: true })
         .fill("Stayed to pack up");
+      await page.screenshot({
+        path: `test-results/volunteer-hours-editor-${width}.png`,
+        fullPage: true,
+      });
       await dialog
         .getByRole("button", { name: "Save correction", exact: true })
         .click();
       await expect(dialog).toHaveCount(0);
       await expect(entry.getByText("4 h", { exact: true })).toBeVisible();
+      await page.screenshot({
+        path: `test-results/volunteer-hours-completed-${width}.png`,
+        fullPage: true,
+      });
       await entry.getByRole("button", { name: "History", exact: true }).click();
       await expect(
         dialog.getByText("Stayed to pack up", { exact: true }),
