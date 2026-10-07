@@ -11,7 +11,7 @@ export async function handle(req:Request,s:Services){
  try{await s.verify(jwt);}catch{return reply(401,{error:'Sign in required'});}
  let p:Record<string,unknown>;try{const body=await req.text();if(body.length>16000)throw Error();p=JSON.parse(body);if(!p||typeof p!=='object'||!/^\b[0-9a-f-]{36}\b$/i.test(String(p.id)))throw Error();}catch{return reply(400,{error:'Valid invitation request required'});}
  let r:Reservation;
- try{r=await s.reserve(jwt,p);}catch(e){return e instanceof InvitationError?reply(e.status,{code:e.code,error:e.message}):reply(403,{error:'Invitation not allowed. Check manager access, member details, and existing invitations.'});}
+ try{r=await s.reserve(jwt,p);}catch(e){return e instanceof InvitationError?reply(e.status,{code:e.code,error:e.message}):reply(403,{error:'Invitation not allowed. Check invitation access, member details, and existing invitations.'});}
  if(!r.send){
   if(r.status==='pending')return reply(200,{id:r.id,status:r.status,already_invited:true});
   return reply(409,{id:r.id,status:r.status,error:r.status==='review'?'Invitation needs review. Ask a mentor to check the account and Activity; do not resend.':'Invitation is still processing. Reload the member list shortly; do not resend.'});

@@ -10,11 +10,16 @@ async function api(path:string,token:string,key:string,body?:unknown){
    const allowed:Record<string,string>={
     'Account already exists. Manage the existing member.':'existing_account',
     'Active mentor or admin required':'manager_required',
+    'Active lead, mentor or admin required':'inviter_required',
+    'Leads can invite students only':'student_only',
+    'Invitation request unavailable for this account':'invitation_not_owned',
+    'Invitation details changed. Review the recorded invitation; do not resend.':'already_reserved',
+    'Valid invitation role and registration required':'invalid_details',
     'Valid email, name and reason required':'invalid_details',
     'Choose an active area':'inactive_area',
    };
    const code=allowed[error.message];
-   if(code)throw new InvitationError(code,code==='manager_required'?403:409,error.message);
+   if(code)throw new InvitationError(code,['manager_required','inviter_required','student_only','invitation_not_owned'].includes(code)?403:409,error.message);
    if(error.code==='23505')throw new InvitationError('already_reserved',409,'An invitation is already recorded. Reload the member list and check its status; do not resend.');
   }
   throw Error('Request rejected');
