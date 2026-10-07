@@ -636,3 +636,23 @@
 .att-dialog>.att-progress{top:0}
 .attendance-section>.att-error{position:sticky;top:calc(var(--suite-header-height,76px) + 12px);z-index:5}
 .att-dialog>.att-error,.att-dialog>.att-success{position:sticky;top:0;z-index:5}
+
+/* Contextual instructions use the same panels and touch targets as Attendance. */
+.att-how-to { max-width: 1100px; }
+.att-how-to h2, .att-how-to h3 { display: flex; align-items: center; gap: 10px; }
+.att-how-to h2 svg, .att-how-to h3 svg { flex-shrink: 0; }
+.att-how-to p, .att-how-to li { line-height: 1.65; }
+.att-how-to ol { padding-left: 24px; }
+.att-how-to li + li { margin-top: 10px; }
+.att-help-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.att-help-grid .att-panel { margin: 0; }
+.att-help-start { display: flex; align-items: flex-start; gap: 16px; }
+.att-help-start > svg { flex-shrink: 0; margin-top: 4px; color: var(--color-primary); }
+.att-help-start h3 { margin-top: 0; }
+.att-edit-review { padding: 16px; border-radius: var(--radius-card); background: var(--color-nav-surface); overflow-wrap: anywhere; }
+.att-edit-review h4 { margin: 0 0 10px; }
+.att-edit-review p { margin: 8px 0; }
+.att-edit-review .att-check { align-items: flex-start; }
+.att-edit-form { margin-top: 20px; }
+.att-edit-form input:disabled { background: var(--color-nav-surface); color: var(--color-muted); }
+@media(max-width: 760px) { .att-help-grid { grid-template-columns: 1fr; } }

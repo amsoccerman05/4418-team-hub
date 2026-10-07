@@ -30,6 +30,28 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
       - run: npx playwright install --with-deps chromium
       - run: npm test
+      - name: Generate synthetic Attendance preview
+        if: ${{ always() && github.event_name == 'pull_request' }}
+        run: node scripts/preview-attendance-editing.mjs
+      - name: Upload synthetic Attendance editing review
+        if: ${{ always() && github.event_name == 'pull_request' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: attendance-editing-review
+          path: |
+            test-results/attendance-edit-*.png
+            test-results/attendance-how-to-*.png
+            test-results/attendance-preview.html
+          if-no-files-found: error
+          retention-days: 7
+      - name: Retain Attendance browser failure evidence
+        if: ${{ always() && github.event_name == 'pull_request' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: attendance-browser-failures
+          path: test-results/attendance-ui-*/**/*
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Upload synthetic invitation review screenshots
         if: ${{ always() && github.event_name == 'pull_request' }}
         uses: actions/upload-artifact@v4
