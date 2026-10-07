@@ -29,6 +29,8 @@ import {
 import "./attendance.css";
 import { occurrences, type Repeat } from "./recurrence";
 import { MeetingCalendar } from "./Calendar";
+import { AttendanceHowTo } from "./HowTo";
+import { MeetingEditor } from "./MeetingEditor";
 const time = (s: string | null) =>
   s
     ? new Date(s).toLocaleString([], {
@@ -144,20 +146,22 @@ export function AttendanceHub({
       subscription.subscription.unsubscribe();
     };
   }, []);
-  async function run(work: () => Promise<unknown>, success = "Saved") {
+  async function run(work: () => Promise<unknown>, success = "Saved", afterRefresh?: () => void) {
+    let workCompleted = false;
     setBusy(true);
     setError("");
     setMessage("");
     const gen = generation.current;
     try {
       await work();
+      workCompleted = true;
       if (profile) {
         const d = await loadData(isManager(profile));
         if (gen === generation.current) setData(d);
       }
-      if (gen === generation.current) setMessage(success);
+      if (gen === generation.current) { setMessage(success); afterRefresh?.(); }
     } catch (e) {
-      if (gen === generation.current) setError(errorText(e));
+      if (gen === generation.current) setError(workCompleted && afterRefresh ? "Meeting saved, but the refreshed view could not be loaded. Your draft is kept. Choose Refresh meeting to verify the saved details." : errorText(e));
     } finally {
       setBusy(false);
     }
@@ -299,7 +303,7 @@ export function AttendanceHub({
     </section>
   );
 }
-type Run = (work: () => Promise<unknown>, success?: string) => Promise<void>;
+type Run = (work: () => Promise<unknown>, success?: string, afterRefresh?: () => void) => Promise<void>;
 function AttendanceTimes({a,m,now}:{a:Attendance;m:Meeting;now:number}) {
  const duration=attendanceDuration(a,m,now);
  return <span className="att-times">
@@ -363,7 +367,8 @@ function Status({ attendance: a }: { attendance: Attendance }) {
     </>
   );
 }
-function Management({data,run,selected,selfId}:{data:Data;run:Run;selected:string;selfId?:string}) {
+function Management({data,run,selected,selfId,busy}:{data:Data;run:Run;selected:string;selfId?:string;busy:boolean}) {
+ const [editing,setEditing]=useState(false);
  const [code,setCode]=useState<{meetingId:string;code:string;expires:string}|null>(null);
  const [history,setHistory]=useState<History[]|null>(null),[rosterFilter,setRosterFilter]=useState('all'),[now,setNow]=useState(Date.now());
  useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer);},[]);
@@ -382,11 +387,13 @@ function Management({data,run,selected,selfId}:{data:Data;run:Run;selected:strin
   <div className="att-panel att-meeting-overview"><MeetingHeader meeting={m} now={now}/>
    <p className="att-roster-counts">{required.size} expected · {records.filter(a=>ended?['present','late','left_early'].includes(a.physical_status):here(a)).length} {ended?'attended':'here'} · {records.filter(a=>!!a.left_at).length} checked out · {records.filter(missing).length} {complete?'absent':'not checked in'} · {records.filter(a=>a.review_status==='excused').length} excused</p>
    <div className="att-toolbar">
+    {data.policy?.can_manage_meetings&&!editing&&!complete&&now<Date.parse(m.starts_at)&&<button className="att-secondary" onClick={()=>setEditing(true)}>Edit meeting</button>}
     {data.policy?.can_manage_meetings&&canOpen&&!open&&m.status!=='closed'&&<button onClick={openCode}>Open check-in</button>}
     {data.policy?.can_manage_meetings&&canClose&&<button className="att-secondary" onClick={closeCheckIn}>Close check-in</button>}
     {!complete&&ended&&<button className="att-secondary" onClick={()=>{setRosterFilter(needs.length?'attention':'all');document.getElementById('live-roster-heading')?.scrollIntoView({block:'nearest'});}}>Review attendance</button>}
     {data.policy?.can_manage_meetings&&m.status==='closed'&&ended&&<button onClick={()=>{if(window.confirm('Complete attendance? Missing required students will be marked absent. Leadership can still make corrections.'))void run(()=>manage('finalize',{meeting_id:m.id,version:m.version}),'Attendance complete');}}>Complete attendance</button>}
    </div>
+   {editing&&data.policy?.can_manage_meetings&&<MeetingEditor meeting={m} data={data} busy={busy} run={run} onCancel={()=>setEditing(false)} onSaved={scheduleChanged=>{setEditing(false);if(scheduleChanged)setCode(null);}}/>}
    {code&&code.meetingId===m.id&&open&&now<Date.parse(code.expires)&&<div className="att-code">Meeting code: <strong>{code.code}</strong><small>Expires {time(code.expires)}. Share only with attendees.</small><button className="att-secondary" onClick={()=>void run(()=>navigator.clipboard.writeText(code.code),'Check-in code copied')}>Copy check-in code</button></div>}
    {open&&!code&&<p className="att-muted">Check-in open. Rotate the code in Meeting controls to show a new one.</p>}
    {ended&&!complete&&<p className="att-muted">Review requests and missing check-ins, then {m.status==='closed'?'complete attendance.':'close check-in to complete attendance.'}</p>}
@@ -1104,8 +1111,8 @@ function Workspace({
   const [rosterSync, setRosterSync] = useState("");
   const manager = isManager(profile) || !!data.policy?.can_read_team;
   const tabs = manager
-    ? ["dashboard", "calendar", "roster", "notices", "strikes", "history"]
-    : ["calendar", "notices", "strikes", "history"];
+    ? ["dashboard", "calendar", "roster", "notices", "strikes", "history", "how-to"]
+    : ["calendar", "notices", "strikes", "history", "how-to"];
   const current = tabs.includes(tab) ? tab : manager ? "dashboard" : "calendar";
   const [selected, setSelected] = useState<string | null>(null),
     [creating, setCreating] = useState<Date | null>(null),
@@ -1147,7 +1154,7 @@ function Workspace({
             href={`#attendance/${name}`}
             aria-current={current === name ? "page" : undefined}
           >
-            {name === "notices" ? (manager ? "Absence & Schedule Requests" : "My Requests") : label(name)}
+            {name === "how-to" ? "How to use Attendance" : name === "notices" ? (manager ? "Absence & Schedule Requests" : "My Requests") : label(name)}
             {name === "notices" && (
               <span>
                 {
@@ -1161,6 +1168,7 @@ function Workspace({
         ))}
       </nav>
       <PolicyHelp/>
+      {current === "how-to" && <AttendanceHowTo canManage={!!data.policy?.can_manage_meetings} canReadTeam={manager}/>}
       {current === "dashboard" && manager && <LeadershipDashboard data={data} run={run} openMeeting={setSelected}/>}
       {current === "calendar" && (
         <>
@@ -1419,10 +1427,12 @@ function Workspace({
             </p>
           )}
           {message && <p className="att-success" role="status">{message}</p>}
+          <p className="att-muted"><a href="#attendance/how-to">How to use Attendance →</a></p>
           {manager ? (
             <Management
               key={selectedMeeting.id}
               selected={selectedMeeting.id}
+              busy={busy}
               selfId={['lead','student'].includes(profile.role)?profile.id:undefined}
               data={data}
               run={run}

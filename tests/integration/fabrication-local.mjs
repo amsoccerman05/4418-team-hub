@@ -9,6 +9,8 @@ import { tmpdir } from 'node:os';
 import { randomUUID, createHash } from 'node:crypto';
 import { CLI_VERSION, API_PORT, DB_PORT, ORIGIN, localStatus, localFetch, isolatedEnvironment, edgeObservation, edgeHandlerReady, assertLocalPreflight } from './fabrication-safety.mjs';
 
+import { attendanceEditingSources } from './attendance-editing-fixture.mjs';
+
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const mode = process.argv[2] || '--run';
 assert(['--run', '--preflight', '--prepare-only'].includes(mode), 'Use --run, --preflight, or --prepare-only');
@@ -98,9 +100,9 @@ const sourcePaths = [
   ...['index.ts', 'handler.ts', 'validation.ts'].map(f => `supabase/functions/fabrication-files/${f}`),
   'src/planning/assembly/model.ts',
   ...['types.ts', 'model.ts', 'decision-types.ts', 'decision-model.ts', 'trade-study.ts'].map(f => `src/planning/reviews/${f}`),
-  ...['fabrication-local.mjs', 'fabrication-safety.mjs', 'fabrication-stack.spec.mjs', 'assembly-stack.spec.mjs', 'design-decision-stack.spec.mjs'].map(f => `tests/integration/${f}`),
+  ...['fabrication-local.mjs', 'fabrication-safety.mjs', 'fabrication-stack.spec.mjs', 'assembly-stack.spec.mjs', 'design-decision-stack.spec.mjs', 'attendance-editing-fixture.mjs', 'attendance-editing-stack.spec.mjs'].map(f => `tests/integration/${f}`),
 ];
-const hashes = Object.fromEntries(sourcePaths.map(path => [path, createHash('sha256').update(readFileSync(join(repo, path))).digest('hex')]));
+const hashes = Object.fromEntries([...sourcePaths, ...attendanceEditingSources].map(path => [path, createHash('sha256').update(readFileSync(join(repo, path))).digest('hex')]));
 try {
   const version = execFileSync(executable, ['--version'], common).trim();
   assert.equal(version, CLI_VERSION, `Install the pinned official Supabase CLI ${CLI_VERSION}`);
@@ -225,6 +227,8 @@ verify_jwt = false
       const checks = await runFabricationIntegration({ ...status, sql, gate, waitFor, registerSecret: s => secrets.push(s) });
       const { runDesignDecisionIntegration } = await import('./design-decision-stack.spec.mjs');
       checks.push(...await runDesignDecisionIntegration({ ...status, sql, registerSecret: s => secrets.push(s) }));
+      const { runAttendanceEditingIntegration } = await import('./attendance-editing-stack.spec.mjs');
+      checks.push(...await runAttendanceEditingIntegration({ ...status, sql, registerSecret: s => secrets.push(s) }));
       assert.equal(sql("select pg_get_functiondef('auth.uid()'::regprocedure)"), authFunction, 'Auth function changed');
       const images = JSON.parse(docker(['inspect', `supabase_db_${project}`]))[0].Config.Image;
       report = { status: 'PASS_REAL_SUPABASE_INTEGRATION', cli: version, node: process.version, postgres_image: images, checks, source_sha256: hashes };

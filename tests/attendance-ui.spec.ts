@@ -129,6 +129,13 @@ async function mock(page: Page, role = "student") {
         result = body.meetings.map((_: unknown, i: number) => ({
           id: `batch-${i}`,
         }));
+      } else if (path.endsWith("/team_attendance_edit_meeting")) {
+        calls.push(body);
+        const m=data.meetings.find(m=>m.id===body.p.meeting_id)!;
+        const changedTime=m.starts_at!==body.p.starts_at||m.ends_at!==body.p.ends_at;
+        Object.assign(m,{title:body.p.title,meeting_type:body.p.meeting_type,starts_at:body.p.starts_at,ends_at:body.p.ends_at,version:m.version+1});
+        if(changedTime){m.check_in_open=false;m.code_expires_at=null;}
+        result={id:m.id,version:m.version,changed:true};
       } else if (path.endsWith("/team_attendance_manage")) {
         calls.push(body);
         result = {};
@@ -858,4 +865,88 @@ for(const width of [390,1440])test(`Attendance pending check-in feedback and rec
  await expect(dialog.getByRole('alert')).toContainText('Invalid meeting code');await expect(dialog.locator('.att-progress')).toHaveCount(0);await expect(dialog.getByLabel('6-digit meeting code')).toHaveValue('000000');
  await dialog.getByLabel('6-digit meeting code').fill('123456');await dialog.getByRole('button',{name:'Check in',exact:true}).click();await expect(dialog.getByRole('status')).toHaveText('Check-in recorded');
  expect(calls).toEqual([{meeting_id:'m1',code:'000000'},{meeting_id:'m1',code:'123456'}]);await dialog.getByRole('button',{name:'Close',exact:true}).click();await expect(dialog).toHaveCount(0);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+
+for(const width of [390,1440]) {
+ test(`upcoming meeting editing and student how-to ${width}`,async({page})=>{
+  await page.setViewportSize({width,height:900});
+  const {data,calls}=await mock(page,'lead');
+  await page.clock.setFixedTime(new Date('2026-09-10T16:00:00Z'));
+  await page.goto('/#attendance/calendar');
+  await page.getByRole('button',{name:/Preseason build/}).click();
+  const dialog=page.getByRole('dialog',{name:'Meeting details'});
+  await dialog.getByRole('button',{name:'Edit meeting',exact:true}).click();
+  const form=dialog.getByRole('form',{name:'Edit meeting'});
+  await form.getByLabel('Meeting title').fill('Updated build meeting');
+  await form.getByLabel('Meeting type').selectOption('other');
+  await form.getByLabel('Meeting start',{exact:true}).fill('2026-09-11T23:00');
+  await form.getByLabel('Meeting end',{exact:true}).fill('2026-09-12T02:00');
+  await expect(form.getByText('This meeting only.',{exact:false})).toBeVisible();
+  await expect(form.getByRole('button',{name:'Save meeting',exact:true})).toBeDisabled();
+  await form.getByRole('checkbox').check();
+  await form.getByLabel('Meeting title').scrollIntoViewIfNeeded();
+  await page.screenshot({path:`test-results/attendance-edit-fields-${width}.png`});
+  await form.getByRole('button',{name:'Save meeting',exact:true}).scrollIntoViewIfNeeded();
+  await page.screenshot({path:`test-results/attendance-edit-review-${width}.png`});
+  await form.getByRole('button',{name:'Save meeting',exact:true}).click();
+  await expect(dialog.getByText('Meeting saved. Only this meeting was changed.')).toBeVisible();
+  await expect(dialog.getByRole('heading',{name:'Updated build meeting',exact:true})).toBeVisible();
+  expect(calls.filter(c=>c.p?.title==='Updated build meeting')).toHaveLength(1);
+  expect(calls.at(-1).p).toMatchObject({meeting_id:'m1',version:1,meeting_type:'other',acknowledge_schedule_change:true});
+  expect(data.meetings[0].check_in_open).toBe(false);
+  expect(data.attendance[0].physical_status).toBe('pending');
+  await dialog.getByRole('link',{name:'How to use Attendance →'}).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole('heading',{name:'How to use Attendance',exact:true})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'For meeting leadership: edit an upcoming meeting'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'When you arrive'})).toBeVisible();
+  expect(await page.evaluate(()=>document.body.scrollWidth<=innerWidth)).toBe(true);
+  await expect(page.getByRole('heading',{name:'How to use Attendance',exact:true})).toBeInViewport();
+  await page.screenshot({path:`test-results/attendance-how-to-${width}.png`});
+  await page.goBack();await expect(dialog).toHaveCount(0);await expect(page.getByRole('heading',{name:'Meeting calendar'})).toBeVisible();
+ });
+}
+test('meeting edit cancel, Escape and navigation discard the draft without sending',async({page})=>{
+ const {calls}=await mock(page,'lead');await page.clock.setFixedTime(new Date('2026-09-10T16:00:00Z'));await page.goto('/#attendance/calendar');
+ const open=async()=>{await page.getByRole('button',{name:/Preseason build/}).click();await page.getByRole('button',{name:'Edit meeting',exact:true}).click();};
+ await open();await page.getByLabel('Meeting title').fill('Discard me');await page.getByRole('button',{name:'Cancel',exact:true}).click();
+ await expect(page.getByRole('form',{name:'Edit meeting'})).toHaveCount(0);await page.getByRole('button',{name:'Edit meeting',exact:true}).click();await expect(page.getByLabel('Meeting title')).toHaveValue('Preseason build');
+ await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);
+ await open();await expect(page.getByLabel('Meeting title')).toHaveValue('Preseason build');expect(calls).toEqual([]);
+});
+test('meeting edit failure preserves draft and explicit refresh/reload resolves stale version',async({page})=>{
+ const {data,calls,handleRequest}=await mock(page,'lead');await page.clock.setFixedTime(new Date('2026-09-10T16:00:00Z'));await page.goto('/#attendance/calendar');
+ await page.getByRole('button',{name:/Preseason build/}).click();await page.getByRole('button',{name:'Edit meeting',exact:true}).click();await page.getByLabel('Meeting title').fill('My draft');
+ let first=true;
+ await page.route('**/rpc/team_attendance_edit_meeting',async route=>{
+  if(first){first=false;data.meetings[0].title='Another leader saved';data.meetings[0].version=2;await route.fulfill({status:409,json:{message:'Meeting changed. Refresh and reload the latest meeting before saving.'}});}
+  else await handleRequest(route);
+ });
+ await page.getByRole('button',{name:'Save meeting',exact:true}).click();
+ await expect(page.getByRole('dialog').getByRole('alert')).toContainText('Meeting changed');await expect(page.getByLabel('Meeting title')).toHaveValue('My draft');
+ await page.getByRole('button',{name:'Refresh meeting',exact:true}).click();await expect(page.getByRole('button',{name:'Reload latest meeting',exact:true})).toBeVisible();
+ await expect(page.getByLabel('Meeting title')).toHaveValue('My draft');await page.getByRole('button',{name:'Reload latest meeting',exact:true}).click();await expect(page.getByLabel('Meeting title')).toHaveValue('Another leader saved');
+ await page.getByLabel('Meeting title').fill('My new draft');await page.getByRole('button',{name:'Save meeting',exact:true}).click();await expect(page.getByRole('dialog').getByText('Meeting saved. Only this meeting was changed.')).toBeVisible();expect(calls.at(-1).p.version).toBe(2);
+});
+test('students and student Program Managers get instructions without meeting-edit authority',async({page})=>{
+ const {data}=await mock(page);data.policy={user_id:student,can_review:true,can_read_team:true,can_manage_meetings:false,strike_year_start:null,people:[],warnings:[]};
+ await page.clock.setFixedTime(new Date('2026-09-10T16:00:00Z'));await page.goto('/#attendance/calendar');await page.getByRole('button',{name:/Preseason build/}).click();
+ await expect(page.getByRole('button',{name:'Edit meeting',exact:true})).toHaveCount(0);await page.getByRole('dialog').getByRole('link',{name:'How to use Attendance →'}).click();
+ await expect(page.getByRole('heading',{name:'How to use Attendance',exact:true})).toBeVisible();await expect(page.getByRole('heading',{name:'For meeting leadership: edit an upcoming meeting'})).toHaveCount(0);
+});
+test('meeting edits stop when the meeting starts, including an editor already open',async({page})=>{
+ const {calls}=await mock(page,'lead');await page.clock.setFixedTime(new Date('2026-09-10T16:59:59Z'));await page.goto('/#attendance/calendar');await page.getByRole('button',{name:/Preseason build/}).click();await page.getByRole('button',{name:'Edit meeting',exact:true}).click();
+ await page.getByLabel('Meeting title').fill('Too late');await page.clock.setFixedTime(new Date('2026-09-10T17:00:00Z'));
+ await expect(page.getByLabel('Meeting title')).toBeDisabled();await expect(page.getByRole('button',{name:'Save meeting',exact:true})).toBeDisabled();
+ await page.getByRole('button',{name:'Cancel',exact:true}).click();await expect(page.getByRole('button',{name:'Edit meeting',exact:true})).toHaveCount(0);expect(calls).toEqual([]);
+});
+test('successful meeting edit with failed refresh keeps draft and identifies saved result',async({page})=>{
+ const {data,handleRequest}=await mock(page,'lead');await page.clock.setFixedTime(new Date('2026-09-10T16:00:00Z'));await page.goto('/#attendance/calendar');
+ await page.getByRole('button',{name:/Preseason build/}).click();await page.getByRole('button',{name:'Edit meeting',exact:true}).click();await page.getByLabel('Meeting title').fill('Saved despite refresh failure');
+ let fail=true;await page.route('**/rest/v1/team_meetings?*',async route=>{if(fail){fail=false;await route.fulfill({status:500,json:{message:'Synthetic read failure'}});}else await handleRequest(route);});
+ await page.getByRole('button',{name:'Save meeting',exact:true}).click();
+ await expect(page.getByRole('dialog').getByRole('alert')).toContainText('Meeting saved, but the refreshed view could not be loaded');
+ await expect(page.getByLabel('Meeting title')).toHaveValue('Saved despite refresh failure');expect(data.meetings[0].title).toBe('Saved despite refresh failure');
+ await page.getByRole('button',{name:'Refresh meeting',exact:true}).click();await page.getByRole('button',{name:'Reload latest meeting',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Save meeting',exact:true})).toBeDisabled();await page.getByRole('button',{name:'Cancel',exact:true}).click();await expect(page.getByRole('dialog').getByRole('heading',{name:'Saved despite refresh failure',exact:true})).toBeVisible();
 });
