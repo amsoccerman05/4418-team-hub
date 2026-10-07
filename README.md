@@ -110,3 +110,7 @@ Requires the additive design-decision migration before use; it has not been appl
 ## Upcoming meeting editing and Attendance help — review draft
 
 Attendance includes a student-facing **How to use Attendance** tab and contextual help. Existing meeting leadership can edit the title, type, or available start/end fields of one meeting before it starts. Schedule changes preserve rosters and requests, require review, and invalidate the temporary check-in code; recorded attendance and decisions lock the schedule. See [scope, safety, release status, and verification](docs/ATTENDANCE-MEETING-EDITING.md). The additive editing migration is prepared but has not been applied to production.
+
+## Mentor volunteer hours — local review draft
+
+Attendance has a separate mentor/admin **Volunteer hours** view for actual volunteer clock-in/out, past entries, own corrections with history, and CSV exports. Active admins can see team aggregates. Running or voided entries never count as completed hours, and student attendance and strikes remain independent. The additive migration and UI are not deployed by this draft. See [mentor instructions, backend contract, verification, and release checklist](docs/VOLUNTEER-HOURS.md).

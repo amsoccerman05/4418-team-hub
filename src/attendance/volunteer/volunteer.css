@@ -1,0 +1,197 @@
+.volunteer-hours {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+.volunteer-hours h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.volunteer-hours .att-view-heading p {
+  margin: 0.5rem 0 0;
+}
+.volunteer-fields,
+.volunteer-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+.volunteer-fields label,
+.volunteer-filters label,
+.volunteer-dialog label {
+  display: grid;
+  gap: 0.4rem;
+  font-weight: 600;
+  min-width: 0;
+}
+.volunteer-hours select,
+.volunteer-hours textarea,
+.volunteer-dialog input,
+.volunteer-dialog select,
+.volunteer-dialog textarea {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 0.65rem;
+  border: 1px solid var(--border, #cbd5cd);
+  border-radius: 8px;
+  background: #fff;
+  color: #142f24;
+  font: inherit;
+}
+.volunteer-wide {
+  grid-column: 1/-1;
+}
+.volunteer-clock form,
+.volunteer-dialog form {
+  display: grid;
+  gap: 1rem;
+}
+.volunteer-clock h3 {
+  margin-top: 0;
+}
+.volunteer-live {
+  font-size: 1.7rem;
+  font-weight: 700;
+  margin: 0.5rem 0;
+  color: #224d3e;
+}
+.volunteer-attention {
+  border-color: #bb842a !important;
+  background: #fffaf0 !important;
+}
+.volunteer-mode {
+  margin: 1rem 0;
+}
+.volunteer-entries {
+  display: grid;
+  gap: 1rem;
+}
+.volunteer-entries h3 {
+  margin: 0;
+}
+.volunteer-note {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.volunteer-check {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.volunteer-check input {
+  width: auto;
+}
+.volunteer-activity-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.volunteer-activity-totals li {
+  background: #edf3ef;
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+}
+.volunteer-help summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+.volunteer-help li {
+  margin: 0.6rem 0;
+}
+.volunteer-team-list {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0;
+}
+.volunteer-team-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.8rem 0;
+  border-bottom: 1px solid #d8e0da;
+  overflow-wrap: anywhere;
+}
+.volunteer-dialog {
+  width: min(760px, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  overflow: auto;
+  border: 1px solid #bdcdbf;
+  border-radius: 14px;
+  padding: 1.3rem;
+  color: #19392b;
+  box-sizing: border-box;
+}
+.volunteer-dialog::backdrop {
+  background: #0c2118a8;
+}
+.volunteer-dialog .volunteer-fields {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.volunteer-dialog button {
+  min-height: 42px;
+}
+.volunteer-dialog h2 {
+  margin: 0.2rem 0;
+}
+.volunteer-dialog .att-toolbar {
+  flex-wrap: wrap;
+}
+.volunteer-audit {
+  padding-left: 1.2rem;
+}
+.volunteer-audit li {
+  border-bottom: 1px solid #d8e0da;
+  margin-bottom: 1rem;
+  overflow-wrap: anywhere;
+}
+.volunteer-audit p {
+  font-size: 0.9rem;
+}
+.volunteer-hours button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  white-space: normal;
+}
+.volunteer-hours .att-toolbar {
+  flex-wrap: wrap;
+}
+.volunteer-hours .attendance-stats {
+  margin: 0;
+}
+.volunteer-hours p {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 700px) {
+  .volunteer-fields,
+  .volunteer-filters,
+  .volunteer-dialog .volunteer-fields {
+    grid-template-columns: 1fr;
+  }
+  .volunteer-dialog {
+    padding: 1rem;
+  }
+  .volunteer-team-list li {
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+  .volunteer-clock button {
+    width: 100%;
+    margin-top: 0.4rem;
+  }
+  .volunteer-mode {
+    gap: 0.4rem;
+  }
+  .volunteer-hours .att-panel {
+    padding: 1rem;
+  }
+  .volunteer-hours .attendance-stats {
+    grid-template-columns: 1fr;
+  }
+}

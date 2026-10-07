@@ -1,0 +1,40 @@
+name: Check volunteer hours
+on:
+  pull_request:
+    paths:
+      - "src/attendance/**"
+      - "supabase/migrations/**"
+      - "tests/volunteer-hours-*.spec.ts"
+      - "tests/native/volunteer-hours-concurrency.mjs"
+      - "volunteer.playwright.config.ts"
+      - ".github/workflows/volunteer-hours-check.yml"
+      - "package*.json"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Verify real concurrent transactions in a disposable database
+        run: |
+          PG_BIN="$(find /usr/lib/postgresql -path '*/bin/postgres' -type f -printf '%h\n' | sort -V | tail -1)"
+          test -n "$PG_BIN" || { echo 'No installed PostgreSQL server binary found'; exit 1; }
+          VOLUNTEER_PG_BIN="$PG_BIN" node tests/native/volunteer-hours-concurrency.mjs
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test --config volunteer.playwright.config.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: volunteer-hours-synthetic-review
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
