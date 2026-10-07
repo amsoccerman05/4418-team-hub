@@ -343,6 +343,62 @@ test.describe("Independent volunteer hours database", () => {
     expect((await entries())[0].version).toBe(1);
     expect(await history(e.id)).toHaveLength(1);
   });
+  test("approved mentor gets only revocable aggregate reporting without a global role change", async () => {
+    const e = await save("manual", draft());
+    await as(2);
+    await expect(total()).rejects.toThrow(/approved mentor/);
+    await db.exec(
+      `reset role;insert into volunteer_private.report_readers(user_id,granted_by,reason) values('${id(2)}','${id(3)}','Synthetic approved reporting');`,
+    );
+    await as(2);
+    expect(
+      (await db.query<any>("select team_volunteer_context() r")).rows[0].r
+        .can_view_team,
+    ).toBe(true);
+    expect((await total())[0].hours).toBe(2);
+    expect(await entries()).toEqual([]);
+    await expect(history(e.id)).rejects.toThrow(/unavailable/);
+    await expect(
+      save("correct", {
+        ...draft(),
+        id: e.id,
+        version: 1,
+        reason: "Forbidden other entry",
+      }),
+    ).rejects.toThrow(/unavailable/);
+    await expect(
+      db.exec("select * from volunteer_private.report_readers"),
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      db.exec(
+        `insert into volunteer_private.report_readers(user_id,granted_by,reason) values('${id(1)}','${id(2)}','Self grant')`,
+      ),
+    ).rejects.toThrow(/permission denied/);
+    await db.exec(
+      `reset role;update volunteer_private.report_readers set revoked_at=clock_timestamp() where user_id='${id(2)}'`,
+    );
+    await as(2);
+    expect(
+      (await db.query<any>("select team_volunteer_context() r")).rows[0].r
+        .can_view_team,
+    ).toBe(false);
+    await expect(total()).rejects.toThrow(/approved mentor/);
+    await db.exec(
+      `reset role;update volunteer_private.report_readers set revoked_at=null where user_id='${id(2)}';update profiles set active=false where id='${id(2)}'`,
+    );
+    await as(2);
+    await expect(total()).rejects.toThrow(/approved mentor/);
+    await db.exec(
+      `reset role;update profiles set active=true,role='student' where id='${id(2)}'`,
+    );
+    await as(2);
+    await expect(total()).rejects.toThrow(/approved mentor/);
+    await db.exec(
+      `reset role;update profiles set role='mentor' where id='${id(2)}'`,
+    );
+    await as(2);
+    expect((await total())[0].hours).toBe(2);
+  });
   test("eligibility is checked for existing data and the RPC wrappers are invoker-only", async () => {
     await save("manual", draft());
     await db.exec(

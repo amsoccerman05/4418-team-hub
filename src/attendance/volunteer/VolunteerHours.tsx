@@ -346,8 +346,8 @@ export function VolunteerHours({
         <p>
           Running timers and voided entries are excluded from totals. After 24
           hours a timer needs a corrected checkout. Each completed entry may be
-          at most 24 hours. You can edit only your own entries; admins can view
-          team totals.
+          at most 24 hours. You can edit only your own entries. Admins and
+          explicitly approved mentor report readers can view team totals.
         </p>
         <p>
           Times use the time zone shown with each entry. During a repeated
@@ -648,8 +648,8 @@ export function VolunteerHours({
             </button>
           </div>
           <p className="att-muted">
-            Admin-only summary. Completed hours only; private entry notes and
-            corrections are not included.
+            Authorized team summary. Completed hours only; private entry notes
+            and corrections are not included.
           </p>
           {team === null ? (
             <p>Team totals could not be loaded. Use Refresh hours.</p>

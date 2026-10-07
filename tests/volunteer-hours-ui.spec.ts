@@ -4,7 +4,12 @@ import { readFileSync } from "node:fs";
 const uid = "00000000-0000-0000-0000-000000000001",
   sid = "00000000-0000-0000-0000-000000000020",
   mid = "00000000-0000-0000-0000-000000000030";
-async function setup(page: Page, role = "mentor", seed = false) {
+async function setup(
+  page: Page,
+  role = "mentor",
+  seed = false,
+  reportReader = false,
+) {
   const db = new PGlite();
   await db.exec(
     `create role anon;create role authenticated;create schema auth;create function auth.uid() returns uuid language sql stable as $$select '${uid}'::uuid$$;grant usage on schema auth to authenticated;create table public.profiles(id uuid primary key,display_name text,role text,active boolean);insert into profiles values('${uid}','Synthetic Mentor','${role}',true);create table public.planning_seasons(id uuid primary key,name text,start_date date,end_date date,status text,created_at timestamptz default now());insert into public.planning_seasons values('${sid}','2026–27','2026-06-01','2027-05-31','active',now());create table public.team_meetings(id uuid primary key,title text);insert into public.team_meetings values('${mid}','Synthetic build meeting');`,
@@ -15,6 +20,10 @@ async function setup(page: Page, role = "mentor", seed = false) {
       "utf8",
     ),
   );
+  if (reportReader)
+    await db.exec(
+      `insert into volunteer_private.report_readers(user_id,granted_by,reason) values('${uid}','${uid}','Synthetic report-reader grant')`,
+    );
   await db.exec("set role authenticated");
   if (seed)
     await db.query(`select team_volunteer_save('manual',$1::jsonb)`, [
@@ -426,6 +435,31 @@ test("manual lost response keeps a usable dialog with safe retry and no duplicat
     expect(
       (await db.query("select * from team_volunteer_entries")).rows,
     ).toHaveLength(1);
+  } finally {
+    await db.close();
+  }
+});
+
+test("explicitly approved mentor sees aggregate totals without becoming admin", async ({
+  page,
+}) => {
+  const { db } = await setup(page, "mentor", true, true);
+  try {
+    await page.goto("/#attendance/volunteer-hours");
+    await page
+      .getByRole("button", { name: "Team totals", exact: true })
+      .click();
+    await expect(
+      page.getByRole("region", { name: "Team volunteer totals" }),
+    ).toContainText("1 h");
+    await db.exec("reset role");
+    expect((await db.query("select role from profiles")).rows[0].role).toBe(
+      "mentor",
+    );
+    await page.screenshot({
+      path: "test-results/volunteer-hours-approved-reader.png",
+      fullPage: true,
+    });
   } finally {
     await db.close();
   }

@@ -251,5 +251,31 @@ export async function runVolunteerHoursIntegration({ base, anonKey, sql, registe
   assert.equal(fingerprint(canonicalTables), canonical, 'Volunteer activity modified student attendance, strikes, roster, meetings, or other application records');
   assert.equal(sql("select pg_get_functiondef('auth.uid()'::regprocedure)"), authFunction);
   pass('audit insertion failure rolls back entry and receipt; same-request retry recovers, all student and unrelated app records stay byte-for-byte unchanged, and real Auth is preserved');
+  // Only an explicitly provisioned mentor receives aggregate reporting. The
+  // synthetic grant is made by this owned fixture, not by a client-facing RPC.
+  const beforeReaderRecords = state();
+  sql(`insert into volunteer_private.report_readers(user_id,granted_by,reason)
+    values(${lit(otherMentor.id)},${lit(admin.id)},'Synthetic approved team-report reader');`);
+  const readerContext = await json(await rpc('team_volunteer_context',{},otherMentor));
+  assert.equal(readerContext.can_view_team,true);
+  assert.deepEqual(await summary(null,otherMentor),await summary());
+  assert.deepEqual((await own(otherMentor)).map(e=>e.id),[second.id]);
+  await rejected(await rpc('team_volunteer_history',{entry:first.id},otherMentor),/unavailable/);
+  await rejected(await save('void',{request_id:randomUUID(),id:late.id,version:late.version,reason:'Forbidden report-reader edit'},otherMentor),/unavailable/);
+  const permissionResponse=await localFetch(base,'/rest/v1/report_readers?select=*',{headers:{...headers(otherMentor),'Accept-Profile':'volunteer_private'}});
+  await rejected(permissionResponse,/invalid schema: volunteer_private|schema must be one of/i,'PGRST106',406);
+  assert.equal(sql(`select role from public.profiles where id=${lit(otherMentor.id)}`),'mentor');
+  sql(`update volunteer_private.report_readers set revoked_at=clock_timestamp() where user_id=${lit(otherMentor.id)};`);
+  assert.equal((await json(await rpc('team_volunteer_context',{},otherMentor))).can_view_team,false);
+  await rejected(await rpc('team_volunteer_summary',{},otherMentor),/approved mentor report access/);
+  sql(`update volunteer_private.report_readers set revoked_at=null where user_id=${lit(otherMentor.id)};update public.profiles set active=false where id=${lit(otherMentor.id)};`);
+  await rejected(await rpc('team_volunteer_summary',{},otherMentor),/approved mentor report access/);
+  sql(`update public.profiles set active=true,role='student' where id=${lit(otherMentor.id)};`);
+  await rejected(await rpc('team_volunteer_summary',{},otherMentor),/approved mentor report access/);
+  sql(`update public.profiles set role='mentor' where id=${lit(otherMentor.id)};`);
+  assert.deepEqual(await summary(null,otherMentor),await summary());
+  assert.equal(state(),beforeReaderRecords);
+  assert.equal(fingerprint(canonicalTables),canonical);
+  pass('explicit mentor report permission grants aggregates only, leaves the global role and own-only data unchanged, is private from clients, and is revoked by permission revocation, deactivation, or role downgrade');
   return checks;
 }

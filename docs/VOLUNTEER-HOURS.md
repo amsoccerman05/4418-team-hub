@@ -18,21 +18,22 @@ Running timers do not count toward completed totals. A timer open for more than 
 
 This is a separate volunteer record. It never changes student attendance, late/early classification, excuse decisions, or strikes.
 
-### Admin totals
+### Authorized team totals
 
-Active admins can open **Team totals** and export an aggregate CSV by mentor, week, activity, and season. Running entries and missing-checkout counts are included as flags, with zero credited hours. Admins do not receive other mentors' private notes or correction histories, and cannot correct or void another person's entry. Mentors do not see each other's hours. Confirm the intended team lead already has the appropriate active admin role before rollout; this change does not grant or change any profile role.
+Active admins and individually approved mentor report readers can open **Team totals** and export an aggregate CSV by mentor, week, activity, and season. Running entries and missing-checkout counts are included as flags, with zero credited hours. Admins do not receive other mentors' private notes or correction histories, and cannot correct or void another person's entry. Other mentors do not see each other's hours. The explicit report-reader permission exposes only the same aggregate summary as admins. It does not change a global profile role. Permission revocation, account deactivation, or a role change away from mentor immediately removes this exception.
 
 ## Data and permission contract
 
 - Additive migration: `supabase/migrations/20261007155231_mentor_volunteer_hours.sql`, generated with Supabase CLI 2.120.0 `migration new`.
 - Existing prerequisites: `public.profiles`, `public.planning_seasons`, and `public.team_meetings`.
 - Public table `team_volunteer_entries` has RLS-filtered, self-only SELECT for active mentors/admins. No client role receives direct INSERT, UPDATE, DELETE, or TRUNCATE.
+- `volunteer_private.report_readers` is a private, RLS-enabled allowlist for explicitly approved mentor aggregate-report readers. Client roles cannot read or mutate it, and no public permission-management endpoint exists. The public migration contains no real account identifiers. Any production grant is an isolated, separately approved operation.
 - `volunteer_private.history` stores every mutation's before/after snapshot, authenticated actor, timestamp, and correction/void reason. `volunteer_private.receipts` stores request IDs and their payload/response for repeat-safe requests. Both are private, RLS-enabled, and deny client table access.
 - Public RPC wrappers are SECURITY INVOKER with a fixed empty search path. Their narrowly scoped SECURITY DEFINER implementations are in the non-exposed `volunteer_private` schema, with explicit grants/revokes and current-profile authorization checks.
-- `team_volunteer_context()` returns the current user, server time, admin aggregate permission, and the existing Planning seasons. Archived seasons remain available for recording actual historical work. Season links are labels, not meeting or date-window restrictions.
+- `team_volunteer_context()` returns the current user, server time, aggregate-report permission, and the existing Planning seasons. Archived seasons remain available for recording actual historical work. Season links are labels, not meeting or date-window restrictions.
 - `team_volunteer_save(action, p)` accepts `start`, `stop`, `manual`, `correct`, or `void`. Every request requires a UUID request ID. Correction/stop/void requests also require the entry ID and expected version. Entry ownership is always derived from auth, never supplied by the client.
 - `team_volunteer_history(entry, before_id)` returns at most 100 own-entry revisions per page. The UI supports loading older pages. Admins cannot read another person's revisions.
-- `team_volunteer_summary(selected_season)` returns admin-only aggregates and excludes voided records. It includes historical totals even if the original mentor is now inactive. It does not expose per-entry notes, times, or IDs.
+- `team_volunteer_summary(selected_season)` returns aggregates only to active admins or explicitly approved active mentor report readers and excludes voided records. It includes historical totals even if the original mentor is now inactive. It does not expose per-entry notes, times, or IDs.
 - All writes use a per-user transaction advisory lock, followed by a current-role check with a profile-row share lock. An additional unique partial index guarantees at most one unvoided open timer per user. Overlap checks use half-open timestamp ranges across every season; adjacent entries are permitted.
 - A successful repeat with the same request ID returns the original result without another write/audit. Reusing a request ID with a different payload is rejected. The browser retains the exact attempt after a transport failure and exposes **Retry same request**, including inside entry dialogs.
 - Actual instants are stored as `timestamptz` with a validated IANA time zone and a derived activity date. The browser rejects daylight-saving gaps and asks which UTC offset to use for a repeated hour. Unchanged timestamps preserve exact seconds when correcting notes or activity only.
@@ -74,3 +75,7 @@ Local Chromium sockets remain restricted and no local native PostgreSQL binary i
 4. Apply only the reviewed new migration after explicit approval, run database security/performance advisors, and deploy the matching UI through the existing authorized flow.
 5. With explicitly authorized test accounts, verify mentor self-isolation, student/lead denial, admin aggregate access, and a start/stop/correction flow. Do not create real volunteer work or backfill meeting history as a smoke test.
 6. If release is held, leave the live app unchanged. Removing the UI later must not discard entered hours or audit history; preserve data and use a separately reviewed rollback plan.
+
+### Scoped reporting release update
+
+The draft adds an individually approved mentor aggregate-reader exception without changing global roles, own-entry RLS, private history, or mutation ownership. Synthetic PGlite, browser, and real Auth/PostgREST tests cover the exception, private-table denial, revocation, deactivation, and role downgrade. Refer to the current PR head checks for this update's final results.

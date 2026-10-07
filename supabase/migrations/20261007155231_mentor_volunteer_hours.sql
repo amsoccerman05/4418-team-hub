@@ -32,12 +32,31 @@ create table volunteer_private.receipts (
  payload jsonb not null, result jsonb not null, created_at timestamptz not null default clock_timestamp(),
  primary key(user_id,request_id)
 );
+-- Explicit, narrowly scoped aggregate-report permission. No account identifiers
+-- are seeded in this migration; an approved production grant is separate.
+create table volunteer_private.report_readers (
+ user_id uuid primary key references public.profiles(id),
+ granted_by uuid not null references public.profiles(id),
+ granted_at timestamptz not null default clock_timestamp(),
+ revoked_at timestamptz,
+ reason text not null check(length(trim(reason)) between 1 and 1000)
+);
+create index volunteer_report_grant_actor on volunteer_private.report_readers(granted_by);
+alter table volunteer_private.report_readers enable row level security;
+revoke all on volunteer_private.report_readers from public,anon,authenticated;
 alter table public.team_volunteer_entries enable row level security;
 alter table volunteer_private.history enable row level security;
 alter table volunteer_private.receipts enable row level security;
 revoke all on public.team_volunteer_entries, volunteer_private.history, volunteer_private.receipts from public,anon,authenticated;
 create function volunteer_private.eligible() returns boolean language sql stable security definer set search_path='' as $$
  select auth.uid() is not null and exists(select 1 from public.profiles where id=auth.uid() and active and role in ('mentor','admin'))
+$$;
+create function volunteer_private.can_report() returns boolean language sql stable security definer set search_path='' as $$
+ select auth.uid() is not null and exists(
+  select 1 from public.profiles p where p.id=auth.uid() and p.active
+   and (p.role='admin' or (p.role='mentor' and exists(
+    select 1 from volunteer_private.report_readers r where r.user_id=p.id and r.revoked_at is null)))
+ )
 $$;
 create policy volunteer_self_read on public.team_volunteer_entries for select to authenticated
  using(user_id=(select auth.uid()) and (select volunteer_private.eligible()));
@@ -48,7 +67,7 @@ declare r text;
 begin
  select role into r from public.profiles where id=auth.uid() and active and role in ('mentor','admin');
  if auth.uid() is null or r is null then raise exception 'Active mentor or admin access required'; end if;
- return jsonb_build_object('user_id',auth.uid(),'can_view_team',r='admin','server_now',statement_timestamp(),
+ return jsonb_build_object('user_id',auth.uid(),'can_view_team',volunteer_private.can_report(),'server_now',statement_timestamp(),
   'seasons',(select coalesce(jsonb_agg(jsonb_build_object('id',id,'name',name,'start_date',start_date,'end_date',end_date,'status',status) order by start_date desc nulls last,created_at desc),'[]'::jsonb) from public.planning_seasons));
 end $$;
 create function volunteer_private.save(action text,p jsonb) returns jsonb language plpgsql security definer set search_path='' as $$
@@ -134,7 +153,7 @@ begin
 end $$;
 create function volunteer_private.summary(selected_season uuid default null) returns jsonb language plpgsql stable security definer set search_path='' as $$
 begin
- if auth.uid() is null or not exists(select 1 from public.profiles where id=auth.uid() and active and role='admin') then raise exception 'Active admin access required for team totals'; end if;
+ if not volunteer_private.can_report() then raise exception 'Active admin or approved mentor report access required for team totals'; end if;
  return (select coalesce(jsonb_agg(to_jsonb(t) order by display_name,user_id,week_start,activity),'[]'::jsonb) from (
   select e.user_id,p.display_name,e.season_id,e.activity,
    (e.activity_date-((extract(isodow from e.activity_date)::integer)-1)) as week_start,
