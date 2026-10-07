@@ -1,3 +1,4 @@
+import {tradeStudyResults,mustHaveLabels,formatTradeNumber} from '../trade-study';
 import {FONT_METRICS} from './font-metrics.generated';
 import {safeReferenceUrl,type ReviewExportSnapshot,type ExportReference,type ExportTask} from './snapshot';
 export type DeckLine={text:string;url?:string;label?:boolean};
@@ -95,12 +96,37 @@ export function buildReviewDeckPlan(snapshot:ReviewExportSnapshot,options:Review
   for(let i=0;i<rows.length;i+=4){const slots:Record<string,string>={TITLE:`Agenda (${total} min)`,ROW_COUNT:String(Math.min(4,rows.length-i))};for(let r=0;r<4;r++)for(let c=0;c<3;c++)for(let k=0;k<2;k++)slots[`R${r}C${c}${k?'B':'A'}`]=rows[i+r]?.[c]?.[k]??'';
    push({layout:3,title:'Agenda',slots,links:{},notes:provenance+'\n'+snapshot.agenda.map(a=>`${a.title}; presenter: ${a.presenter??'Not assigned'}; duration: ${a.minutes} minutes`).join('\n')});}
  }
+ const openDesigns=snapshot.projects.filter(project=>project.update?.decisionStudy&&project.update.decisionStudy.status!=='recorded');
+ if(openDesigns.length)content('Design decision discussion',[...openDesigns.flatMap(project=>[...field('Project',project.name),...field('Question',project.update!.decisionsNeeded),...field('Student owner',project.update!.decisionStudy!.owner??'','Not assigned'),...field('Target decision date',project.update!.decisionStudy!.targetDate??''),...field('Status',project.update!.decisionStudy!.status)])]);
  divider(['Project','Updates'],'');
  if(!snapshot.projects.length)content('Project updates',field('Projects','','No project records available'));
  for(const project of snapshot.projects){
   const u=project.update,projectLine=()=>field('Project',project.name);
   content('Progress and blockers',[...projectLine(),...field('Student lead',project.lead??'','Not assigned'),...field('Supporters',project.supporters.join(', '),'Not assigned'),...field('Progress',u?.progress??'','No update recorded'),...field('Blockers',u?.blockers??'','No blockers recorded')]);
   content('Evidence and tradeoffs',[...projectLine(),...referenceLines('Evidence and demonstration',u?.evidence??[]),...field('Images','','No image attached to this review. Evidence links open the original source.'),...field('Tradeoffs',u?.tradeoffs??'')]);
+  if(u?.decisionStudy){
+   const d=u.decisionStudy;
+   content('Design decision comparison',[...projectLine(),...field('Status',d.status),...field('Student owner',d.owner??'','Not assigned'),...field('Target decision date',d.targetDate??''),...field('Decision date',d.decidedOn??''),...field('Chosen option',d.options.find(o=>o.id===d.chosenOptionId)?.label??'','No option chosen'),...field('Reopen criteria',d.reopenCriteria),...referenceLines('Requirement sources',d.requirements)]);
+   for(const [optionIndex,option] of d.options.entries()){
+    content(`Option ${optionIndex+1} comparison`,[...projectLine(),...field('Option',option.label),...field('Description',option.description),...(['weight','space','cost','reliability','time'] as const).flatMap(k=>field(k[0].toUpperCase()+k.slice(1),option[k])),...referenceLines('Option evidence',option.evidence)]);
+    if(option.swot)content(`Option ${optionIndex+1} SWOT`,[...projectLine(),...field('Option',option.label),...(['strengths','weaknesses','opportunities','threats'] as const).flatMap(k=>field(k[0].toUpperCase()+k.slice(1),option.swot![k]))]);
+   }
+   if(d.tradeStudy){
+    const study=d.tradeStudy,results=tradeStudyResults(study,d.options.map(o=>o.id));
+    content('Engineering trade study',[...projectLine(),...field('How to read this study','Raw measurements keep their stated units. Each criterion uses the recorded low/high scale and direction, then weights are normalized by their sum. Unknown measurements stay unknown. Must-have constraints are checked separately. This comparison does not choose for the students.')]);
+    for(const [optionIndex,result] of results.options.entries()){
+     const option=d.options.find(o=>o.id===result.option_id)!;
+     content(`Trade result · Option ${optionIndex+1}`,[...projectLine(),...field(`Option ${optionIndex+1}`,option.label),...field('Must-have check',`${mustHaveLabels[result.must_have]}; ${result.failed_must_have_count} failed, ${result.unknown_must_have_count} unverified`),...field('Measurement coverage',`${result.known_count}/${result.criterion_count} values known; ${result.weighted_known_count}/${result.weighted_criterion_count} weighted criteria known`),...field('Weighted desirability',result.total===null?'Not calculated: positive weights and all weighted measurements are needed':`${result.total.toFixed(1)} / 100; this is not an approval or recommendation`),...(result.out_of_scale_count?field('Outside scoring range',`${result.out_of_scale_count} measured values fall beyond the declared scoring range; scores are clamped, raw values retained`):[])]);
+    }
+    for(const [criterionIndex,criterion] of study.criteria.entries()){
+     content(`Trade criterion ${criterionIndex+1}`,[...projectLine(),...field(`Criterion ${criterionIndex+1}`,criterion.label),...field('Units',criterion.unit),...field('Weight',`${criterion.weight} (${results.weight_sum>0?formatTradeNumber(criterion.weight/results.weight_sum*100)+'% normalized':'no normalized weight'})`),...field('Scoring scale',`${criterion.scale_min} to ${criterion.scale_max} ${criterion.unit}; ${criterion.direction} is better; values beyond scale are clamped for scoring`),...field('Must-have constraint',criterion.must_have?[criterion.minimum===null?'':`at least ${criterion.minimum}`,criterion.maximum===null?'':`at most ${criterion.maximum}`].filter(Boolean).join(' and ')+` ${criterion.unit}`:'No hard constraint')]);
+     for(const [optionIndex,option] of d.options.entries()){
+      const assessment=study.assessments.find(a=>a.criterion_id===criterion.id&&a.option_id===option.id),measurement=results.options[optionIndex].criteria[criterionIndex];
+      content(`Criterion ${criterionIndex+1} / Option ${optionIndex+1}`,[...projectLine(),...field(`Criterion ${criterionIndex+1}`,criterion.label),...field(`Option ${optionIndex+1}`,option.label),...field('Raw measurement',measurement.raw_value===null?'Unknown':`${measurement.raw_value} ${criterion.unit}`),...field('Criterion desirability',measurement.score===null?'Unknown':`${measurement.score.toFixed(1)} / 100`),...field('Criterion must-have result',mustHaveLabels[measurement.must_have]),...(measurement.out_of_scale?field('Scoring range warning','Outside comparison range; desirability is capped, raw value retained'):[]),...field('Evidence / reasoning',assessment?.reason||''),...referenceLines('Measurement references',(assessment?.evidence||[]).map(r=>({label:r.label,referenceId:r.reference_id,url:safeReferenceUrl(r.url),missingReason:safeReferenceUrl(r.url)?null:'Link unavailable'})))]);
+     }
+    }
+   }
+  }
   content('Reported decisions',[...projectLine(),...field('Decision needed',u?.decisionsNeeded??''),...field('Reported decision',u?.reportedDecision??'','No decision reported'),...field('Rationale',u?.decisionRationale??''),...field('Reported student participants',u?.reportedBy.join(', ')??'','No student participants recorded'),...referenceLines('External decision register',u?.decisionReferences??[])]);
   content('Next steps',[...projectLine(),...field('Next test',u?.nextTest??''),...taskLines(u?.nextTask??null),...field('Carry-forward status',u?u.unresolved?'Unresolved':'Not marked unresolved':'No update recorded'),...(u?.carriedFrom?field('Carried from',`${u.carriedFrom.reviewTitle} (${u.carriedFrom.reviewDate})`):[])]);
  }

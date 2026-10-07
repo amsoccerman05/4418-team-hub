@@ -1,0 +1,51 @@
+/* Keep weekly-update actions outside the scrolling fields, even on short screens. */
+.sr-dialog.sr-update-dialog[open]{display:flex;flex-direction:column;overflow:hidden;padding:0;width:min(780px,calc(100vw - 32px));height:min(880px,calc(100dvh - 40px))}
+.sr-update-dialog>header{flex:none;padding:20px 24px 0}
+.sr-update-dialog>.sr-dialog-intro{flex:none;margin:10px 24px 14px}
+.sr-update-dialog>form{display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden}
+.sr-update-dialog>form>.sr-error{flex:none;margin:0 24px 12px;max-height:25dvh;overflow:auto}
+.sr-update-dialog>form>.sr-update-scroll{flex:1;min-height:0;overflow:auto;padding:4px 24px 24px;scroll-padding-block:16px;overscroll-behavior:contain}
+/* A fieldset has special intrinsic sizing; the ordinary div owns scrolling. */
+.sr-update-scroll>.sr-fields{min-height:0;overflow:visible}
+.sr-update-dialog .sr-dialog-footer{flex:none;margin:0;padding:14px 24px;background:var(--suite-surface,#fff)}
+.sr-update-dialog .sr-dialog-footer>button{min-height:44px;min-width:84px}
+.sr-editor-tabs.has-comparison{grid-template-columns:repeat(4,minmax(0,1fr))}
+.sr-comparison-invite{padding:15px;background:var(--suite-secondary,#f2f5ef);border:1px solid var(--suite-border,#dde3dd);border-radius:8px}
+.sr-comparison-invite h3{font-size:14px;margin:0 0 7px}
+.sr-comparison-invite p{font-size:12px;line-height:1.65;margin:0 0 12px;color:var(--suite-muted,#67736b)}
+.sr-decision-editor,.sr-decision-record{display:grid;gap:16px;min-width:0}
+.sr-decision-editor>.sr-caption,.sr-decision-record>.sr-caption{margin:0}
+.sr-decision-option-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.sr-decision-option-heading h3{font-size:15px;margin:0}
+.sr-decision-option-heading span{font-size:12px;color:var(--suite-muted,#67736b)}
+.sr-decision-options{display:grid;gap:18px;min-width:0}
+.sr-decision-option{display:grid;gap:14px;margin:0;border:1px solid var(--suite-border,#dde3dd);border-radius:9px;padding:15px;min-width:0;background:var(--suite-secondary,#f7f9f5)}
+.sr-decision-option>legend{font-size:12px;font-weight:650;padding:0 6px}
+.sr-decision-option-toolbar{display:grid;grid-template-columns:minmax(0,1fr) 36px;align-items:end;gap:10px}
+.sr-decision-dimensions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.sr-decision-dimensions>label:last-child{grid-column:1/-1}
+.sr-decision-option .sr-reference-editor{background:var(--suite-surface,#fff)}
+.sr-decision-notes>summary{font-size:12px;line-height:1.6;font-weight:550;cursor:pointer;padding:4px 0;overflow-wrap:anywhere}
+.sr-decision-notes-body{display:grid;gap:14px;padding-top:12px;min-width:0}
+.sr-decision-notes-body>.sr-caption{margin:0}
+.sr-decision-swot{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.sr-decision-editor>.sr-add-option{justify-self:start}
+.sr-decision-summary{border-top:1px solid var(--suite-border,#dde3dd);border-bottom:1px solid var(--suite-border,#dde3dd);margin:16px 0;padding:16px 0}
+.sr-decision-summary>header,.sr-decision-option-summary>header{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.sr-decision-summary h4{font-size:13px;margin:0}
+.sr-decision-summary h5{font-size:12px;line-height:1.5;margin:14px 0 6px;overflow-wrap:anywhere}
+.sr-decision-summary .sr-decision-state{margin:0}
+.sr-decision-state.is-recorded{background:var(--suite-success-bg,#eaf2e9);color:var(--suite-primary,#315947)}
+.sr-decision-state.is-reopened{background:var(--suite-warning-bg,#fff4dc);color:var(--suite-warning-text,#815b1c)}
+.sr-decision-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 18px;margin:16px 0}
+.sr-decision-summary dt{font-size:10px;color:var(--suite-muted,#67736b);line-height:1.5}
+.sr-decision-summary dd{margin:3px 0 0;font-size:12px;line-height:1.6;overflow-wrap:anywhere;white-space:pre-wrap}
+.sr-decision-comparison-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:16px 0}
+.sr-decision-option-summary{padding:12px;border:1px solid var(--suite-border,#dde3dd);border-radius:8px;min-width:0}
+.sr-decision-option-summary.is-chosen{border-color:var(--suite-primary,#315947);background:var(--suite-secondary,#f5f8f1)}
+.sr-decision-option-summary h5{margin:0}
+.sr-decision-option-summary p{font-size:12px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
+.sr-decision-option-summary dl{display:grid;gap:9px;margin:12px 0}
+.sr-decision-chosen{display:inline-flex;align-items:center;gap:4px;font-size:10px;color:var(--suite-primary,#315947)}
+.sr-decision-summary>.sr-update-field{margin-top:18px}
+@media(max-width:500px){.sr-dialog.sr-update-dialog[open]{width:calc(100vw - 16px);height:min(880px,calc(100dvh - 16px));max-height:calc(100dvh - 16px)}.sr-update-dialog>header{padding:16px 16px 0}.sr-update-dialog>.sr-dialog-intro{margin:8px 16px 12px}.sr-update-dialog>form>.sr-error{margin:0 16px 10px}.sr-update-dialog>form>.sr-update-scroll{padding:4px 16px 18px}.sr-update-dialog .sr-dialog-footer{padding:12px 16px}.sr-decision-option{padding:12px}.sr-decision-dimensions,.sr-decision-comparison-grid,.sr-decision-swot{grid-template-columns:1fr}.sr-decision-dimensions>label:last-child{grid-column:auto}.sr-editor-tabs.has-comparison{grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}.sr-editor-tabs.has-comparison button{font-size:11px;min-height:38px}}

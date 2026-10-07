@@ -1,3 +1,4 @@
+import type {DecisionWorkflow} from './decision-types';
 /** Sprint Review is a meeting record. Planning remains authoritative for work/owners/dates. */
 export type ReviewPerson = {id:string;name:string;active:boolean;is_student:boolean;can_write:boolean};
 export type ReviewSeason = {id:string;name:string;status:'draft'|'active'|'archived'};
@@ -17,7 +18,7 @@ export type ReviewTask = {
   owner_ids:string[];owners:ReviewPerson[];due_date:string|null;due_date_unavailable:boolean;
 };
 export type ProjectReviewUpdate = {
-  id:string;review_id:string;board_id:string;progress:string;blockers:string;
+  id:string;review_id:string;board_id:string;decision_workflow?:DecisionWorkflow|null;decision_owner?:ReviewPerson|null;progress:string;blockers:string;
   evidence:ReviewReference[];tradeoffs:string;decisions_needed:string;
   decision_references:ReviewReference[];reported_decision:string;decision_rationale:string;
   reported_by_student_ids:string[];reported_students:ReviewPerson[];
@@ -35,7 +36,7 @@ export type SprintReviewContext = {
 export type ReviewSave = Pick<SprintReview,'id'|'season_id'|'title'|'review_date'|'chair_id'|'agenda'> & {version:number|null};
 export type AssignmentSave = Pick<ProjectReviewAssignment,'board_id'|'lead_id'|'supporter_ids'> & {version:number|null};
 export type UpdateSave = Pick<ProjectReviewUpdate,
-  'id'|'review_id'|'board_id'|'progress'|'blockers'|'evidence'|'tradeoffs'|'decisions_needed'|
+  'id'|'review_id'|'board_id'|'decision_workflow'|'progress'|'blockers'|'evidence'|'tradeoffs'|'decisions_needed'|
   'decision_references'|'reported_decision'|'decision_rationale'|'reported_by_student_ids'|
   'next_test'|'linked_task_id'|'carry_from_update_id'|'unresolved'> & {version:number|null};
 export type ReviewSaveAction = 'review'|'assignment'|'update';

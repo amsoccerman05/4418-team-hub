@@ -100,3 +100,9 @@ Focused checks: `npx playwright test tests/fabrication-db.spec.ts tests/fabricat
 ## Assembly & Testing
 
 Planning project boards now include an Assembly & testing view with manufactured-part facts, manual purchased-component status, links to existing Planning tasks, revision-specific checks/rework evidence, and explicit immutable snapshots for Sprint Review drafts. The additive Assembly migration depends on Fabrication. See [scope, access, and release requirements](docs/ASSEMBLY-TESTING.md).
+
+## Design decisions and engineering trade studies — review draft
+
+Project boards include a Design decisions entry into the existing Sprint Review update. Compare engineering alternatives with team-defined units, weights, explicit scoring scales, separate must-have constraints and evidence; optional SWOT adds context. Students record their choice, rationale and reopening criteria, linked to canonical Planning work and existing architecture source IDs. Unknown measurements remain unknown and no winner is selected automatically.
+
+Requires the additive design-decision migration before use; it has not been applied to production. See [scope](docs/DESIGN-DECISIONS.md), [backend contract](docs/DESIGN-DECISION-BACKEND.md), and [verification](docs/DESIGN-DECISIONS-VERIFICATION.md).
