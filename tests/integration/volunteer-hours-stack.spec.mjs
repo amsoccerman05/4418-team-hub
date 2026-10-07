@@ -150,7 +150,7 @@ export async function runVolunteerHoursIntegration({ base, anonKey, sql, registe
     await rejected(await localFetch(base, `/rest/v1/team_volunteer_entries?id=eq.${first.id}`, { method: 'DELETE', headers: headers(actor) }), /permission denied/, '42501', 403);
     for (const table of ['history', 'receipts']) {
       const response = await localFetch(base, `/rest/v1/${table}?select=*`, { headers: { ...headers(actor), 'Accept-Profile': 'volunteer_private' } });
-      await rejected(response, /schema must be one of/i, 'PGRST106', 406);
+      await rejected(response, /invalid schema: volunteer_private|schema must be one of/i, 'PGRST106', 406);
     }
   }
   for (const actor of [otherMentor, admin]) {

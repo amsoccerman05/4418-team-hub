@@ -333,6 +333,10 @@ test("admin totals and CSV contain aggregates, with no team edit controls", asyn
     expect((await download).suggestedFilename()).toBe(
       "team-volunteer-totals.csv",
     );
+    await page.screenshot({
+      path: "test-results/volunteer-hours-admin-totals.png",
+      fullPage: true,
+    });
   } finally {
     await db.close();
   }

@@ -1,8 +1,8 @@
 # Mentor volunteer hours
 
-## Local review draft
+## Public draft for review
 
-This change adds **Attendance → Volunteer hours** for active mentors and admins. It has not been published, deployed, or applied to the shared Supabase database. It contains no historical backfill or inferred hours.
+This change adds **Attendance → Volunteer hours** for active mentors and admins. The proposed code is published in draft PR #14. It has not been merged, deployed, or applied to the shared Supabase database. It contains no historical backfill or inferred hours.
 
 ### Mentor instructions
 
@@ -58,13 +58,17 @@ For a preinstalled compatible Chromium, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to 
 - The native PostgreSQL harness creates and removes its own fresh cluster and private socket. It covers simultaneous starts, repeat-safe stop/manual requests, overlapping manual-entry races, stale concurrent corrections, and role revocation while a request waits on its lock. It never accepts a production database URL.
 - The dedicated `Check volunteer hours` workflow is check-only and does not deploy. Publishing/running this workflow requires the separately authorized repository step.
 
-### Current local verification limits
+### Verification status and limits
 
-The final build passed, and the final database/model regression run passed all 396 checks, including 12 volunteer-hours checks. Browser tests could not start: the executor denied Chromium's local socket with `Operation not permitted`, including one elevated retry. No browser test has been counted as passed. No native PostgreSQL binary was present, so the real multi-connection harness is prepared but not run. Full UI appearance/accessibility and real concurrency must pass in a suitable disposable runner before release. Live Supabase advisors and production smoke checks were not run because this draft has not been applied to production.
+The local build and all 396 database/model regression checks passed, including 12 volunteer-hours checks. Approved GitHub CI at `de7e325` passed all 18 focused tests, including six desktop/mobile and recovery browser cases, and all six native PostgreSQL concurrency checks. An independent source review found no blocking security, privacy, timing, or recovery defects. Generated desktop/mobile screenshots were inspected.
+
+The full-suite and real Auth/PostgREST checks are authoritative at the current PR head. The initial real API run verified nine real Auth roles, self-only records and admin aggregate privacy; a denial-message assertion was updated to accept the current PostgREST wording while still requiring the same denial status and code. Follow the [draft PR checks](https://github.com/amsoccerman05/4418-team-hub/pull/14/checks) for the final results.
+
+Local Chromium sockets remain restricted and no local native PostgreSQL binary is installed; browser/native results above came from the approved disposable GitHub runner. The real API extension runs only with `VOLUNTEER_HOURS_INTEGRATION=1 node tests/integration/fabrication-local.mjs --run`, after the existing synthetic Attendance fixture, in that harness's owned loopback-only stack. No hosted project is accepted. Live Supabase advisors and production smoke checks have not run because the feature has not been applied to production.
 
 ## Release checklist
 
-1. Obtain approval for the public repository change and separate production migration/deployment.
+1. Public draft publication is approved. Obtain separate approval for production migration and merge/deployment.
 2. Run the focused browser suite and native concurrency harness in an allowed test environment, inspect desktop/mobile screenshots, and run existing regression checks.
 3. Review the additive migration against the actual shared project, including existing profile/season/meeting contracts and the intended admin account. Do not change roles implicitly.
 4. Apply only the reviewed new migration after explicit approval, run database security/performance advisors, and deploy the matching UI through the existing authorized flow.

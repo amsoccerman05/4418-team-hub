@@ -75,12 +75,12 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.volunteer-check {
+.volunteer-hours .volunteer-check {
   display: flex;
   gap: 0.5rem;
   align-items: center;
 }
-.volunteer-check input {
+.volunteer-hours .volunteer-check input {
   width: auto;
 }
 .volunteer-activity-totals {
@@ -194,4 +194,8 @@
   .volunteer-hours .attendance-stats {
     grid-template-columns: 1fr;
   }
+}
+
+.volunteer-dialog fieldset > .att-toolbar {
+  margin-top: 1rem;
 }
