@@ -30,6 +30,7 @@ import "./attendance.css";
 import { occurrences, type Repeat } from "./recurrence";
 import { MeetingCalendar } from "./Calendar";
 import { AttendanceHowTo } from "./HowTo";
+import { VolunteerHours } from "./volunteer/VolunteerHours";
 import { MeetingEditor } from "./MeetingEditor";
 const time = (s: string | null) =>
   s
@@ -1113,6 +1114,7 @@ function Workspace({
   const tabs = manager
     ? ["dashboard", "calendar", "roster", "notices", "strikes", "history", "how-to"]
     : ["calendar", "notices", "strikes", "history", "how-to"];
+  if (profile.active && ['mentor','admin'].includes(profile.role)) tabs.splice(tabs.length-1,0,'volunteer-hours');
   const current = tabs.includes(tab) ? tab : manager ? "dashboard" : "calendar";
   const [selected, setSelected] = useState<string | null>(null),
     [creating, setCreating] = useState<Date | null>(null),
@@ -1154,7 +1156,7 @@ function Workspace({
             href={`#attendance/${name}`}
             aria-current={current === name ? "page" : undefined}
           >
-            {name === "how-to" ? "How to use Attendance" : name === "notices" ? (manager ? "Absence & Schedule Requests" : "My Requests") : label(name)}
+            {name === "volunteer-hours" ? "Volunteer hours" : name === "how-to" ? "How to use Attendance" : name === "notices" ? (manager ? "Absence & Schedule Requests" : "My Requests") : label(name)}
             {name === "notices" && (
               <span>
                 {
@@ -1167,7 +1169,8 @@ function Workspace({
           </a>
         ))}
       </nav>
-      <PolicyHelp/>
+      {current !== "volunteer-hours" && <PolicyHelp/>}
+      {current === "volunteer-hours" && <VolunteerHours key={profile.id} profile={profile} meetings={data.meetings}/>}
       {current === "how-to" && <AttendanceHowTo canManage={!!data.policy?.can_manage_meetings} canReadTeam={manager}/>}
       {current === "dashboard" && manager && <LeadershipDashboard data={data} run={run} openMeeting={setSelected}/>}
       {current === "calendar" && (
