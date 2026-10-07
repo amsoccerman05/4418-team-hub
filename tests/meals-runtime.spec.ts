@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { createMealRuntime, type MealPoolConfiguration } from '../supabase/functions/team-meals/runtime.ts';
 import type { MealSqlPool } from '../supabase/functions/team-meals/postgres.ts';
 import { digestBytes } from '../supabase/functions/team-meals/postgres-gateway.ts';
-import handler from '../supabase/functions/team-meals/index.ts';
+import handler, { mealDatabaseErrorCategory } from '../supabase/functions/team-meals/index.ts';
 const ORIGIN = 'https://meals.example.invalid';
 const base: Record<string, string> = {
     MEALS_ENABLED: 'true', MEALS_RUNTIME_MODE: 'local-test', MEALS_DATABASE_URL: 'postgresql://synthetic:synthetic@127.0.0.1:5432/postgres',
@@ -164,4 +164,17 @@ test('startup diagnostics expose fixed stages only and public failures remain ge
     await createMealRuntime({ ...f.dependencies(), onDiagnostic: event => events.push(event) });
     expect(events).toEqual([{ state: 'enabled', phase: 'ready' }]);
     expect((await createMealRuntime({ ...f.dependencies(), onDiagnostic: () => { throw new Error(secret); } })).state).toBe('enabled');
+});
+
+
+test('database diagnostic categories never contain driver SQL, contacts, tokens or credentials', () => {
+    const secret = 'postgresql://private:secret@private.example.invalid/db parent@example.invalid';
+    const cases = [ ['ENOTFOUND', 'dns'], ['28P01', 'database_authentication'], ['42501', 'database_permission'],
+        ['42883', 'database_function_missing'], ['ERR_INVALID_ARG_TYPE', 'driver_argument'], ['unexpected-secret-code', 'unclassified'], ['constructor', 'unclassified'], ['__proto__', 'unclassified'] ];
+    for (const [code, expected] of cases) {
+        expect(mealDatabaseErrorCategory(Object.assign(new Error(secret), { code }))).toBe(expected);
+    }
+    expect(mealDatabaseErrorCategory(new Error(`SASL: SCRAM error ${secret}`))).toBe('driver_scram');
+    expect(mealDatabaseErrorCategory(new Error(`unsupported feature is not a function ${secret}`))).toBe('runtime_unsupported');
+    expect(mealDatabaseErrorCategory(null)).toBe('unclassified');
 });

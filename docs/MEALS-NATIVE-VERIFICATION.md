@@ -72,12 +72,13 @@ is implied.
 
 ## Current evidence
 
-Local execution on 2026-10-07:
+Evidence as of 2026-10-07 for published runtime source `d7a02c7` in [PR #15](https://github.com/amsoccerman05/4418-team-hub/pull/15):
 
-- 31 legacy SQL/PGlite and durable gateway tests pass with encrypted-envelope preparation, quota approval flags, and fenced delivery leases.
-- Native runner/helper syntax checks and Node 24 adapter imports pass.
-- Baseline commit `200b641` passed all 16 native/durable groups on PostgreSQL 16.15 in [CI run 37664168013](https://github.com/amsoccerman05/4418-team-hub/actions/runs/37664168013). The encrypted-recovery update adds a 17th native group for lease replacement and stale completion fencing; that new revision requires a fresh CI result. `initdb`/`psql` remain unavailable locally.
-- Baseline commit `200b641` also passed all five real Auth/PostgREST meal groups against disposable Supabase PostgreSQL 17.11.0.002 in that CI run. The new revision additionally serves the actual Deno entrypoint and needs a fresh CI result; Docker and the Supabase CLI remain unavailable locally.
+- All 141 browser-free meal logic checks pass locally and in the published candidate's CI.
+- All 17 native PostgreSQL concurrency/durable-handler groups passed in [CI run 37678831155](https://github.com/amsoccerman05/4418-team-hub/actions/runs/37678831155), including replacement leases and stale completion fencing. Native PostgreSQL binaries remain unavailable in the local editing environment.
+- All five real Auth/PostgREST meal groups passed in that disposable-stack run. Docker and the Supabase CLI remain unavailable in the local editing environment.
+- The actual served Deno Edge readiness check failed with HTTP 503. In [diagnostic CI run 37681291197](https://github.com/amsoccerman05/4418-team-hub/actions/runs/37681291197), the driver loaded and runtime reached ready, but HTTP listing still returned `temporarily_unavailable` from the database path. The five served groups are not established as passing; fixed-category connection/query diagnostics are being added.
+- Deno generated the genuine transitive dependency lock in CI; its downloaded artifact digest was verified. The version-5 lock and import map now permit pg driver/runtime initialization; there is no evidence that lock format is the remaining database-path failure. No integrity hashes were fabricated.
 
 The draft SQL remains outside `supabase/migrations`. Production entry remains
 disabled without explicit validated activation, the SQL mail budget defaults to
@@ -103,7 +104,7 @@ synthetic passwords, signs in using the real Auth service, and verifies them wit
 `createMealManagerVerifier`. That verifier calls the trusted authority's
 `/auth/v1/user` each time and only passes the verified subject to SQL. It ignores
 user-editable metadata and does not cache roles. No application environment is
-read and no production entry point is wired to it.
+read. The separate served-Edge stage wires the actual entrypoint only to the owned isolated services, never to production.
 
 The smoke checks mentor/admin access through the durable handler and the real
 manager RPC, lead/student/forged-token denial, same-session profile deactivation
@@ -113,12 +114,10 @@ durable handler, appears in the real manager RPC, and is cancelled through that
 RPC with capability revocation. Verification messages stay in a memory-only mock
 mailer; Auth email confirmations are disabled in this disposable stack.
 
-Three local verifier unit tests cover fixed destination, safe bearer forwarding,
+Five local verifier unit tests cover fixed destination, safe bearer forwarding,
 ignored metadata, anonymous/malformed identities, authority/network failures,
-unsafe origin configuration and absence of an identity cache. A successful unit
-suite is not evidence that the real Auth/API smoke ran. The opt-in smoke remains
-**unexecuted locally** until a Docker-capable authorized CI run establishes its
-result for the exact source hashes.
+unsafe origin configuration, exact local Docker host opt-in, rejection of legacy service-role keys, and absence of an identity cache. A successful unit
+suite is not evidence that the real Auth/API smoke ran. The smoke is unexecuted in the local editing environment, but its five real Auth/API groups are now established by the authorized disposable-stack CI run. The separately served Edge runtime now starts, but its database request path failed and still needs a successful rerun.
 
 Auth verification follows [Supabase's server-verified user guidance](https://supabase.com/docs/reference/javascript/auth-getuser).
 
@@ -151,5 +150,4 @@ ciphertext and provider idempotency key, and races stale/current completion in
 separate PostgreSQL sessions. Only the current fence may finish, terminal delivery
 erases the envelope, and recovery does not reserve capacity/budget a second time.
 The native total is 17 grouped checks; the optional real Auth plus served Edge
-total is 10 groups. These expanded counts are authored coverage until current CI
-confirms execution.
+total is 10 groups. All 17 native groups and the five real Auth/API groups passed in the latest reported CI. The five additional served-Edge groups remain blocked by the HTTP 503 database-path failure; authored coverage is not a passing result.
