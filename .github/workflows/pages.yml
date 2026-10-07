@@ -24,6 +24,11 @@ jobs:
           PG_BIN="$(find /usr/lib/postgresql -path '*/bin/postgres' -type f -printf '%h\n' | sort -V | tail -1)"
           test -n "$PG_BIN" || { echo 'No installed PostgreSQL server binary found'; exit 1; }
           DESIGN_DECISION_PG_BIN="$PG_BIN" node tests/native/design-decision-concurrency.mjs
+      - name: Verify Attendance concurrent transactions
+        run: |
+          PG_BIN="$(find /usr/lib/postgresql -path '*/bin/postgres' -type f -printf '%h\n' | sort -V | tail -1)"
+          test -n "$PG_BIN" || { echo 'No installed PostgreSQL server binary found'; exit 1; }
+          ATTENDANCE_EDITING_PG_BIN="$PG_BIN" node tests/native/attendance-editing-concurrency.mjs
       - run: npm run build
         env:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}

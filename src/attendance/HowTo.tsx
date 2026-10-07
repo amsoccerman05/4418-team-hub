@@ -1,9 +1,12 @@
+import { useEffect, useRef } from "react";
 import { BookOpen, CalendarDays, Clock, ClipboardCheck, HelpCircle } from "lucide-react";
 
-export function AttendanceHowTo({ canManage }: { canManage: boolean }) {
+export function AttendanceHowTo({ canManage, canReadTeam = false }: { canManage: boolean; canReadTeam?: boolean }) {
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => { heading.current?.focus({preventScroll: true}); heading.current?.scrollIntoView({block: "start"}); }, []);
   return <section className="att-how-to" aria-labelledby="attendance-how-to-heading">
-    <div className="att-view-heading"><h2 id="attendance-how-to-heading"><BookOpen size={22} aria-hidden="true" /> How to use Attendance</h2>
-      <p>Start here for check-in, schedule requests, and help with your record.</p></div>
+    <div className="att-view-heading"><h2 id="attendance-how-to-heading" ref={heading} tabIndex={-1}><BookOpen size={22} aria-hidden="true" /> How to use Attendance</h2>
+      <p>Sign in to Team Hub with your existing team account, then open Attendance. Start here for check-in, schedule requests, and help with your record.</p></div>
     <div className="att-panel att-help-start"><CalendarDays size={24} aria-hidden="true" /><div><h3>Find your meeting</h3>
       <p>Open <a href="#attendance/calendar">Calendar</a> and choose a meeting. “You’re expected at this meeting” means you are on its required roster. Check the date and time, especially after a schedule change. Times use your device’s local time zone.</p>
       <p>If a meeting is missing, or your required status looks wrong, contact a lead or Mentor. Use <strong>Refresh</strong> to load changes made on another device.</p></div></div>
@@ -24,7 +27,7 @@ export function AttendanceHowTo({ canManage }: { canManage: boolean }) {
         <li>Open the meeting and expand <strong>Report attendance issue</strong>.</li>
         <li>Choose <strong>I will be absent</strong>, <strong>I will arrive late</strong>, or <strong>I need to leave early</strong>. For late arrival or early departure, enter the expected time.</li>
         <li>Add your reason and choose <strong>Report an attendance issue</strong>.</li>
-        <li>Open <strong>My Requests</strong> to see the review status. Choose <strong>All requests</strong> if it is no longer pending.</li>
+        <li>Open <strong>{canReadTeam ? "Absence & Schedule Requests" : "My Requests"}</strong> to see the review status. Choose <strong>All requests</strong> if it is no longer pending.</li>
       </ol><p>Give at least 24 hours’ notice when possible. Shorter notice still needs review. During a meeting, only early-departure requests are available; after it ends, contact leadership. If both late arrival and early departure apply, contact leadership.</p>
       <p>Before the meeting ends, <strong>Edit request</strong> lets you update a request. Each update records a new submission time and sends it back for review. A Mentor or Program Manager decides whether to excuse it; a pending request is not approval.</p></article>
       <article className="att-panel"><h3><HelpCircle size={20} aria-hidden="true" /> Check your record or ask for a correction</h3>

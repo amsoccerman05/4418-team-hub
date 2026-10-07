@@ -656,3 +656,5 @@
 .att-edit-form { margin-top: 20px; }
 .att-edit-form input:disabled { background: var(--color-nav-surface); color: var(--color-muted); }
 @media(max-width: 760px) { .att-help-grid { grid-template-columns: 1fr; } }
+
+.att-how-to h2 { scroll-margin-top: calc(var(--suite-header-height, 76px) + 20px); }

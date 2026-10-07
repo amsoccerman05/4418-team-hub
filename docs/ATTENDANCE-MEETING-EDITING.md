@@ -30,16 +30,18 @@ The editor preserves a draft on failure. **Refresh meeting** reads the current s
 
 ## Release status and verification
 
-This is a **local review draft**, not published or deployed. The additive migration has not been applied to the shared project.
+This is a **draft PR for review and CI**, not deployed. The additive migration has not been applied to the shared project.
 
 Verified on the final local branch:
 - TypeScript / production build (the existing large-bundle warning remains).
 - 528 browser-free regression tests across 40 isolated files, including seven new PostgreSQL-engine (PGlite) tests and three new date/locking model tests.
 - Independent code review of roles, scope, locking, record preservation, retry behavior, guide text, and save/refresh recovery.
 
-Browser tests are written but **not verified in this environment**. The official Chromium download returned an invalid archive; installed Chromium's required local sockets were denied by the execution sandbox, including the supported escalation attempt. The supported cloud browser separately rejected the local preview URL with `ERR_BLOCKED_BY_CLIENT`. Browser tests did not reach the app, so those launcher failures are not product test failures or a passing UI result. No layout or screenshot claim is made.
+The first draft-PR CI run [37570238804](https://github.com/amsoccerman05/4418-team-hub/actions/runs/37570238804), at `bfec05c`, passed all **863 tests**, including the complete browser suite and the new editing/help cases. Its build and existing disposable Supabase integration job also passed; deployment was skipped. The generated mobile/desktop review screenshots were inspected. Additional native concurrency and Attendance-specific real Auth/PostgREST checks are wired into subsequent CI; check the current PR head’s results before release.
 
-Run the browser suite in an environment supporting Chromium before release:
+Local browser execution remained blocked: the official Chromium download returned an invalid archive; installed Chromium’s required local sockets were denied, including the supported escalation attempt; the supported cloud browser rejected localhost with `ERR_BLOCKED_BY_CLIENT`. Those local launcher failures were resolved for verification by the approved GitHub CI environment, not reported as product failures or local passes.
+
+To rerun locally in an environment supporting Chromium:
 
 ```sh
 npm ci
@@ -51,6 +53,6 @@ npm test
 
 The new UI cases cover mobile/desktop save and help, cancel/Escape/navigation, stale writes and explicit reload, student/Program Manager authority, an open editor crossing the start time, and successful write followed by refresh failure. Existing Attendance browser tests remain in the same suite.
 
-A strictly synthetic interactive preview can be generated with `node scripts/preview-attendance-editing.mjs`. Its output stays under ignored `test-results/`, uses actual Attendance components, intercepts every mock service request, and has a no-network CSP. It is not part of the production bundle and is not proof that browser interactions passed.
+A strictly synthetic interactive preview can be generated with `node scripts/preview-attendance-editing.mjs`. Its output stays under ignored `test-results/`, uses actual Attendance components, intercepts every mock service request, and has a no-network CSP. It is not part of the production bundle and is separate from the actual browser-test evidence.
 
-Before rollout, obtain approval to publish the branch/PR and apply this exact additive migration. Apply the reviewed migration to the existing shared project before deploying the client. Then verify with authorized accounts that an upcoming meeting can be edited, a student cannot edit it, and the help page opens. Do not create real student records, send messages, or apply production schema changes as part of synthetic QA.
+Publication to a draft PR is approved. Merging/deployment and applying this exact additive migration still require separate rollout approval. Apply the reviewed migration to the existing shared project before deploying the client. Then verify with authorized accounts that an upcoming meeting can be edited, a student cannot edit it, and the help page opens. Do not create real student records, send messages, or apply production schema changes as part of synthetic QA.

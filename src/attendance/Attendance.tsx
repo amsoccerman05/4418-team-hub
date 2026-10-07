@@ -1168,7 +1168,7 @@ function Workspace({
         ))}
       </nav>
       <PolicyHelp/>
-      {current === "how-to" && <AttendanceHowTo canManage={!!data.policy?.can_manage_meetings}/>}
+      {current === "how-to" && <AttendanceHowTo canManage={!!data.policy?.can_manage_meetings} canReadTeam={manager}/>}
       {current === "dashboard" && manager && <LeadershipDashboard data={data} run={run} openMeeting={setSelected}/>}
       {current === "calendar" && (
         <>

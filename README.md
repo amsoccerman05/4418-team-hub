@@ -107,6 +107,6 @@ Project boards include a Design decisions entry into the existing Sprint Review 
 
 Requires the additive design-decision migration before use; it has not been applied to production. See [scope](docs/DESIGN-DECISIONS.md), [backend contract](docs/DESIGN-DECISION-BACKEND.md), and [verification](docs/DESIGN-DECISIONS-VERIFICATION.md).
 
-## Upcoming meeting editing and Attendance help — local review draft
+## Upcoming meeting editing and Attendance help — review draft
 
 Attendance includes a student-facing **How to use Attendance** tab and contextual help. Existing meeting leadership can edit the title, type, or available start/end fields of one meeting before it starts. Schedule changes preserve rosters and requests, require review, and invalidate the temporary check-in code; recorded attendance and decisions lock the schedule. See [scope, safety, release status, and verification](docs/ATTENDANCE-MEETING-EDITING.md). The additive editing migration is prepared but has not been applied to production.

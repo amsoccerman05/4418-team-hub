@@ -884,7 +884,10 @@ for(const width of [390,1440]) {
   await expect(form.getByText('This meeting only.',{exact:false})).toBeVisible();
   await expect(form.getByRole('button',{name:'Save meeting',exact:true})).toBeDisabled();
   await form.getByRole('checkbox').check();
-  await form.screenshot({path:`test-results/attendance-edit-${width}.png`});
+  await form.getByLabel('Meeting title').scrollIntoViewIfNeeded();
+  await page.screenshot({path:`test-results/attendance-edit-fields-${width}.png`});
+  await form.getByRole('button',{name:'Save meeting',exact:true}).scrollIntoViewIfNeeded();
+  await page.screenshot({path:`test-results/attendance-edit-review-${width}.png`});
   await form.getByRole('button',{name:'Save meeting',exact:true}).click();
   await expect(dialog.getByText('Meeting saved. Only this meeting was changed.')).toBeVisible();
   await expect(dialog.getByRole('heading',{name:'Updated build meeting',exact:true})).toBeVisible();
@@ -898,7 +901,8 @@ for(const width of [390,1440]) {
   await expect(page.getByRole('heading',{name:'For meeting leadership: edit an upcoming meeting'})).toBeVisible();
   await expect(page.getByRole('heading',{name:'When you arrive'})).toBeVisible();
   expect(await page.evaluate(()=>document.body.scrollWidth<=innerWidth)).toBe(true);
-  await page.locator('.att-how-to').screenshot({path:`test-results/attendance-how-to-${width}.png`});
+  await expect(page.getByRole('heading',{name:'How to use Attendance',exact:true})).toBeInViewport();
+  await page.screenshot({path:`test-results/attendance-how-to-${width}.png`});
   await page.goBack();await expect(dialog).toHaveCount(0);await expect(page.getByRole('heading',{name:'Meeting calendar'})).toBeVisible();
  });
 }
