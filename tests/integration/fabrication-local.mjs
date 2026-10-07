@@ -94,9 +94,11 @@ const sourcePaths = [
   'supabase/migrations/20261006073717_sprint_review_v1.sql',
   'supabase/migrations/20261006201639_fabrication_v1.sql',
   'supabase/migrations/20261006213850_assembly_testing_v1.sql',
+  'supabase/migrations/20261006235739_sprint_review_design_decisions_v1.sql',
   ...['index.ts', 'handler.ts', 'validation.ts'].map(f => `supabase/functions/fabrication-files/${f}`),
   'src/planning/assembly/model.ts',
-  ...['fabrication-local.mjs', 'fabrication-safety.mjs', 'fabrication-stack.spec.mjs', 'assembly-stack.spec.mjs'].map(f => `tests/integration/${f}`),
+  ...['types.ts', 'model.ts', 'decision-types.ts', 'decision-model.ts', 'trade-study.ts'].map(f => `src/planning/reviews/${f}`),
+  ...['fabrication-local.mjs', 'fabrication-safety.mjs', 'fabrication-stack.spec.mjs', 'assembly-stack.spec.mjs', 'design-decision-stack.spec.mjs'].map(f => `tests/integration/${f}`),
 ];
 const hashes = Object.fromEntries(sourcePaths.map(path => [path, createHash('sha256').update(readFileSync(join(repo, path))).digest('hex')]));
 try {
@@ -221,6 +223,8 @@ verify_jwt = false
       console.log('PASS real handler readiness, allowed local preflight, and rejected-origin enforcement');
       const { runFabricationIntegration } = await import('./fabrication-stack.spec.mjs');
       const checks = await runFabricationIntegration({ ...status, sql, gate, waitFor, registerSecret: s => secrets.push(s) });
+      const { runDesignDecisionIntegration } = await import('./design-decision-stack.spec.mjs');
+      checks.push(...await runDesignDecisionIntegration({ ...status, sql, registerSecret: s => secrets.push(s) }));
       assert.equal(sql("select pg_get_functiondef('auth.uid()'::regprocedure)"), authFunction, 'Auth function changed');
       const images = JSON.parse(docker(['inspect', `supabase_db_${project}`]))[0].Config.Image;
       report = { status: 'PASS_REAL_SUPABASE_INTEGRATION', cli: version, node: process.version, postgres_image: images, checks, source_sha256: hashes };

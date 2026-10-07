@@ -19,6 +19,11 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Verify design-decision concurrent transactions
+        run: |
+          PG_BIN="$(find /usr/lib/postgresql -path '*/bin/postgres' -type f -printf '%h\n' | sort -V | tail -1)"
+          test -n "$PG_BIN" || { echo 'No installed PostgreSQL server binary found'; exit 1; }
+          DESIGN_DECISION_PG_BIN="$PG_BIN" node tests/native/design-decision-concurrency.mjs
       - run: npm run build
         env:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
@@ -72,6 +77,22 @@ jobs:
           name: assembly-review-screenshots
           path: test-results/assembly/*.png
           if-no-files-found: error
+          retention-days: 7
+      - name: Upload synthetic design-decision review screenshots
+        if: ${{ always() && github.event_name == 'pull_request' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: design-decision-review-screenshots
+          path: test-results/design-decisions/*.png
+          if-no-files-found: error
+          retention-days: 7
+      - name: Retain synthetic design-decision failure evidence
+        if: ${{ always() && github.event_name == 'pull_request' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: design-decision-test-failures
+          path: test-results/design-decision-ui-*/**/*
+          if-no-files-found: ignore
           retention-days: 7
       - uses: actions/upload-pages-artifact@v3
         with:
