@@ -9,6 +9,8 @@ on:
       - 'tests/helpers/meal-store.ts'
       - 'tests/native/meals-*.mjs'
       - 'tests/integration/meals-*'
+      - 'tests/integration/fabrication-local.mjs'
+      - 'tests/integration/fabrication-safety*.mjs'
       - 'scripts/*meals*.mjs'
       - 'meals*.html'
       - 'meals*.config.ts'
@@ -62,3 +64,37 @@ jobs:
             test-results/meals-*/**/*
           if-no-files-found: error
           retention-days: 7
+
+  native-transactions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Verify meal races and durable PostgreSQL gateway
+        run: |
+          PG_BIN="$(find /usr/lib/postgresql -path '*/bin/postgres' -type f -printf '%h\n' | sort -V | tail -1)"
+          test -n "$PG_BIN" || { echo 'No installed PostgreSQL server binary found'; exit 1; }
+          MEALS_PG_BIN="$PG_BIN" npm run test:meals:native
+
+  isolated-auth-api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359
+        with:
+          version: '2.119.0'
+      - name: Check isolated-stack safety guards
+        run: node --test tests/integration/fabrication-safety.test.mjs
+      - name: Verify synthetic meals with real disposable Auth and API
+        run: MEALS_INTEGRATION=1 node tests/integration/fabrication-local.mjs --run

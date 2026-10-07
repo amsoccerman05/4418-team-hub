@@ -27,7 +27,7 @@ Normal builds have no meal API URL by default and fail closed. The intended auth
 
 Repository `docs/NOTIFICATION-CENTER-V1.md` records the shared existing notification route as Finance history → notification outbox → `finance-notifications` worker → Resend. `supabase/functions/team-invitations/index.ts` uses the existing Supabase Auth administrative invitation API; it does not provide a general-purpose parent-email transport. No secrets or SMTP account settings were read or changed for this draft.
 
-Meal signups do not create a Team Hub/Auth account. Reusing account invitations for meal signups would grant the wrong semantics and add unnecessary account/quota load. The local email adapter is mock/disabled. A reviewed live transport and durable database binding are still required.
+Meal signups do not create a Team Hub/Auth account. Reusing account invitations for meal signups would grant the wrong semantics and add unnecessary account/quota load. The local email adapter is mock/disabled. A durable SQL adapter and server Auth verifier are now implemented and tested locally. A reviewed live email transport and production runtime configuration are still required.
 
 The reported shared Free-plan mail limit is a deployment constraint, not a per-feature guaranteed allowance. Before enabling live mail, verify the current provider quota and remaining daily budget, reserve capacity for existing authentication/notification traffic, and add global atomic delivery-budget accounting plus a challenge/abuse control appropriate to a public form. The local limits demonstrate the boundaries but cannot prove distributed production abuse resistance.
 
@@ -40,9 +40,9 @@ Provider acceptance is `sent`, not delivered/read. An uncertain send must be rec
 ## Before any publication
 
 1. Review the parent and coordinator experience, decide coordinator role scope, set the actual dates/headcounts, and approve public generic guidance.
-2. Complete durable gateway/database binding and live email transport, external-origin allowlists, trusted proxy IP handling, abuse protection, quota isolation, revocation/recovery, retention and cancellation communication workflows.
+2. Review the durable gateway/database binding, and complete approved live email transport/runtime configuration, external-origin allowlists, trusted proxy IP handling, abuse protection, quota isolation, revocation/recovery, retention and cancellation communication workflows.
 3. Run the full browser suite at phone/desktop sizes and native multi-session database races. Run real Auth/API isolation tests in an isolated secretless stack, then security review the exact release diff.
-4. Obtain separate authorization for a public repository push/PR, production schema/runtime/secret changes, and any controlled email delivery tests. No such actions are part of this local draft.
+4. Public draft PR publication and synthetic CI are approved and in progress in PR #15. Production schema/runtime/secret changes, merge/deployment, and controlled live email tests still need separate authorization.
 5. Recheck production dependencies and create an approved fresh backup before an additive migration. Keep the existing KCMT form and held parent hub untouched.
 
 ## Verification

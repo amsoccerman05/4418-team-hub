@@ -3,7 +3,11 @@
 This is executable local domain code, not an enabled production feature. `index.ts`
 returns 503, imports no provider/DB SDK, reads no environment credentials, and does
 not register a deployment listener. `mock.ts` is for synthetic local tests only.
-There is no real email adapter, Supabase Auth call, live SQL adapter, or deployment.
+There is no real email adapter or deployment. The separate injectable
+`createPostgresMealGateway` now binds this same HTTP contract to the reviewed SQL
+primitives; see [the durable binding report](../../../docs/MEALS-DURABLE-BINDING.md)
+for tests, transaction/auth boundaries and remaining enablement gates. The loopback
+UI demo still uses its synthetic in-memory repository.
 
 ## Boundary
 
@@ -81,8 +85,10 @@ review for expected team traffic. Failed and uncertain sends still consume the
 reserved budget, conservatively protecting shared quota. No shared Auth email
 quota is used.
 
-Idempotency is scoped to normalized email + meal + client key, with a request-body
-fingerprint and 24-hour expiry. Reusing a key with a changed body is rejected.
+In the memory demo, idempotency is scoped to normalized email + meal + client key,
+with a request-body fingerprint and 24-hour expiry. The durable SQL binding retains
+expired entries as conservative replay tombstones pending an approved retention
+and recovery design. Reusing a key with a changed body is rejected.
 Another email cannot receive the first email's receipt or claim. Concurrent replays
 may truthfully observe queued → uncertain → sent progression, but never create a
 second hold or send attempt. A settled replay returns the known current mail state.
@@ -97,11 +103,13 @@ a queued hold that expires; this draft deliberately has no background resend job
 
 ## Before any production binding
 
-- Implement durable transactional persistence. `MealRepository` requires
-  serializable isolation with conflict retries, or a global lock. Scope names are
-  advisory hints, not sufficient isolation by themselves. Do not translate one
-  transaction into independent REST mutations. Use the separately reviewed SQL
-  primitives for per-meal locks and shared budget locking as appropriate.
+- The durable SQL implementation is available in `postgres.ts` and
+  `postgres-gateway.ts`; validate its environment/driver integration and keep the
+  original memory demo separate. The memory `MealRepository` contract requires
+  serializable isolation with safe conflict handling, or a global lock. The durable
+  service instead calls the relational SQL primitives directly, preserving their
+  per-meal and shared-budget locks. Do not replace either boundary with unrelated
+  REST mutations.
 - Bind real coordinator authorization to verified server authority and current
   permissions. Never rely on user-editable JWT metadata or the local demo header.
 - Review RLS/private-schema grants and role tests, retention, audit fields, bounded
@@ -118,6 +126,11 @@ synthetic transactional repository. It covers privacy projection, expired and
 reopened links, concurrency, rollback, idempotency, authorization, cancellation
 acknowledgment, immutable commitments, quota reservation, mail failure/uncertainty,
 and malformed requests. Run via the root meal logic Playwright configuration.
+
+`tests/meals-postgres.spec.ts` additionally exercises the same Request/Response
+contract through the actual SQL primitives, including persistence after disk
+close/reopen. Its injected synthetic manager authority does not establish real
+Supabase Auth network verification.
 
 Backend strict typecheck (root):
 

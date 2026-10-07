@@ -12,7 +12,8 @@
     "dev:meals": "node scripts/dev-meals.mjs",
     "test:meals": "playwright test --config meals.logic.config.ts",
     "test:meals:ui": "playwright test tests/meals-ui.spec.ts tests/meals-manager.spec.ts",
-    "test:meals:static": "playwright test --config meals.static.config.ts"
+    "test:meals:static": "playwright test --config meals.static.config.ts",
+    "test:meals:native": "node tests/native/meals-concurrency.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
@@ -23,9 +24,11 @@
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
     "@playwright/test": "^1.63.0",
+    "@types/pg": "8.23.1",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.5.0",
+    "pg": "8.23.1",
     "typescript": "~5.8.3",
     "vite": "^6.3.5"
   }

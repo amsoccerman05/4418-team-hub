@@ -2,7 +2,7 @@
 
 ## Review status
 
-`supabase/drafts/saturday-meals.sql` is an additive **local review draft**, deliberately outside `supabase/migrations`. It has not been applied to any Supabase project. It creates no accounts, keys or new roles and changes no existing profile roles. The existing local gateway uses its own in-memory repository; it is **not bound to this SQL**. Neither a live public signup endpoint nor production email is enabled by this work.
+`supabase/drafts/saturday-meals.sql` is an additive **local review draft**, deliberately outside `supabase/migrations`. It has not been applied to any Supabase project. It creates no accounts, keys or new roles and changes no existing profile roles. The local demo uses its in-memory repository. The durable `postgres.ts` / `postgres-gateway.ts` path now binds this SQL directly through an injected exclusive-connection pool, with tests of real SQL and disk reopen persistence. Neither a live public signup endpoint nor production email is enabled by this work.
 
 The SQL is exercised with synthetic data in `tests/meals-db.spec.ts` using PGlite. These tests validate PostgreSQL statements, roles/grants, RLS, projections, capacity, tokens, optimistic versions, idempotency and transactional rollback. PGlite has one connection; this is not evidence of native multi-connection locking behavior, deployed PostgREST exposure, provider delivery or end-to-end Supabase integration.
 
@@ -71,7 +71,7 @@ No durable worker should claim it can reliably retry token-free queued mail. A f
 This is not a turnkey deployment. Before any live enablement:
 
 1. Obtain authorization for the target environment and delivery integration. Resolve sender identity, permitted origins, canonical share URL, notification policy, consent/retention requirements and supported management-link recovery.
-2. Bind the gateway transaction/repository contract to PostgreSQL. Reconcile field mapping, SQL error normalization, rate/budget configuration and idempotency-key/fingerprint hashing; do not assume the in-memory implementation already uses this draft.
+2. Configure the reviewed durable adapter with a server-held pool and the Auth verifier. Confirm field mapping, SQL error normalization, rate/budget configuration and idempotency hashing against the exact release. The local demo remains a separate explicit in-memory example.
 3. Use only a server-held secret/direct connection. Verify the Supabase Data API still excludes `meals_private`; test that public function ACLs and fresh-role revocation behave through the real API.
 4. Run native PostgreSQL multi-connection races for simultaneous item/whole claims, expiry/confirmation, quantity edits, coordinator capacity updates, meal cancellation and mail dispatch. Assert no over-allocation and deterministic recovery on serialization/lock errors.
 5. Add network-level tests for origin denial, public enumeration, malformed/replayed/expired tokens, browser reload, revoked profiles, email budget/rate enforcement, provider timeouts, duplicate HTTP retries and post-commit process loss. Confirm tokens never reach logs, URL referrers or analytics.

@@ -77,7 +77,7 @@ for(const width of [320,390,768,1440])test(`public meals and claim dialog remain
   await page.setViewportSize({width,height:950});const state=await setup(page);const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));await page.goto('/meals.html');
   await expect(page.getByRole('heading',{name:'A place at the table'})).toBeVisible();await expect(page.locator('.meal-card')).toHaveCount(2);await expect(page.locator('.meal-card').first()).toContainText('12:30 PM MDT');
   await page.getByRole('link',{name:'Skip to meal dates'}).focus();await page.keyboard.press('Enter');await expect(page.locator('#meal-content')).toBeFocused();expect(new URL(page.url()).hash).toBe('');
-  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:`test-results/meals/public-${width}.png`,fullPage:true});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.locator('#meal-content').evaluate(element=>(element as HTMLElement).blur());await page.mouse.click(4,150);await page.screenshot({path:`test-results/meals/public-${width}.png`,fullPage:true});
   const dialog=await openClaim(page);await expect(dialog.getByLabel('Your name')).toBeFocused();expect(await dialog.evaluate(element=>element.scrollWidth<=element.clientWidth)).toBe(true);await page.screenshot({path:`test-results/meals/claim-${width}.png`});
   await dialog.press('Escape');await expect(dialog).toHaveCount(0);await expect(page.getByRole('button',{name:'Sign up for Main dish portions'}).first()).toBeFocused();expect(state.calls.filter(call=>call.operation!=='list')).toEqual([]);expect(state.external).toEqual([]);expect(errors).toEqual([]);
 });

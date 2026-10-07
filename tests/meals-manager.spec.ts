@@ -81,6 +81,8 @@ for (const width of [390, 1440]) test(`coordinator coverage and private adult co
   await expect(page.getByRole('status')).toContainText('Meal saved. Version 4.');
   expect(state.saves).toHaveLength(1); expect(state.saves[0].version).toBe(3); expect(state.saves[0].service_at).toBe('2026-10-10T16:00:00.000Z');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.mouse.click(4, 150);
   await page.screenshot({ path: `test-results/meals-manager-${width}.png`, fullPage: true });
 });
 

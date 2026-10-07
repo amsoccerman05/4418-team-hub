@@ -4,7 +4,7 @@ import { DisabledMealMailer } from './mail.ts';
 import type { MealMailer, VerificationMail } from './mail.ts';
 const MINUTE = 60000, DAY = 86400000;
 const GENERIC_LINK = 'This link is unavailable or expired. Ask the meal coordinator for help.';
-const RECEIPT_MESSAGE = 'If this request can be accepted, a verification link will be sent. Your signup counts only after verification.';
+export const RECEIPT_MESSAGE = 'If this request can be accepted, a verification link will be sent. Your signup counts only after verification.';
 /** Trusted transport metadata only; never copy user-controlled forwarding headers. */
 export type RequestContext = {
     ip: string;
@@ -31,25 +31,25 @@ export type GatewayOptions = {
     } | null>;
 };
 const DEFAULT_LIMITS: GatewayLimits = { holdMs: 15 * MINUTE, accessMs: 30 * MINUTE, idempotencyMs: DAY, ipRequestsPerMinute: 120, claimsPerIp: 12, claimsPerEmail: 4, claimWindowMs: 60 * MINUTE, dailyMailBudget: 0 };
-class GatewayError extends Error {
+export class GatewayError extends Error {
     status: number;
     code: string;
     constructor(status: number, code: string, message: string) { super(message); this.status = status; this.code = code; }
 }
-function fail(status: number, code: string, message: string): never { throw new GatewayError(status, code, message); }
-function linkError(): never { return fail(403, 'invalid_link', GENERIC_LINK); }
+export function fail(status: number, code: string, message: string): never { throw new GatewayError(status, code, message); }
+export function linkError(): never { return fail(403, 'invalid_link', GENERIC_LINK); }
 const iso = (n: number) => new Date(n).toISOString();
-const randomToken = () => `m1_${Array.from(crypto.getRandomValues(new Uint8Array(32)), x => x.toString(16).padStart(2, '0')).join('')}`;
+export const randomToken = () => `m1_${Array.from(crypto.getRandomValues(new Uint8Array(32)), x => x.toString(16).padStart(2, '0')).join('')}`;
 export async function digest(value: string): Promise<string> { return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))), x => x.toString(16).padStart(2, '0')).join(''); }
-function text(value: unknown, label: string, max: number, min = 1, multiline = false): string { if (typeof value !== 'string' || value.trim().length < min || value.trim().length > max || (multiline ? /[\u0000-\u0009\u000b\u000c\u000e-\u001f\u007f]/ : /[\u0000-\u001f\u007f]/).test(value))
+export function text(value: unknown, label: string, max: number, min = 1, multiline = false): string { if (typeof value !== 'string' || value.trim().length < min || value.trim().length > max || (multiline ? /[\u0000-\u0009\u000b\u000c\u000e-\u001f\u007f]/ : /[\u0000-\u001f\u007f]/).test(value))
     fail(400, 'invalid_input', `Check ${label}.`); return (value as string).trim(); }
-function integer(value: unknown, label: string, min: number, max: number): number { if (!Number.isInteger(value) || Number(value) < min || Number(value) > max)
+export function integer(value: unknown, label: string, min: number, max: number): number { if (!Number.isInteger(value) || Number(value) < min || Number(value) > max)
     fail(400, 'invalid_input', `Check ${label}.`); return Number(value); }
 function record(value: unknown): Record<string, unknown> { if (!value || typeof value !== 'object' || Array.isArray(value))
     fail(400, 'invalid_input', 'Expected a JSON object.'); return value as Record<string, unknown>; }
-function fields(row: Record<string, unknown>, allowed: string[]) { if (Object.keys(row).some(key => !allowed.includes(key)))
+export function fields(row: Record<string, unknown>, allowed: string[]) { if (Object.keys(row).some(key => !allowed.includes(key)))
     fail(400, 'invalid_input', 'Unexpected request fields.'); }
-function claimInput(body: Record<string, unknown>): ClaimInput {
+export function claimInput(body: Record<string, unknown>): ClaimInput {
     fields(body, ['operation', 'meal_id', 'slot_id', 'whole_meal', 'quantity', 'name', 'email', 'idempotency_key', 'website']);
     const email = text(body.email, 'email', 254).toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
@@ -379,6 +379,25 @@ export function createMealGateway(options: GatewayOptions) {
             return publicMeal(meal, await tx.list('claims'));
         });
     }
+    const handle = createMealTransport({
+        allowedOrigins: options.allowedOrigins,
+        reserveRequest: async (ip) => {
+            const time = now();
+            await repository.transaction(['request-rate'], async (tx) => { await expire(tx, time); await reserve(tx, `request-ip:${await digest(ip)}`, limits.ipRequestsPerMinute, MINUTE, time); });
+        },
+        operation,
+    });
+    return { handle, processMail };
+}
+
+/** Shared request boundary for the synthetic repository and durable SQL service.
+ * Persist request quotas separately, so operation rollback never refunds them. */
+export function createMealTransport(options: {
+    allowedOrigins: string[];
+    reserveRequest: (ip: string) => Promise<void>;
+    operation: (body: Record<string, unknown>, request: Request, ip: string) => Promise<unknown>;
+}) {
+    const origins = new Set(options.allowedOrigins);
     async function handle(request: Request, context: RequestContext = { ip: 'untrusted-shared' }): Promise<Response> {
         const origin = request.headers.get('origin');
         const headers = new Headers({ 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store, private', 'Pragma': 'no-cache', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff', 'Vary': 'Origin', 'Permissions-Policy': 'camera=(), microphone=(), geolocation=()' });
@@ -400,9 +419,8 @@ export function createMealGateway(options: GatewayOptions) {
             if (new URL(request.url).search)
                 fail(400, 'invalid_input', 'Do not put tokens or private data in the URL.');
             const ip = typeof context.ip === 'string' && context.ip.length <= 200 ? context.ip : 'untrusted-shared';
-            const time = now();
-            await repository.transaction(['request-rate'], async (tx) => { await expire(tx, time); await reserve(tx, `request-ip:${await digest(ip)}`, limits.ipRequestsPerMinute, MINUTE, time); });
-            const result = await operation(await bodyJson(request), request, ip);
+            await options.reserveRequest(ip);
+            const result = await options.operation(await bodyJson(request), request, ip);
             return new Response(JSON.stringify(result), { status: 200, headers });
         }
         catch (error) {
@@ -410,5 +428,5 @@ export function createMealGateway(options: GatewayOptions) {
             return new Response(JSON.stringify({ error: { code: safe.code, message: safe.message } }), { status: safe.status, headers });
         }
     }
-    return { handle, processMail };
+    return handle;
 }

@@ -90,7 +90,7 @@ create table meals_private.mail_budget (
 );
 insert into meals_private.mail_budget(singleton) values(true);
 create table meals_private.rate_windows (
-  kind text not null check (kind in ('ip','email')),
+  kind text not null check (kind in ('ip','email','request')),
   key_hash bytea not null check (octet_length(key_hash) = 32),
   window_start timestamptz not null,
   used integer not null check (used > 0),
@@ -125,11 +125,16 @@ end$$;
 
 -- Called only while the meal row is held FOR UPDATE by a mutation.
 create function meals_private.expire_holds(p_meal uuid) returns void language plpgsql set search_path='' as $$
+declare expired_count integer;
 begin
   with expired as (
     update meals_private.claims set status='expired',version=version+1,updated_at=clock_timestamp()
     where meal_id=p_meal and status='pending' and hold_expires_at<=clock_timestamp() returning id,version
   ) insert into meals_private.history(meal_id,claim_id,action,version) select p_meal,id,'expired',version from expired;
+  get diagnostics expired_count = row_count;
+  if expired_count > 0 then
+    update meals_private.meals set version=version+1,updated_at=clock_timestamp() where id=p_meal;
+  end if;
   update meals_private.tokens t set revoked_at=clock_timestamp() where t.revoked_at is null and exists(
     select 1 from meals_private.claims c where c.id=t.claim_id and c.meal_id=p_meal and c.status='expired');
 end$$;
@@ -193,7 +198,8 @@ begin
     select * into existing from meals_private.meals where id=mid for update;
     if not found then raise exception 'Meal unavailable'; end if;
     if existing.version<>(p->>'version')::integer then raise exception 'Meal changed; reload before saving'; end if;
-    perform meals_private.expire_holds(mid); v:=existing.version+1;
+    perform meals_private.expire_holds(mid);
+    select version+1 into v from meals_private.meals where id=mid;
     if p->>'status'='cancelled' and exists(select 1 from meals_private.claims where meal_id=mid and status in ('pending','confirmed'))
       and (p->>'acknowledge_cancellation')::boolean is distinct from true then raise exception 'Please acknowledge cancellation of existing contributions'; end if;
     if exists(select 1 from meals_private.claims where meal_id=mid and (status='confirmed' or (status='pending' and hold_expires_at>clock_timestamp()))) then
@@ -211,6 +217,9 @@ begin
       or not (s ?& array['label','category','unit','needed']) or jsonb_typeof(s->'label')<>'string'
       or jsonb_typeof(s->'category')<>'string' or jsonb_typeof(s->'unit')<>'string'
       or jsonb_typeof(s->'needed')<>'number' or (s->>'needed')!~'^[0-9]+$' then raise exception 'Invalid slot'; end if;
+    if s ? 'id' and not exists(select 1 from meals_private.slots where id=(s->>'id')::uuid and meal_id=mid) then
+      raise exception 'New slot identifiers must be assigned by the server';
+    end if;
     sid:=coalesce((s->>'id')::uuid,gen_random_uuid());
     if sid=any(seen) then raise exception 'Duplicate slot'; end if;
     seen:=array_append(seen,sid);
@@ -239,6 +248,19 @@ begin
   end if;
   insert into meals_private.history(meal_id,actor_id,action,version) values(mid,actor,'meal_saved',v);
   return meals_private.public_meal(mid);
+end$$;
+
+-- Separate short transaction at the gateway: a rejected operation must still
+-- consume its distributed per-IP request charge. Never store the raw IP.
+create function meals_private.reserve_request(p_ip_hash bytea) returns boolean language plpgsql security definer set search_path='' as $$
+declare n integer;
+begin
+  if octet_length(p_ip_hash) is distinct from 32 then raise exception 'Invalid request hash'; end if;
+  insert into meals_private.rate_windows(kind,key_hash,window_start,used)
+    values('request',p_ip_hash,date_trunc('minute',clock_timestamp()),1)
+    on conflict(kind,key_hash,window_start) do update
+      set used=least(meals_private.rate_windows.used+1,121) returning used into n;
+  return n<=120;
 end$$;
 
 -- Gateway hashes normalized email+meal+idempotency-key and IP before calling.
@@ -448,7 +470,7 @@ grant execute on function public.meals_manager_context(),public.meals_manager_sa
 -- For a later direct, trusted server connection only. This does not expose the
 -- private schema through PostgREST and does not grant direct table access.
 grant usage on schema meals_private to service_role;
-grant execute on function meals_private.list_public(),
+grant execute on function meals_private.list_public(),meals_private.reserve_request(bytea),
   meals_private.create_hold(uuid,uuid,boolean,integer,text,text,bytea,bytea,bytea,bytea),
   meals_private.verify(bytea,bytea),meals_private.reopen_session(bytea,bytea),meals_private.inspect(bytea),meals_private.change_claim(bytea,integer,integer,boolean),
   meals_private.begin_delivery(uuid),meals_private.finish_delivery(uuid,text) to service_role;
