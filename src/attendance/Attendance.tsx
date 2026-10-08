@@ -33,6 +33,7 @@ import { MeetingCalendar } from "./Calendar";
 import { AttendanceHowTo } from "./HowTo";
 import { VolunteerHours } from "./volunteer/VolunteerHours";
 import { MeetingEditor } from "./MeetingEditor";
+import { ParticipantRosterSync } from "./ParticipantRosterSync";
 const time = (s: string | null) =>
   s
     ? new Date(s).toLocaleString([], {
@@ -1266,7 +1267,7 @@ function Workspace({
                     {label(m.member_status)} · {m.team_area || "No team area"}
                   </span>
                 </summary>
-                <MemberAttendance data={data} member={m}/>{data.policy?.can_manage_meetings&&<MemberForm member={m} run={run} />}
+                <MemberAttendance data={data} member={m}/>{data.policy?.can_manage_meetings&&<><MemberForm member={m} run={run}/><ParticipantRosterSync key={`${m.student_id}-${m.member_status}`} data={data} member={m} run={run}/></>}
               </details>
             ))}
           {!data.members.filter((m) =>

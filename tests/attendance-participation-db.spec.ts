@@ -16,7 +16,13 @@ test.beforeEach(async()=>{
  select set_config('test.uid','${id(1)}',false);`);
  for(const file of ['202609100001_team_attendance.sql','202609120001_attendance_requests_recurrence.sql','202609120008_attendance_roster_sync.sql'])
   await db.exec(readFileSync('supabase/migrations/'+file,'utf8'));
- await db.exec(`drop view team_attendance_history;alter table team_attendance_private.history set schema public;alter table public.history rename to team_attendance_history;grant select on team_attendance_history to authenticated;
+ // Production has the legacy public audit table: a required profile actor,
+ // no actor_auth_uid/database-session fields and no actor-attribution trigger.
+ // Convert this isolated fixture only; the migration never changes audit schema.
+ await db.exec(`drop view team_attendance_history;alter table team_attendance_private.history set schema public;alter table public.history rename to team_attendance_history;
+ drop trigger team_history_actor on public.team_attendance_history;
+ alter table public.team_attendance_history drop column actor_auth_uid,drop column actor_database_session,drop column actor_database_role,alter column performed_by set not null;
+ grant select on team_attendance_history to authenticated;
  create policy attendance_history_read on team_attendance_history for select to authenticated using(team_attendance_private.manager() or (student_id=auth.uid() and team_attendance_private.role()='student'));`);
  await db.exec(readFileSync('tests/fixtures/attendance-production-functions.sql','utf8'));
  await db.exec(readFileSync('supabase/migrations/202609300001_attendance_policy_v03.sql','utf8'));
@@ -105,14 +111,27 @@ test('meeting snapshots include all allowed participants and preserve registered
  const before=await snapshot();await as(1);await manage('member',{student_id:id(7),member_status:'prospective',team_area:'Mechanical'});const after=await snapshot();expect(after.history).toHaveLength(before.history.length+1);before.history=before.history.filter((h:any)=>h.entity!=='team_attendance_members');after.history=after.history.filter((h:any)=>h.entity!=='team_attendance_members');expect(after).toEqual(before);
 });
 
-test('scoped roster sync touches only one participant and explicit meetings, supports admin actor, and retries idempotently',async()=>{
+test('scoped roster sync requires a real leadership actor, targets one participant and explicit meetings, and retries idempotently',async()=>{
  await db.exec(`reset role;delete from team_attendance where student_id in ('${id(7)}','${id(8)}');delete from team_meeting_members where student_id in ('${id(7)}','${id(8)}')`);
  const unrelated=await create();await db.exec(`reset role;delete from team_attendance where student_id in ('${id(7)}','${id(8)}');delete from team_meeting_members where student_id in ('${id(7)}','${id(8)}')`);
  await as(1);let result=await scoped(7,[mid]);expect(result).toMatchObject({added:1,promoted:0,skipped:0,student_id:id(7),meeting_ids:[mid]});
  expect((await db.query('select 1 from team_meeting_members where student_id=$1',[id(8)])).rows).toHaveLength(0);expect((await db.query('select 1 from team_meeting_members where meeting_id=$1 and student_id=$2',[unrelated,id(7)])).rows).toHaveLength(0);
  const before=await snapshot();await as(1);result=await scoped(7,[mid]);expect(result).toMatchObject({added:0,promoted:0,skipped:0});expect(await snapshot()).toEqual(before);
- await db.exec("reset role;select set_config('test.uid','',false)");result=(await db.query<any>('select team_attendance_private.sync_participant_rosters($1,$2::uuid[]) r',[id(8),[mid]])).rows[0].r;expect(result.added).toBe(1);
- const audit=(await db.query<any>("select * from team_attendance_history where student_id=$1 and action='ROSTER_SYNC_ADD'",[id(8)])).rows[0];expect(audit.performed_by).toBeNull();expect(audit.actor_auth_uid).toBeNull();expect(audit.actor_database_session).toBeTruthy();
+ await db.exec("reset role;select set_config('test.uid','',false)");
+ // Even the database owner cannot bypass the genuine-actor requirement. Neither
+ // entry point may reach the NOT NULL audit constraint or change domain data.
+ for(const entry of ['team_attendance_private.sync_participant_rosters','public.team_attendance_sync_participant_rosters']){
+  await expect(db.query(`select ${entry}($1,$2::uuid[])`,[id(8),[mid]])).rejects.toThrow(/Leadership access required/);
+  expect(await snapshot()).toEqual(before);
+ }
+ await db.exec(`select set_config('test.uid','${id(3)}',false)`);
+ await expect(db.query('select team_attendance_private.sync_participant_rosters($1,$2::uuid[])',[id(8),[mid]])).rejects.toThrow(/Leadership access required/);
+ expect(await snapshot()).toEqual(before);
+ await as(6);result=await scoped(8,[mid]);expect(result.added).toBe(1);
+ for(const [participant,actor] of [[7,1],[8,6]]){
+  const audit=(await db.query<any>("select * from team_attendance_history where student_id=$1 and action='ROSTER_SYNC_ADD'",[id(participant)])).rows[0];
+  expect(audit.performed_by).toBe(id(actor));expect(audit).not.toHaveProperty('actor_auth_uid');expect(audit).not.toHaveProperty('actor_database_session');
+ }
  for(const n of [3,4,9,10]){await as(n);await expect(scoped(7,[unrelated])).rejects.toThrow(/Leadership/);await expect(db.query('select team_attendance_private.sync_participant_rosters($1,$2::uuid[])',[id(7),[unrelated]])).rejects.toThrow(/permission denied/);}
 });
 
@@ -145,4 +164,14 @@ test('targeted and normal future sync preserve requests, reviewed/recorded atten
 
 test('new private arbitrary-identity predicates and scoped core are not callable by authenticated or anonymous users',async()=>{
  for(const role of ['authenticated','anon']){await db.exec(`reset role;set role ${role}`);for(const query of ['select team_attendance_private.is_participant(null)','select team_attendance_private.is_program_manager(null)','select team_attendance_private.is_student_program_manager(null)','select team_attendance_private.can_review_request(null,null)','select team_attendance_private.sync_participant_rosters(null,null)'])await expect(db.query(query)).rejects.toThrow(/permission denied/);}
+});
+
+
+test('participant fixture exactly matches the production audit columns, actor constraint and trigger contract',async()=>{
+ await db.exec('reset role');
+ const columns=(await db.query<any>("select column_name,is_nullable from information_schema.columns where table_schema='public' and table_name='team_attendance_history' order by ordinal_position")).rows;
+ expect(columns.map(c=>c.column_name)).toEqual(['id','meeting_id','student_id','entity','entity_id','action','before_data','after_data','performed_by','performed_at']);
+ expect(columns.find(c=>c.column_name==='performed_by').is_nullable).toBe('NO');
+ expect((await db.query("select 1 from pg_trigger where tgrelid='public.team_attendance_history'::regclass and tgname='team_history_actor'")).rows).toHaveLength(0);
+ expect((await db.query('select 1 from public.team_attendance_history where performed_by is null')).rows).toHaveLength(0);
 });

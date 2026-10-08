@@ -1,6 +1,8 @@
 // Synthetic fixture only. The caller must own a fresh disposable database.
-// Matches tests/attendance-editing-db.spec.ts, including the inspected production
-// public-audit contract; never run this against an existing/shared app database.
+// Matches the inspected production RPC/public-audit function surface. This
+// disposable setup retains the base fixture's optional database-actor columns;
+// production's NOT NULL performed_by table is separately exercised by
+// attendance-participation-db.spec.ts. Never use this fixture on an existing DB.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 

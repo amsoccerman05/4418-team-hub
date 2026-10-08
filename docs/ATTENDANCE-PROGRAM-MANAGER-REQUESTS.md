@@ -29,7 +29,7 @@ Before team rollout, verify a synthetic Program Manager request through real Aut
 - `npm run build`: TypeScript and Vite build
 - `node scripts/test-node-regression.mjs`: isolated local PGlite/model regressions
 - `node --test tests/integration/fabrication-safety.test.mjs`: local-stack safety guards
-- `npx playwright test tests/attendance-ui.spec.ts --workers=1`: mocked browser flows, including student/lead PMs and Mentor-only review controls
+- `npx playwright test tests/attendance-ui.spec.ts --workers=1`: mocked browser flows, including student/lead/mentor/admin PMs, scoped roster selection, and Mentor-only review controls
 - `ATTENDANCE_REQUESTS_INTEGRATION=1 node tests/integration/fabrication-local.mjs --run`: owned disposable real Supabase Auth/PostgREST stack, requires the pinned CLI and Docker
 
 The PGlite tests use a synthetic `auth.uid()` and cannot establish real Auth/PostgREST behavior. The browser fixture also cannot establish backend permissions. Both real-stack and browser checks must pass in a suitable environment before release. The approved CI run at `7e8e3fc` passed the real Auth/PostgREST suite, including peer PM denial and Mentor approval. The first full browser run exposed exact-label dropdown locator issues in the new tests; those locators are corrected in this follow-up. Follow the current PR-head checks for final results. Locally, the pinned Supabase CLI and Docker are absent and Chromium's required socket creation is denied.
@@ -40,6 +40,10 @@ Attendance `Registered` is team-attendance enrollment only. It does not confirm 
 
 The migration itself enrolls nobody and creates no attendance records. New meetings include eligible participants using the existing active/registered/area/selected/optional rules. For existing meetings, use separately authorized enrollment followed by a bounded, audited forward sync. `team_attendance_sync_participant_rosters(student_id, meeting_ids)` accepts only one eligible participant and an explicit list of future, unfinalized broad-roster meetings; it does not synchronize other people. Missing snapshots are added, untouched optional snapshots may be promoted when eligible, and recorded/reviewed data is preserved. Past, finalized, area-specific, selected, and optional meetings cannot be swept into this operation.
 
-The owner-only private core supports an authorized administrative rollout with database actor attribution when there is no authenticated subject. Never impersonate a user to fabricate an audit actor. Do not store actual account IDs or meeting lists in this public migration or tests.
+Use a genuinely signed-in leadership account for registration and scoped roster changes. Production requires a non-null authenticated audit actor; this change preserves that constraint and never fabricates Auth claims. In **Attendance → Roster**, open the member, save their Attendance enrollment if authorized, then use **Sync this member’s future meetings** to review the exact selected meetings. This calls the member-specific RPC, not the all-member sync. Do not store actual account IDs or meeting lists in this public migration or tests.
 
 PM classification follows the current active position, and self-review is always denied. Revoking/deactivating the position affects future participation and current reviewer eligibility; stored attendance history is retained. Administrative registration remains independent.
+
+### Audit-shape parity
+
+The original disposable fixture used a hardened audit-table variant with extra database-actor columns. Production uses a public history table with `performed_by NOT NULL` and no such columns. The participant SQL suite now explicitly tests the production shape, genuine leadership attribution, and rejection of missing-Auth administrative writes. No production audit columns, nullability, or triggers are changed by this feature.

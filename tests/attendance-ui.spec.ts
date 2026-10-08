@@ -1355,3 +1355,41 @@ test('Program Manager decision links show own decisions without changing the tea
  await expect(page.getByRole('combobox',{name:'Request status',exact:true})).toHaveValue('excused');
  await expect(page.getByText('Mentor approved this request',{exact:true})).toBeVisible();
 });
+
+for(const width of [390,1440])test(`member-scoped roster sync selects exact future IDs, preserves draft after denial, and never calls all-member sync ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});
+ const {calls}=await mock(page,'mentor',{configure:data=>{
+  const m=data.meetings[0];m.status='draft';
+  data.meetings=[m,
+   {...m,id:'m-active',title:'Active team practice',requirement:'active',starts_at:'2026-09-11T17:00:00Z',ends_at:'2026-09-11T19:00:00Z'},
+   {...m,id:'m-optional',title:'Optional practice',requirement:'optional'},
+   {...m,id:'m-area',title:'Area practice',requirement:'areas'},
+   {...m,id:'m-selected',title:'Selected practice',requirement:'selected'},
+   {...m,id:'m-past',title:'Past practice',starts_at:'2026-09-08T17:00:00Z',ends_at:'2026-09-08T19:00:00Z'},
+   {...m,id:'m-finalized',title:'Finalized practice',status:'finalized'},
+  ];
+ }});
+ await page.clock.setFixedTime(new Date('2026-09-09T15:00:00Z'));
+ const attempts:any[]=[];
+ await page.route('**/rpc/team_attendance_sync_participant_rosters',async route=>{
+  attempts.push(route.request().postDataJSON());
+  if(attempts.length===1)await route.fulfill({status:403,json:{message:'Leadership access required'}});
+  else await route.fulfill({json:{added:1,promoted:0,skipped:0}});
+ });
+ await page.goto('/#attendance/roster');
+ await page.locator('.att-record > summary').filter({hasText:'Alex Student'}).click();
+ await page.getByText('Sync this member’s future meetings',{exact:true}).click();
+ const region=page.getByRole('region',{name:'Roster sync for Alex Student'});
+ await expect(region).toBeVisible();
+ expect(await region.locator('input[type=checkbox]').evaluateAll(nodes=>nodes.map(n=>(n as HTMLInputElement).value))).toEqual(['m1','m-active']);
+ await region.locator('input[value=m1]').uncheck();
+ await region.getByRole('button',{name:'Sync selected meetings',exact:true}).click();
+ await expect(page.locator('.attendance-section').getByRole('alert')).toContainText('Leadership access required');
+ await expect(region.locator('input[value=m-active]')).toBeChecked();
+ await region.getByRole('button',{name:'Sync selected meetings',exact:true}).click();
+ await expect(region.getByText('Added 1; newly required 0; preserved for review 0.',{exact:true})).toBeVisible();
+ await expect(region.getByRole('button',{name:'Sync selected meetings',exact:true})).toBeDisabled();
+ expect(attempts).toEqual([{student_id:student,meeting_ids:['m-active']},{student_id:student,meeting_ids:['m-active']}]);
+ expect(calls).toEqual([]);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});

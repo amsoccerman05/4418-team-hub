@@ -340,7 +340,7 @@ begin
   raise exception 'One participant and 1 to 52 distinct meeting IDs are required';
  end if;
  perform pg_advisory_xact_lock(4418,10);
- if auth.uid() is not null and not team_attendance_private.manager() then raise exception 'Leadership access required' using errcode='42501';end if;
+ if not team_attendance_private.manager() then raise exception 'Leadership access required' using errcode='42501';end if;
  if not team_attendance_private.is_participant(target_id) then raise exception 'Active Attendance participant required' using errcode='42501';end if;
  select p.id,coalesce(r.member_status,'prospective') member_status,coalesce(r.team_area,'') team_area
  into candidate from public.profiles p left join public.team_attendance_members r on r.student_id=p.id where p.id=target_id;
@@ -358,7 +358,7 @@ begin
  for m in select * from public.team_meetings where id=any(targets) order by id loop
   select * into mm from public.team_meeting_members x where x.meeting_id=m.id and x.student_id=target_id for update;
   if m.starts_at<=clock_timestamp() then raise exception 'A selected meeting has started';end if;
-  if auth.uid() is not null and not team_attendance_private.manager() then raise exception 'Leadership access required' using errcode='42501';end if;
+  if not team_attendance_private.manager() then raise exception 'Leadership access required' using errcode='42501';end if;
   if not team_attendance_private.is_participant(target_id) then raise exception 'Active Attendance participant required' using errcode='42501';end if;
   if not found then
    insert into public.team_meeting_members(meeting_id,student_id,required,member_status,team_area)
@@ -370,7 +370,7 @@ begin
   elsif not mm.required then
    select * into a from public.team_attendance x where x.meeting_id=m.id and x.student_id=target_id for update;
    if m.starts_at<=clock_timestamp() then raise exception 'A selected meeting has started';end if;
-   if auth.uid() is not null and not team_attendance_private.manager() then raise exception 'Leadership access required' using errcode='42501';end if;
+   if not team_attendance_private.manager() then raise exception 'Leadership access required' using errcode='42501';end if;
    if not team_attendance_private.is_participant(target_id) then raise exception 'Active Attendance participant required' using errcode='42501';end if;
    -- Identical preservation rule to the existing no-argument sync.
    if not found or a.physical_status<>'pending' or a.review_status<>'not_required'
@@ -390,9 +390,9 @@ end $$;
 
 revoke all on function team_attendance_private.sync_participant_rosters(uuid,uuid[]) from public,anon,authenticated;
 
--- Authenticated leadership is the only public entry point. The private core is
--- also usable by the database owner for an explicitly authorized administrative
--- repair; NULL auth.uid() preserves honest database-session audit attribution.
+-- Authenticated leadership is required by both entry points, including owner
+-- calls to the private core. Production audit requires a real Auth actor;
+-- calls without one must fail before any write. Audit schema stays unchanged.
 create function public.team_attendance_sync_participant_rosters(student_id uuid, meeting_ids uuid[]) returns jsonb
 language plpgsql security definer set search_path='' as $$
 begin
