@@ -82,6 +82,9 @@ export type History = {
 };
 export type PolicyContext = {
  user_id: string; can_review: boolean; can_read_team: boolean; can_manage_meetings: boolean; strike_year_start: string|null;
+ can_participate?: boolean;
+ can_review_program_manager_requests?: boolean;
+ mentor_review_required_for?: string[];
  people: {id:string;name:string;role:string;positions:string[]}[];
  warnings: {student_id:string;at:string;actor:string;note:string}[];
 };
@@ -96,6 +99,11 @@ export type Data = {
 };
 export const isManager = (p: Profile) =>
   p.active && ["lead", "admin", "mentor"].includes(p.role);
+// Attendance participation is independent of shared suite management access.
+// Existing student/lead clients stay compatible until the new policy context is deployed.
+export const canParticipate = (p:Profile,data:Data) => p.active && ["student","lead","mentor","admin"].includes(p.role) && (
+ data.policy?.can_participate ?? ["student","lead"].includes(p.role)
+);
 export async function rpc(action: string, args: Record<string, unknown>) {
   if (!supabase) throw new Error("Attendance is not configured.");
   const { data, error } = await supabase.rpc(action, args);
@@ -153,13 +161,13 @@ export async function loadData(manager: boolean): Promise<Data> {
     history: [],
   };
 }
-export async function loadHistory(meetingId: string) {
-  const { data, error } = await supabase!
+export async function loadHistory(meetingId: string, studentId?: string) {
+  let query = supabase!
     .from("team_attendance_history")
     .select("*")
-    .eq("meeting_id", meetingId)
-    .order("performed_at", { ascending: false })
-    .limit(100);
+    .eq("meeting_id", meetingId);
+  if (studentId) query = query.eq("student_id", studentId);
+  const { data, error } = await query.order("performed_at", { ascending: false }).limit(100);
   if (error) throw error;
   return data as History[];
 }
@@ -197,7 +205,11 @@ export function summary(data: Data, studentId: string) {
   };
 }
 export const inStrikeYear = (data:Data,s:Strike) => !data.policy?.strike_year_start || Date.parse(s.assigned_at)>=Date.parse(data.policy.strike_year_start);
-export const canReview = (data:Data,a?:Attendance) => !!data.policy?.can_review && (!a || a.student_id!==data.policy.user_id);
+export const requiresMentorReview = (data:Data, studentId:string) => data.policy?.mentor_review_required_for?.includes(studentId) ?? false;
+export const canReview = (data:Data,a?:Attendance) => !!data.policy?.can_review && (!a || (
+ a.student_id!==data.policy.user_id
+ && (!requiresMentorReview(data,a.student_id) || data.policy.can_review_program_manager_requests===true)
+));
 export const strikeAction = (n: number) =>
  n>=5 ? "Removal threshold reached" : n>=3 ? "Warning / parent contact previously required · monitor" : n>=2 ? "Warning / parent contact required" : "No strike threshold reached";
 export function checkInControls(m:Meeting,now=Date.now()){
@@ -229,4 +241,12 @@ export function attendanceDuration(a: Attendance, meeting?: Meeting, now = Date.
   const minutes = Math.floor((end - Date.parse(a.checked_in_at)) / 60000);
   if (!Number.isFinite(minutes) || minutes < 0) return null;
   return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+// Selection aid only; the scoped server RPC validates time, membership and rights again.
+export function rosterSyncMeetings(data:Data,member:Member,now=Date.now()):Meeting[] {
+ if(member.member_status==="inactive")return [];
+ return data.meetings.filter(m=>m.status!=="finalized" && Date.parse(m.starts_at)>now
+  && (m.requirement==="active" || (m.requirement==="registered" && member.member_status==="registered")))
+  .sort((a,b)=>Date.parse(a.starts_at)-Date.parse(b.starts_at)||a.id.localeCompare(b.id));
 }

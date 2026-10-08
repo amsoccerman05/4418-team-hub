@@ -1,0 +1,32 @@
+name: Check own attendance requests
+on:
+  pull_request:
+    paths:
+      - "src/attendance/**"
+      - "supabase/migrations/**"
+      - "tests/attendance-*.spec.ts"
+      - "tests/fixtures/attendance-production-functions.sql"
+      - "tests/integration/**"
+      - ".github/workflows/attendance-requests-check.yml"
+      - "package*.json"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  real-api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3
+        with:
+          version: "2.119.0"
+      - name: Check local-only integration guards
+        run: node --test tests/integration/fabrication-safety.test.mjs
+      - name: Verify own requests through real disposable Auth and PostgREST
+        env:
+          ATTENDANCE_REQUESTS_INTEGRATION: "1"
+        run: node tests/integration/fabrication-local.mjs --run
