@@ -1407,7 +1407,7 @@ for (const width of [390,1440]) test(`ordinary mentor cannot decide requests but
  for(const name of ['Excuse','Deny'])await expect(card.getByRole('button',{name,exact:true})).toHaveCount(0);
  await card.getByText('Advanced attendance & strikes',{exact:true}).click();
  await expect(card.getByLabel('Excuse status',{exact:true})).toHaveCount(0);
- await expect(card.getByText('Assign strike',{exact:true})).toBeVisible();
+ await expect(card.locator('summary').filter({hasText:/^Assign strike$/})).toBeVisible();
  await card.getByText('Review / correct attendance',{exact:true}).click();
  await card.getByRole('combobox',{name:/^Attendance/}).selectOption('late');
  await card.getByLabel('Review / correction explanation',{exact:true}).fill('Synthetic physical correction only');
