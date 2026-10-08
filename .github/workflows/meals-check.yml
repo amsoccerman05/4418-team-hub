@@ -1,0 +1,119 @@
+name: Saturday meals draft checks
+on:
+  pull_request:
+    paths:
+      - 'src/meals/**'
+      - 'supabase/functions/team-meals/**'
+      - 'supabase/drafts/saturday-meals.sql'
+      - 'tests/meals-*.spec.ts'
+      - 'tests/helpers/meal-*.ts'
+      - 'supabase/config.toml'
+      - 'tests/native/meals-*.mjs'
+      - 'tests/integration/meals-*'
+      - 'tests/integration/fabrication-local.mjs'
+      - 'tests/integration/fabrication-safety*.mjs'
+      - 'scripts/*meals*.mjs'
+      - 'meals*.html'
+      - 'meals*.config.ts'
+      - 'package*.json'
+      - 'src/main.tsx'
+      - 'src/HubNav.tsx'
+      - '.github/workflows/meals-check.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: saturday-meals-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Typecheck and build (no production configuration)
+        run: npm run build
+      - name: Backend strict typecheck
+        run: npx tsc --noEmit --target ES2022 --lib ES2022,DOM,DOM.Iterable --module ESNext --moduleResolution Bundler --strict --skipLibCheck --allowImportingTsExtensions supabase/functions/team-meals/*.ts
+      - name: Meal database and gateway checks
+        run: npm run test:meals
+      - name: Render actual components with synthetic coverage
+        run: npm run test:meals:static
+      - name: Synthetic local HTTP flow
+        run: node scripts/smoke-meals-local.mjs
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+      - name: Browser interactions and responsive review
+        run: npm run test:meals:ui
+      - name: Generate standalone synthetic design preview
+        if: always()
+        run: node scripts/preview-meals.mjs
+      - name: Retain synthetic review evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: saturday-meals-review
+          path: |
+            review/meal-parent-preview.html
+            test-results/meals/**/*.png
+            test-results/meals-manager-*.png
+            test-results/meals-*/**/*
+          if-no-files-found: error
+          retention-days: 7
+
+  native-transactions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Verify meal races and durable PostgreSQL gateway
+        run: |
+          PG_BIN="$(find /usr/lib/postgresql -path '*/bin/postgres' -type f -printf '%h\n' | sort -V | tail -1)"
+          test -n "$PG_BIN" || { echo 'No installed PostgreSQL server binary found'; exit 1; }
+          MEALS_PG_BIN="$PG_BIN" npm run test:meals:native
+
+  isolated-auth-api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb
+        with:
+          deno-version: '2.8.0'
+      - name: Resolve or verify exact Edge dependency lock without executing application
+        run: |
+          if test -f supabase/functions/team-meals/deno.lock; then
+            node scripts/lock-meals-edge.mjs --verify
+          else
+            node scripts/lock-meals-edge.mjs
+          fi
+      - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359
+        with:
+          version: '2.119.0'
+      - name: Check isolated-stack safety guards
+        run: node --test tests/integration/fabrication-safety.test.mjs tests/integration/meals-network.test.mjs tests/integration/meals-edge-response.test.mjs
+      - name: Verify synthetic meals with real disposable Auth and API
+        run: MEALS_INTEGRATION=1 node tests/integration/fabrication-local.mjs --run
+      - name: Retain generated Edge dependency lock
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: saturday-meals-edge-lock
+          path: supabase/functions/team-meals/deno.lock
+          if-no-files-found: error
+          retention-days: 7

@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 // Owns one disposable local stack. Never links, resets, deploys, or calls Management API.
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, rmSync, readdirSync } from 'node:fs';
 import { execFileSync, spawn } from 'node:child_process';
 import { dirname, resolve, join, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
-import { randomUUID, createHash } from 'node:crypto';
+import { randomUUID, createHash, randomBytes } from 'node:crypto';
 import { CLI_VERSION, API_PORT, DB_PORT, ORIGIN, localStatus, localFetch, isolatedEnvironment, edgeObservation, edgeHandlerReady, assertLocalPreflight } from './fabrication-safety.mjs';
 
 import { attendanceEditingSources } from './attendance-editing-fixture.mjs';
+import { ownedMealsDatabaseAddress } from './meals-network.mjs';
 import { volunteerHoursSources } from './volunteer-hours-stack.spec.mjs';
 import { attendanceRequestSources } from './attendance-requests-stack.spec.mjs';
 
@@ -18,6 +19,7 @@ const withAttendanceRequests = process.env.ATTENDANCE_REQUESTS_INTEGRATION === '
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const mode = process.argv[2] || '--run';
+const mealsEnabled = process.env.MEALS_INTEGRATION === '1';
 assert(['--run', '--preflight', '--prepare-only'].includes(mode), 'Use --run, --preflight, or --prepare-only');
 const executable = process.env.FABRICATION_SUPABASE_CLI || 'supabase';
 assert(executable === 'supabase' || isAbsolute(executable), 'CLI override must be an absolute local binary path');
@@ -31,7 +33,7 @@ const cli = (args, timeout = 60_000) => execFileSync(executable, [...args, '--wo
 const docker = args => execFileSync('docker', args, { ...common, timeout: 45_000 }).trim();
 const pgArgs = ['exec', '-i', `supabase_db_${project}`, 'psql', '-X', '-U', 'postgres', '-d', 'postgres', '-Atq', '-v', 'ON_ERROR_STOP=1'];
 const sql = input => execFileSync('docker', pgArgs, { ...common, input, timeout: 45_000 }).trim();
-let started = false, networkCreated = false, edge, report, cleanupPromise;
+let started = false, networkCreated = false, edge, report, cleanupPromise, mealEdgeContext;
 const children = new Set();
 const secrets = [];
 const clean = text => secrets.reduce((out, secret) => out.replaceAll(secret, '[local-key]'), String(text))
@@ -107,7 +109,14 @@ const sourcePaths = [
   ...['types.ts', 'model.ts', 'decision-types.ts', 'decision-model.ts', 'trade-study.ts'].map(f => `src/planning/reviews/${f}`),
   ...['fabrication-local.mjs', 'fabrication-safety.mjs', 'fabrication-stack.spec.mjs', 'assembly-stack.spec.mjs', 'design-decision-stack.spec.mjs', 'attendance-editing-fixture.mjs', 'attendance-editing-stack.spec.mjs'].map(f => `tests/integration/${f}`),
 ];
-const hashes = Object.fromEntries([...sourcePaths, ...attendanceEditingSources, ...(withVolunteerHours ? volunteerHoursSources : []), ...(withAttendanceRequests ? attendanceRequestSources : [])].map(path => [path, createHash('sha256').update(readFileSync(join(repo, path))).digest('hex')]));
+const mealsFunctionFiles = mealsEnabled ? readdirSync(join(repo, 'supabase/functions/team-meals')).filter(name => /\.ts$|^deno\.(json|lock)$/.test(name)).sort() : [];
+const mealsSources = mealsEnabled ? [
+  'supabase/drafts/saturday-meals.sql',
+  ...mealsFunctionFiles.map(f => `supabase/functions/team-meals/${f}`),
+  'src/meals/types.ts', 'tests/helpers/meal-delivery-fixture.ts',
+  'tests/integration/meals-fixture.mjs', 'tests/integration/meals-stack.spec.mjs', 'tests/integration/meals-edge.spec.mjs', 'tests/integration/meals-network.mjs',
+] : [];
+const hashes = Object.fromEntries([...sourcePaths, ...attendanceEditingSources, ...mealsSources, ...(withVolunteerHours ? volunteerHoursSources : []), ...(withAttendanceRequests ? attendanceRequestSources : [])].map(path => [path, createHash('sha256').update(readFileSync(join(repo, path))).digest('hex')]));
 try {
   const version = execFileSync(executable, ['--version'], common).trim();
   assert.equal(version, CLI_VERSION, `Install the pinned official Supabase CLI ${CLI_VERSION}`);
@@ -159,10 +168,17 @@ policy = "per_worker"
 inspector_port = 54338
 [functions.fabrication-files]
 verify_jwt = false
-`);
+${mealsEnabled ? '[functions.team-meals]\nverify_jwt = false\nimport_map = "./functions/team-meals/deno.json"\n' : ''}`);
     const functionDir = join(root, 'supabase/functions/fabrication-files');
     mkdirSync(functionDir, { recursive: true });
     for (const name of ['index.ts', 'handler.ts', 'validation.ts']) copyFileSync(join(repo, 'supabase/functions/fabrication-files', name), join(functionDir, name));
+    if (mealsEnabled) {
+      const mealDir = join(root, 'supabase/functions/team-meals');
+      mkdirSync(mealDir, { recursive: true });
+      for (const name of mealsFunctionFiles) copyFileSync(join(repo, 'supabase/functions/team-meals', name), join(mealDir, name));
+      mkdirSync(join(root, 'src/meals'), { recursive: true });
+      copyFileSync(join(repo, 'src/meals/types.ts'), join(root, 'src/meals/types.ts'));
+    }
     // start loads this documented path before the first worker can be warmed.
     const edgeEnv = join(root, 'supabase/functions/.env');
     writeFileSync(edgeEnv, `FABRICATION_ALLOWED_ORIGINS=${ORIGIN}\n`, { mode: 0o600 });
@@ -177,13 +193,30 @@ verify_jwt = false
       cli(['start', '--exclude', 'realtime,imgproxy,mailpit,postgres-meta,studio,logflare,vector,supavisor'], 12 * 60_000);
       const containerIDs = docker(['ps', '-q', '--filter', `network=${network}`]).split('\n').filter(Boolean);
       assert(containerIDs.length >= 5, 'Expected real local Supabase service containers');
-      for (const container of JSON.parse(docker(['inspect', ...containerIDs]))) {
+      const containers = JSON.parse(docker(['inspect', ...containerIDs]));
+      for (const container of containers) {
         for (const bindings of Object.values(container.NetworkSettings.Ports || {})) {
           for (const binding of bindings || []) assert(['127.0.0.1', '::1'].includes(binding.HostIp), `Non-loopback published port rejected for ${container.Name}`);
         }
       }
       const status = localStatus(JSON.parse(cli(['status', '-o', 'json'])));
       secrets.push(status.anonKey, status.serviceKey);
+      if (mealsEnabled) {
+        const envelopeKey = randomBytes(32).toString('base64'), workerSecret = randomBytes(32).toString('base64url');
+        secrets.push(envelopeKey, workerSecret);
+        const inspectedNetwork = JSON.parse(docker(['network', 'inspect', network]));
+        assert.equal(inspectedNetwork.length, 1, 'Expected one owned network inspection');
+        const databaseHost = ownedMealsDatabaseAddress(containers, inspectedNetwork[0], project);
+        const authHost = `supabase_kong_${project}`;
+        mealEdgeContext = { envelopeKey, workerSecret };
+        // Fresh generated values only. Local-test cannot select a real provider,
+        // production endpoint, or existing credential. The fixture owns both
+        // approved Docker destinations and decrypts queued mail privately, never by API.
+        // The database address is taken only from matching owned network/container
+        // inspections; no caller or inherited environment can choose it.
+        writeFileSync(edgeEnv, `FABRICATION_ALLOWED_ORIGINS=${ORIGIN}\nMEALS_ENABLED=true\nMEALS_RUNTIME_MODE=local-test\nMEALS_DATABASE_URL=postgresql://postgres:postgres@${databaseHost}:5432/postgres\nMEALS_LOCAL_DATABASE_HOST=${databaseHost}\nMEALS_AUTH_URL=http://${authHost}:8000\nMEALS_LOCAL_AUTH_HOST=${authHost}\nMEALS_AUTH_PUBLIC_KEY=${status.anonKey}\nMEALS_PUBLIC_BASE_URL=${ORIGIN}/meals.html\nMEALS_ALLOWED_ORIGINS='${JSON.stringify([ORIGIN])}'\nMEALS_MAIL_ENABLED=true\nMEALS_MAIL_MODE=mock\nMEALS_ENVELOPE_KEY=${envelopeKey}\nMEALS_LOCAL_DEFER_DELIVERY=true\nMEALS_DISPATCH_ENABLED=true\nMEALS_WORKER_SECRET=${workerSecret}\n`, { mode: 0o600 });
+      }
+
       assert.equal(sql('select count(*) from auth.users'), '0', 'Refusing a nonempty Auth database');
       assert.equal(sql('select count(*) from storage.objects'), '0', 'Refusing nonempty Storage');
       const authFunction = sql("select pg_get_functiondef('auth.uid()'::regprocedure)");
@@ -191,7 +224,7 @@ verify_jwt = false
       sql(readFileSync(join(repo, 'tests/integration/fabrication-prerequisites.sql'), 'utf8'));
       for (const path of sourcePaths.filter(p => p.endsWith('.sql'))) sql(readFileSync(join(repo, path), 'utf8'));
       sql("notify pgrst, 'reload schema';");
-      edge = spawn(executable, ['functions', 'serve', 'fabrication-files', '--env-file', edgeEnv, '--workdir', root, '--network-id', network], common);
+      edge = spawn(executable, ['functions', 'serve', ...(mealsEnabled ? [] : ['fabrication-files']), '--env-file', edgeEnv, '--workdir', root, '--network-id', network], common);
       children.add(edge); edge.once('close', () => children.delete(edge));
       edge.stdout.on('data', captureEdge);
       edge.stderr.on('data', captureEdge);
@@ -234,6 +267,10 @@ verify_jwt = false
       checks.push(...await runDesignDecisionIntegration({ ...status, sql, registerSecret: s => secrets.push(s) }));
       const { runAttendanceEditingIntegration } = await import('./attendance-editing-stack.spec.mjs');
       checks.push(...await runAttendanceEditingIntegration({ ...status, sql, registerSecret: s => secrets.push(s) }));
+      if (mealsEnabled) {
+        const { runMealsIntegration } = await import('./meals-stack.spec.mjs');
+        checks.push(...await runMealsIntegration({ ...status, sql, edge: mealEdgeContext, registerSecret: s => secrets.push(s) }));
+      }
       if (withAttendanceRequests) {
         const { runAttendanceRequestsIntegration } = await import('./attendance-requests-stack.spec.mjs');
         checks.push(...await runAttendanceRequestsIntegration({ ...status, sql, registerSecret: s => secrets.push(s) }));

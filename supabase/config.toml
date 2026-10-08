@@ -5,3 +5,10 @@ verify_jwt = false
 [functions.fabrication-files]
 # Auth.getUser verifies the token; scoped RPCs recheck the current active profile/project.
 verify_jwt = false
+
+[functions.team-meals]
+# Public contributions are accountless; the handler verifies manager bearers with
+# configured Auth /user and SQL rechecks active mentor/admin roles on every call.
+# Runtime, real mail and dispatch each remain disabled until explicitly enabled.
+verify_jwt = false
+import_map = "./functions/team-meals/deno.json"

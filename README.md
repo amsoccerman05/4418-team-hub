@@ -111,6 +111,10 @@ Requires the additive design-decision migration before use; it has not been appl
 
 Attendance includes a student-facing **How to use Attendance** tab and contextual help. Existing meeting leadership can edit the title, type, or available start/end fields of one meeting before it starts. Schedule changes preserve rosters and requests, require review, and invalidate the temporary check-in code; recorded attendance and decisions lock the schedule. See [scope, safety, release status, and verification](docs/ATTENDANCE-MEETING-EDITING.md). The additive editing migration is prepared but has not been applied to production.
 
+## Saturday meal signups — disabled runtime draft
+
+The accountless parent page, mentor/admin coordinator view, durable PostgreSQL gateway, server-verified Auth, and Resend delivery/recovery adapter are implemented in [draft PR #15](https://github.com/amsoccerman05/4418-team-hub/pull/15). Runtime, live mail, dispatch and SQL mail budget remain disabled until separately approved configuration and deployment. `npm run dev:meals` provides the loopback-only synthetic preview with `.invalid` recipients and no real email. See [candidate verification and authoritative CI results](docs/MEALS-VERIFICATION.md), [runtime/activation requirements](docs/MEALS-RUNTIME.md), and [scope/privacy review](docs/MEALS-REVIEW.md). No production migration or family-data import was performed; existing KCMT pages/forms and the held parent hub remain unchanged.
+
 ## Mentor volunteer hours — local review draft
 
 Attendance has a separate mentor/admin **Volunteer hours** view for actual volunteer clock-in/out, past entries, own corrections with history, and CSV exports. Active admins can see team aggregates. Running or voided entries never count as completed hours, and student attendance and strikes remain independent. The additive migration and UI are not deployed by this draft. See [mentor instructions, backend contract, verification, and release checklist](docs/VOLUNTEER-HOURS.md).
