@@ -86,7 +86,7 @@ Launcher deployment does not require SSO or API integrations. Attendance setup i
 
 ## Family event guides
 
-KCMT 2026 has a team event overview at `/#events/kcmt-2026` and a public family guide at `/event.html#kcmt-2026`. The guide includes the tentative organizer schedule, optional Friday activities, venue and clearly labeled family logistics awaiting confirmation. It requires no sign-in and reads only a separately curated static public document; it never reads team records or Planning tasks. See [event-page content and release guidance](docs/EVENT-PAGES.md) before adding or publishing information.
+The reusable event-guide framework is retained, but no guides are currently published or linked from the Team Hub. The KCMT 2026 guide was retired on 2026-10-08. Its old public and internal links show an unavailable state without event content. See [event-page content and release guidance](docs/EVENT-PAGES.md) before adding or publishing a new guide.
 
 
 ## Fabrication V1 — local draft

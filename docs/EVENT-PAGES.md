@@ -2,22 +2,22 @@
 
 ## Scope and current status
 
-The user approved publication of the KCMT family guide on 2026-10-05, with Friday explicitly optional and unconfirmed logistics clearly labeled. The public registry contains only that curated guide. No production database write, schema migration, permission grant or RLS change is part of this feature. Release is gated on the repository checks.
+The KCMT 2026 guide was retired at the user's request on 2026-10-08. Both the public registry and the internal draft registry are empty, and the Hub hides Events navigation while no drafts exist. Old public links show a generic unavailable state and return sign-in to the Hub; old internal overview/preview links show Event not found with a route back to the Hub.
 
-This is a reusable per-event structure, with KCMT 2026 as the first event. It does not add a permanent year-round parent hub or invent annual registration, volunteer or team-role information.
+The reusable per-event structure remains available for separately approved future guides. No production database write, schema migration, permission grant or RLS change is part of this removal. Attendance events, rosters, meals, calendar and logistics records are unchanged. Previous guide content remains recoverable through Git history, but is not included in the current application or public registry.
 
-- Internal overview: `/#events/kcmt-2026`
-- Authenticated parent-copy preview: `/#events/kcmt-2026/preview`
-- Public page, after approval and publication: `/event.html#kcmt-2026`
+- Future internal overview: `/#events/<approved-slug>`
+- Future authenticated parent-copy preview: `/#events/<approved-slug>/preview`
+- Future public page, after approval and publication: `/event.html#<approved-slug>`
 - Static public entry works on GitHub Pages without a server rewrite. Hash deep links, reload and Back/Forward are supported.
 
 ## Public boundary
 
 `event.html` is a separate Vite entry. It imports only React, pure event presentation, styles, branding and the public content validator. It never imports/initializes the Supabase client, suite sign-in broker, profiles, notifications, Planning, Attendance or dashboard. It does not inspect or refresh a saved user session, even if the visitor also has a team account.
 
-The only content request is the same-origin static `events/published.json`, using `credentials: omit`, `cache: no-store` and `referrerPolicy: no-referrer`. The file contains the approved KCMT event under `{ "schemaVersion": 1, "events": [...] }`. Unknown events remain unpublished. A missing, unknown or unpublished slug has a generic unavailable state. Bad documents fail closed with a retry option. No remote images, map embeds, payments or signup/collection forms are included.
+The only content request is the same-origin static `events/published.json`, using `credentials: omit`, `cache: no-store` and `referrerPolicy: no-referrer`. The file currently contains `{ "schemaVersion": 1, "events": [] }`. Unknown events remain unpublished. A missing, unknown or unpublished slug has a generic unavailable state. Bad documents fail closed with a retry option. No remote images, map embeds, payments or signup/collection forms are included.
 
-Only separately curated `PublicEvent` fields are rendered. Unknown object properties are dropped as defense in depth; this is **not redaction**. Every byte of `published.json` is publicly downloadable. Never place private data in this file, source files, fixtures, screenshots or public build artifacts. No student names, rosters, attendance, disciplinary records, internal tasks, finance details, dietary or medical information belong in public event content. Personal contact details require the person’s specific approval for this public page; the only approved contact currently listed is Aiden Morrison at 720-525-3196. Do not derive this file by serializing an internal record or an existing database response. Its approval is a separate human editorial step.
+Only separately curated `PublicEvent` fields are rendered. Unknown object properties are dropped as defense in depth; this is **not redaction**. Every byte of `published.json` is publicly downloadable. Never place private data in this file, source files, fixtures, screenshots or public build artifacts. No student names, rosters, attendance, disciplinary records, internal tasks, finance details, dietary or medical information belong in public event content. Personal contact details require the person’s specific approval for this public page; no contact is currently listed. Do not derive this file by serializing an internal record or an existing database response. Its approval is a separate human editorial step.
 
 The organizer URL is explicitly allowlisted in `public-model.ts`. Public links have `noopener noreferrer`. Text is rendered as React text, not HTML. `event.html` has a no-referrer policy and `noindex, nofollow`; search directives do not provide access control.
 
@@ -25,32 +25,7 @@ The organizer URL is explicitly allowlisted in `public-model.ts`. Public links h
 
 The authenticated overview and review preview use only the separately curated event configuration. They do not query Planning, Attendance, Inventory, tasks or other operational records. There are no board-linking controls, task assignments, Kanban views or data mutation actions. The user's existing Planning UI and task routes are unchanged.
 
-The overview retains a direct Competition Operations link for the team. That link is not part of the parent guide. The parent's own public page needs no sign-in. An optional Team sign-in link continues to the event overview after sign-in.
-
-## KCMT approved publication copy
-
-Source: https://coloradofirst.org/frc/kcmt/ (checked 2026-10-05).
-
-- KCMT 2026, Kendrick Castillo Memorial Tournament
-- October 10–11, 2026; load-in Friday October 9
-- Coronado High School, 1590 W Fillmore St, Colorado Springs, CO 80904
-- Organizer schedule highlights, explicitly tentative, all times Mountain Time
-- Friday attendance is optional for Team 4418, explicitly requested by the user. Friday: load-in 4–6 pm; practice field 5 pm; practice 6–8 pm; venue closes 8:30 pm
-- Saturday: venue 7:30 am; drivers meeting 8:30; ceremony 9; qualifications 9:30; lunch break 12:30; qualifications 1:15–6 pm; venue closing listed as 7:30 pm or one hour after the last round
-- Sunday: venue 7:30 am; welcome 8:30; qualifications 9; alliance selection noon; lunch break 12:30; eliminations 1:30–6 pm
-The family guide includes the following parent-relevant details from the organizer’s latest update supplied by the user on 2026-10-05. The raw email screenshot is not included in the repository or public page.
-
-- Parking is available in the school parking lot.
-- Optional Friday load-in is 4–6 pm on October 9, entering from W Fillmore St and following the bright yellow arrows. Team arrival/pickup arrangements remain pending.
-- Outside food is allowed. Food may be eaten in the cafeteria, avoiding reserved sections, or outside in the courtyard. Team meal plans remain pending; dietary arrangements should be discussed privately.
-- Bring safety glasses for guests; loaners are limited.
-- Seating is limited, and accessible seating is reserved for people who need it.
-- No quiet room is available.
-- The walkway between the pits and field is outside; prepare for weather.
-- The event seeks referees, meal-support volunteers, queuers, photographers/videographers and setup/cleanup help. Use the verified official event page’s Volunteer sign up tab rather than a guessed link from the email.
-- Questions: Aiden Morrison, 720-525-3196. The user explicitly approved this number appearing on the public no-sign-in page. The phone link is constructed as `tel:+17205253196` from a validated E.164 phone field.
-
-Machine-shop availability, robot equipment/tools/covers, field test elements, second-robot details, trailer logistics, and unrelated email content are omitted. No food order, prices, payment link, headcount form or individual health details are published.
+For an available event, the overview retains a direct Competition Operations link for the team. That link is not part of the parent guide. The public page needs no sign-in. An optional Team sign-in link continues to the event overview only when that event is published; unavailable links return to the Hub.
 
 ## Suite branding
 
@@ -68,8 +43,6 @@ The public page uses the existing IMPULSE emblem and the suite’s shared DM San
 
 Rollback: remove the event from the static public registry and redeploy with authorization. That cannot retract copies already shared; initial content approval remains essential.
 
-## Remaining details to ask the user
+## Future content
 
-Team arrival, meeting point/pickup arrangements and the team meal plan remain to be confirmed.
-
-No additional phone number, email, health details or private form should be published without approval. Keep future organizer updates separate from internal operational records.
+No new event information or personal contact details should be published without approval. Keep future organizer updates separate from internal operational records. Do not restore retired guide content while merging unrelated features.
