@@ -83,6 +83,7 @@ export type History = {
 export type PolicyContext = {
  user_id: string; can_review: boolean; can_read_team: boolean; can_manage_meetings: boolean; strike_year_start: string|null;
  can_participate?: boolean;
+ can_review_requests?: boolean;
  can_review_program_manager_requests?: boolean;
  mentor_review_required_for?: string[];
  people: {id:string;name:string;role:string;positions:string[]}[];
@@ -206,8 +207,10 @@ export function summary(data: Data, studentId: string) {
 }
 export const inStrikeYear = (data:Data,s:Strike) => !data.policy?.strike_year_start || Date.parse(s.assigned_at)>=Date.parse(data.policy.strike_year_start);
 export const requiresMentorReview = (data:Data, studentId:string) => data.policy?.mentor_review_required_for?.includes(studentId) ?? false;
+// No attendance argument means existing strike/policy management capability.
+// Excuse decisions require the separate, affirmative server capability.
 export const canReview = (data:Data,a?:Attendance) => !!data.policy?.can_review && (!a || (
- a.student_id!==data.policy.user_id
+ data.policy.can_review_requests===true && a.student_id!==data.policy.user_id
  && (!requiresMentorReview(data,a.student_id) || data.policy.can_review_program_manager_requests===true)
 ));
 export const strikeAction = (n: number) =>

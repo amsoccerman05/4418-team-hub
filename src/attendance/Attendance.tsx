@@ -1292,7 +1292,7 @@ function Workspace({
             : "Review absences, late arrivals, and early departures. Excuses do not change check-in or check-out times."}</p>
           {personalRequests && canRequestForSelf && <section className="att-panel" aria-label="Submit my attendance request">
             <h3>Report my attendance issue</h3>
-            <p>Choose one of your meetings to request an absence, late arrival, or early departure. {requiresMentorReview(data,profile.id) ? "A Mentor must review your request. Program Managers cannot approve their own or another Program Manager’s request." : "Another Mentor or Program Manager must review your request."}</p>
+            <p>Choose one of your meetings to request an absence, late arrival, or early departure. {requiresMentorReview(data,profile.id) ? "A lead coach must review your request. Program Managers cannot approve their own or another Program Manager’s request." : "Another lead coach or Program Manager must review your request."}</p>
             {requestMeetings.length ? <form className="att-inline" onSubmit={e=>{const f=fields(e);setSelected(text(f,"meeting"));}}>
               <label>Meeting for my request<select name="meeting" required defaultValue="">
                 <option value="" disabled>Choose your meeting</option>
@@ -1339,7 +1339,7 @@ function Workspace({
                       <p className="att-request-reason">{a.notice_reason || "Excuse review requested"}</p>
                       <details><summary>Submission details</summary><p>{time(a.notice_at)} · {noticeTiming(a, meeting)}</p></details>
                       {!personalRequests && canReview(data,a) && a.review_status === "pending" && <RequestReview key={`${a.id}-${a.version}`} a={a} meeting={meeting} run={run} />}
-                      {requiresMentorReview(data,a.student_id) && a.review_status === "pending" && <p className="att-muted">Awaiting Mentor review</p>}
+                      {requiresMentorReview(data,a.student_id) && a.review_status === "pending" && <p className="att-muted">Awaiting lead coach review</p>}
                       {a.review_reason && <p>{a.review_reason}</p>}
                       {!personalRequests && manager && (
                         <details>
@@ -1587,7 +1587,7 @@ function NoticeForm({
           />
         </label>
         <p className="att-muted">
-          A Mentor or Program Manager reviews excuses; you cannot approve your own. Give 24 hours’ notice when possible. Shorter notice requires review against an excused reason and is not automatically denied. This does not check you in or out. Updates record a new submission time.
+          A lead coach or Program Manager reviews excuses; you cannot approve your own. Give 24 hours’ notice when possible. Shorter notice requires review against an excused reason and is not automatically denied. This does not check you in or out. Updates record a new submission time.
         </p>
         <button>Report an attendance issue</button>
       </form>
