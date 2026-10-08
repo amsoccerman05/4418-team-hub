@@ -57,7 +57,9 @@ function fixture(): Data {
     ],
   };
 }
-async function mock(page: Page, role = "student") {
+// Default mentor fixture represents an assigned lead coach; denial tests provide
+// an explicit can_review_requests:false policy for ordinary mentors.
+async function mock(page: Page, role = "student", options: { active?: boolean; configure?: (data: Data, userId: string) => void } = {}) {
   await page.clock.setFixedTime(new Date("2026-09-10T17:10:00Z"));
   const data = fixture(),
     calls: any[] = [];
@@ -68,6 +70,12 @@ async function mock(page: Page, role = "student") {
     user_metadata: {},
     aud: "authenticated",
     created_at: "2026-01-01T00:00:00Z",
+  };
+  options.configure?.(data, user.id);
+  const ownAttendance = (meetingId: string) => {
+    const attendance = data.attendance.find(a => a.meeting_id === meetingId && a.student_id === user.id);
+    if (!attendance) throw new Error(`No synthetic attendance for ${user.id} at ${meetingId}`);
+    return attendance;
   };
   await page.addInitScript(
     ({ user }) =>
@@ -92,13 +100,13 @@ async function mock(page: Page, role = "student") {
           id: user.id,
           display_name: role === "student" ? "Alex Student" : "Lee Lead",
           role,
-          active: true,
+          active: options.active ?? true,
         };
       else if (path === "/rest/v1/rpc/notification_center") result = { unread: 0, attention: [], items: [], has_more: false };
       else if (path === "/rest/v1/rpc/planning_my_work_context") result = {user_id:user.id,season_id:null,seasons:[],boards:[],tasks:[]};
       else if (path === "/rest/v1/pit_issues") return route.fulfill({json:[],headers:{"content-range":"*/0","access-control-expose-headers":"content-range"}});
       else if (path.endsWith("/team_dashboard_context")) result = {name:'Team member',role,admin:false,personal:{percent:null,strikes:0,pending:0},next_meeting:null,orders:[],finance:{allowed:false,approvals:0,school:0},attention:null,robot:null,inventory:null,announcements:[]};
-      else if (path.endsWith("/team_attendance_policy_context")) result = data.policy || {user_id:user.id,can_review:role==="mentor",can_read_team:role!=="student",can_manage_meetings:role!=="student",can_start_year:role==="mentor",strike_year_start:null,people:[],warnings:[]};
+      else if (path.endsWith("/team_attendance_policy_context")) result = data.policy || {user_id:user.id,can_review:role==="mentor",can_review_requests:role==="mentor",can_read_team:role!=="student",can_manage_meetings:role!=="student",can_start_year:role==="mentor",strike_year_start:null,people:[],warnings:[]};
       else if (path.endsWith("/team_meetings")) result = data.meetings;
       else if (path.endsWith("/team_attendance")) result = data.attendance;
       else if (path.endsWith("/team_meeting_members")) result = data.snapshots;
@@ -109,21 +117,34 @@ async function mock(page: Page, role = "student") {
         calls.push(body);
         if (body.code !== "123456") result = { error: "Invalid meeting code" };
         else {
-          data.attendance[0].physical_status = "present";
-          data.attendance[0].checked_in_at = "2026-09-10T17:03:00Z";
+          const attendance = ownAttendance(body.meeting_id);
+          attendance.physical_status = "present";
+          attendance.checked_in_at = "2026-09-10T17:03:00Z";
           result = { message: "Checked in" };
         }
       } else if (path.endsWith("/team_attendance_check_out")) {
-        calls.push(body);data.attendance[0].left_at="2026-09-10T17:10:00Z";data.attendance[0].physical_status="left_early";data.attendance[0].version++;result={message:"Check-out recorded"};
+        calls.push(body);
+        const attendance = ownAttendance(body.meeting_id);
+        attendance.left_at = "2026-09-10T17:10:00Z";
+        attendance.physical_status = "left_early";
+        attendance.version++;
+        result = { message: "Check-out recorded" };
       } else if (path.endsWith("/team_attendance_request")) {
         calls.push(body);
-        data.attendance[0].version++;
-        data.attendance[0].notice_at = "2026-09-09T15:00:00Z";
-        data.attendance[0].notice_reason = body.p.reason;
-        data.attendance[0].notice_type = body.p.notice_type;
-        data.attendance[0].expected_at = body.p.expected_at;
-        data.attendance[0].review_status = "pending";
-        result = null;
+        const attendance = ownAttendance(body.p.meeting_id);
+        if (body.p.version !== attendance.version) result = { error: "Attendance changed. Refresh and try again." };
+        else {
+          attendance.version++;
+          attendance.notice_at = "2026-09-09T15:00:00Z";
+          attendance.notice_reason = body.p.reason;
+          attendance.notice_type = body.p.notice_type;
+          attendance.expected_at = body.p.expected_at;
+          attendance.review_status = "pending";
+          attendance.review_reason = "";
+          attendance.reviewed_by = null;
+          attendance.reviewed_at = null;
+          result = null;
+        }
       } else if (path.endsWith("/team_attendance_create_batch")) {
         calls.push(body);
         result = body.meetings.map((_: unknown, i: number) => ({
@@ -140,8 +161,9 @@ async function mock(page: Page, role = "student") {
         calls.push(body);
         result = {};
         if (body.action === "open") {
-          result = { code: "123456", expires_at: "2026-09-10T18:00:00Z" };
-          data.meetings[0].status="open";data.meetings[0].check_in_open=true;data.meetings[0].code_expires_at=result.expires_at;
+          const opened = { code: "123456", expires_at: "2026-09-10T18:00:00Z" };
+          result = opened;
+          data.meetings[0].status="open";data.meetings[0].check_in_open=true;data.meetings[0].code_expires_at=opened.expires_at;
         }
         if (body.action === "close" || body.action === "finalize") {
           data.meetings[0].status =
@@ -150,9 +172,11 @@ async function mock(page: Page, role = "student") {
           data.meetings[0].version++;
         }
         if (body.action === "attendance") {
-          Object.assign(data.attendance[0], body.p, {
-            version: 2,
+          const attendance = data.attendance.find(a => a.id === body.p.attendance_id && a.meeting_id === body.p.meeting_id)!;
+          Object.assign(attendance, body.p, {
+            version: attendance.version + 1,
             review_reason: body.p.explanation,
+            ...(body.p.review_status ? {reviewed_by: user.id, reviewed_at: "2026-09-09T15:10:00Z"} : {}),
           });
         }
         if (body.action === "strike") {
@@ -220,7 +244,7 @@ for (const width of [390, 1440]) {
       .filter({ hasText: /^Report attendance issue$/ })
       .click();
     await page.getByLabel("Expected departure").fill("2026-09-10T12:30");
-    await page.getByLabel("Reason", { exact: true }).fill("Family commitment");
+    await page.getByRole("textbox", { name: "Reason", exact: true }).fill("Family commitment");
     await page
       .getByRole("button", { name: "Report an attendance issue", exact: true })
       .click();
@@ -350,7 +374,7 @@ test("percentages exclude excuses/not-required, count late/early, and derive act
   expect(strikeAction(3)).toContain("parent contact");
   expect(strikeAction(5)).toContain("Removal threshold");
   expect(summary(fixture(), student).percent).toBeNull();
-  d.policy={user_id:student,can_review:false,can_read_team:false,can_manage_meetings:false,strike_year_start:'2026-01-01T00:00:00Z',people:[],warnings:[]};
+  d.policy={user_id:student,can_review:false,can_review_requests:false,can_read_team:false,can_manage_meetings:false,strike_year_start:'2026-01-01T00:00:00Z',people:[],warnings:[]};
   d.strikes[0].assigned_at='2025-12-31T23:59:59Z';d.strikes[1].assigned_at='2026-01-01T00:00:00Z';
   expect(summary(d,student).strikes).toBe(2);expect(d.strikes).toHaveLength(3);
 });
@@ -439,7 +463,7 @@ for (const width of [390, 1440]) {
     data.attendance[0].notice_reason = "Appointment";
     data.attendance[0].review_status = "pending";
     await page.getByRole("button", { name: "Refresh", exact: true }).click();
-    await page.getByRole("link", { name: /^(Absence & Schedule Requests|My Requests)/ }).click();
+    await page.locator('.att-tabs a[href="#attendance/notices"]').click();
     await expect(page.getByText("Appointment", { exact: true })).toBeVisible();
     await expect(
       page.getByText("Advanced attendance & strikes", { exact: true }),
@@ -527,7 +551,7 @@ test("student deep links never show team roster or leadership controls", async (
   await expect(
     page.getByRole("button", { name: "New meeting", exact: true }),
   ).toHaveCount(0);
-  await page.getByRole("link", { name: /^(Absence & Schedule Requests|My Requests)/ }).click();
+  await page.locator('.att-tabs a[href="#attendance/notices"]').click();
   await expect(
     page.getByText("You’re all caught up. No requests match this view."),
   ).toBeVisible();
@@ -616,7 +640,7 @@ for (const width of [390, 1440])
         .slice(0, 16);
     });
     await page.getByLabel("Expected arrival").fill(expected);
-    await page.getByLabel("Reason", { exact: true }).fill("Transportation");
+    await page.getByRole("textbox", { name: "Reason", exact: true }).fill("Transportation");
     await page
       .getByRole("button", { name: "Report an attendance issue", exact: true })
       .click();
@@ -647,7 +671,7 @@ test("leadership request filters separate pending, excused and denied", async ({
   data.attendance[0].notice_reason = "Transportation";
   data.attendance[0].review_status = "excused";
   await page.locator('.hub-nav a[href="#attendance"]').click();
-  await page.getByRole("link", { name: /^(Absence & Schedule Requests|My Requests)/ }).click();
+  await page.locator('.att-tabs a[href="#attendance/notices"]').click();
   await expect(
     page.getByText("You’re all caught up. No requests match this view."),
   ).toBeVisible();
@@ -810,7 +834,7 @@ for(const width of [390,1440])test(`policy lead personal requests and future con
 });
 for(const width of [390,1440])test(`policy dashboard search strike thresholds and privacy ${width}`,async({page})=>{
  await page.setViewportSize({width,height:900});const {data}=await mock(page,'mentor');const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
- data.policy={user_id:lead,can_review:true,can_read_team:true,can_manage_meetings:true,strike_year_start:'2026-01-01T00:00:00Z',people:[{id:student,name:'Alex Student',role:'student',positions:['Software Lead']}],warnings:[]};
+ data.policy={user_id:lead,can_review:true,can_review_requests:true,can_read_team:true,can_manage_meetings:true,strike_year_start:'2026-01-01T00:00:00Z',people:[{id:student,name:'Alex Student',role:'student',positions:['Software Lead']}],warnings:[]};
  data.members.push({student_id:'other',display_name:'Jordan Five',member_status:'registered',team_area:'Build'});
  data.strikes=[{id:'s1',attendance_id:'a1',meeting_id:'m1',student_id:student,category:'Other',quantity:2,explanation:'Reviewed',assigned_by:lead,assigned_at:'2026-09-10T17:00:00Z',rescinded_at:null,rescind_reason:null},{id:'s2',attendance_id:'a2',meeting_id:'m1',student_id:'other',category:'Other',quantity:5,explanation:'Reviewed',assigned_by:lead,assigned_at:'2026-09-10T17:00:00Z',rescinded_at:null,rescind_reason:null}];
  await page.goto('/#attendance');await expect(page.getByRole('heading',{name:'Attendance · needs attention'})).toBeVisible();
@@ -825,7 +849,7 @@ for(const width of [390,1440])test(`policy dashboard search strike thresholds an
 
 test('Program Manager student can review another member without meeting-management controls',async({page})=>{
  const {data,calls}=await mock(page,'student');
- data.policy={user_id:student,can_review:true,can_read_team:true,can_manage_meetings:false,strike_year_start:'2026-01-01T00:00:00Z',people:[],warnings:[]};
+ data.policy={user_id:student,can_review:true,can_review_requests:true,can_read_team:true,can_manage_meetings:false,strike_year_start:'2026-01-01T00:00:00Z',people:[],warnings:[]};
  data.attendance[0].student_id=lead;data.attendance[0].notice_at='2026-09-09T12:00:00Z';data.attendance[0].notice_reason='School activity';data.attendance[0].review_status='pending';
  data.members.push({student_id:lead,display_name:'Lee Lead',member_status:'registered',team_area:''});
  await page.goto('/#attendance/calendar');await expect(page.getByRole('button',{name:'New meeting',exact:true})).toHaveCount(0);await expect(page.getByText('Roster tools',{exact:true})).toHaveCount(0);
@@ -835,7 +859,7 @@ test('Program Manager student can review another member without meeting-manageme
 
 for(const width of [390,768,1440])test(`UI sweep Attendance review queue and calendar navigation ${width}`,async({page})=>{
  await page.setViewportSize({width,height:900});const {data,calls}=await mock(page,'mentor');
- data.policy={user_id:lead,can_review:true,can_read_team:true,can_manage_meetings:true,strike_year_start:'2026-01-01T00:00:00Z',people:[],warnings:[]};
+ data.policy={user_id:lead,can_review:true,can_review_requests:true,can_read_team:true,can_manage_meetings:true,strike_year_start:'2026-01-01T00:00:00Z',people:[],warnings:[]};
  data.attendance[0].review_status='pending';data.attendance[0].notice_at='2026-09-09T12:00:00Z';data.attendance[0].notice_reason='School activity';
  await page.goto('/#attendance');await expect(page.locator('.att-leadership-stats>span')).toHaveCount(5);
  await page.screenshot({path:`test-results/ui-review-attendance-dashboard-${width}.png`,fullPage:true});
@@ -929,7 +953,7 @@ test('meeting edit failure preserves draft and explicit refresh/reload resolves 
  await page.getByLabel('Meeting title').fill('My new draft');await page.getByRole('button',{name:'Save meeting',exact:true}).click();await expect(page.getByRole('dialog').getByText('Meeting saved. Only this meeting was changed.')).toBeVisible();expect(calls.at(-1).p.version).toBe(2);
 });
 test('students and student Program Managers get instructions without meeting-edit authority',async({page})=>{
- const {data}=await mock(page);data.policy={user_id:student,can_review:true,can_read_team:true,can_manage_meetings:false,strike_year_start:null,people:[],warnings:[]};
+ const {data}=await mock(page);data.policy={user_id:student,can_review:true,can_review_requests:true,can_read_team:true,can_manage_meetings:false,strike_year_start:null,people:[],warnings:[]};
  await page.clock.setFixedTime(new Date('2026-09-10T16:00:00Z'));await page.goto('/#attendance/calendar');await page.getByRole('button',{name:/Preseason build/}).click();
  await expect(page.getByRole('button',{name:'Edit meeting',exact:true})).toHaveCount(0);await page.getByRole('dialog').getByRole('link',{name:'How to use Attendance →'}).click();
  await expect(page.getByRole('heading',{name:'How to use Attendance',exact:true})).toBeVisible();await expect(page.getByRole('heading',{name:'For meeting leadership: edit an upcoming meeting'})).toHaveCount(0);
@@ -949,4 +973,445 @@ test('successful meeting edit with failed refresh keeps draft and identifies sav
  await expect(page.getByLabel('Meeting title')).toHaveValue('Saved despite refresh failure');expect(data.meetings[0].title).toBe('Saved despite refresh failure');
  await page.getByRole('button',{name:'Refresh meeting',exact:true}).click();await page.getByRole('button',{name:'Reload latest meeting',exact:true}).click();
  await expect(page.getByRole('button',{name:'Save meeting',exact:true})).toBeDisabled();await page.getByRole('button',{name:'Cancel',exact:true}).click();await expect(page.getByRole('dialog').getByRole('heading',{name:'Saved despite refresh failure',exact:true})).toBeVisible();
+});
+
+// Synthetic team data deliberately starts with somebody else's record. A personal
+// request must never depend on row ordering or the leadership review permission.
+const otherRequester = "00000000-0000-0000-0000-000000000004";
+function personalRequestFixture(data: Data, userId: string, reviewer = false) {
+  const meeting = data.meetings[0], attendance = data.attendance[0], snapshot = data.snapshots[0];
+  data.policy = {
+    user_id: userId, can_review: reviewer, can_review_requests: reviewer, can_read_team: userId === lead || reviewer,
+    can_manage_meetings: userId === lead, strike_year_start: null, people: [], warnings: [],
+    can_participate: true, can_review_program_manager_requests: false, mentor_review_required_for: reviewer ? [userId] : [],
+  };
+  data.meetings = [
+    { ...meeting, status: "draft", check_in_open: false, code_expires_at: null },
+    { ...meeting, id: "m-own-second", title: "Optional design session", requirement: "optional", starts_at: "2026-09-11T17:00:00Z", ends_at: "2026-09-11T19:00:00Z", status: "draft", check_in_open: false },
+    { ...meeting, id: "m-other-only", title: "Other member meeting" },
+    { ...meeting, id: "m-ended", title: "Ended roster meeting", starts_at: "2026-09-08T17:00:00Z", ends_at: "2026-09-08T19:00:00Z" },
+    { ...meeting, id: "m-finalized", title: "Completed roster meeting", status: "finalized" },
+  ];
+  data.attendance = [
+    { ...attendance, id: "a-other", student_id: otherRequester, notice_type: "absent", notice_at: "2026-09-08T12:00:00Z", notice_reason: "Another member private request", review_status: "pending" },
+    { ...attendance, id: "a-own", student_id: userId },
+    { ...attendance, id: "a-own-second", meeting_id: "m-own-second", student_id: userId, notice_type: "late", notice_at: "2026-09-08T12:00:00Z", notice_reason: "My existing synthetic request", review_status: "pending", expected_at: "2026-09-11T17:30:00Z" },
+    { ...attendance, id: "a-other-only", meeting_id: "m-other-only", student_id: otherRequester },
+    { ...attendance, id: "a-ended", meeting_id: "m-ended", student_id: userId },
+    { ...attendance, id: "a-finalized", meeting_id: "m-finalized", student_id: userId },
+  ];
+  data.snapshots = data.attendance.map(a => ({ ...snapshot, meeting_id: a.meeting_id, student_id: a.student_id, required: a.meeting_id !== "m-own-second" }));
+  data.members = [
+    { student_id: otherRequester, display_name: "Jordan Synthetic", member_status: "registered", team_area: "Build" },
+    { student_id: userId, display_name: userId === lead ? "Lee Lead" : "Alex Student", member_status: "registered", team_area: "Build" },
+  ];
+}
+async function localInput(page: Page, iso: string) {
+  return page.evaluate(value => {
+    const date = new Date(value);
+    return new Date(+date - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  }, iso);
+}
+async function assertPersonalRequestControls(page: Page) {
+  const workspace = page.locator(".attendance-section");
+  for (const name of ["Excuse", "Deny", "Save attendance review", "Assign strike", "Edit meeting", "Rotate check-in code", "Complete attendance"]) {
+    await expect(workspace.getByRole("button", { name, exact: true })).toHaveCount(0);
+  }
+  await expect(workspace.getByLabel("Review reason", { exact: true })).toHaveCount(0);
+  await expect(workspace.getByText("Advanced attendance & strikes", { exact: true })).toHaveCount(0);
+  await expect(workspace.getByRole("group", { name: "Live roster filter" })).toHaveCount(0);
+  await expect(workspace.getByText("Another member private request", { exact: true })).toHaveCount(0);
+}
+async function openPersonalRequest(page: Page, meetingId = "m1") {
+  await page.getByRole("combobox", { name: "Meeting for my request", exact: true }).selectOption(meetingId);
+  await page.getByRole("button", { name: "Report my attendance issue", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Meeting details" });
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+const leadershipRequestPersonas = [
+  { name: "lead", role: "lead", reviewer: false },
+  { name: "student Program Manager", role: "student", reviewer: true },
+  { name: "lead Program Manager", role: "lead", reviewer: true },
+  { name: "mentor-role Program Manager", role: "mentor", reviewer: true },
+  { name: "admin-role Program Manager", role: "admin", reviewer: true },
+] as const;
+for (const width of [390, 1440]) {
+  for (const persona of leadershipRequestPersonas) {
+    test(`personal attendance requests: ${persona.name} owns absent, late, early and edits ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      const errors: string[] = [];
+      page.on("pageerror", error => errors.push(error.message));
+      const { data, calls } = await mock(page, persona.role, { configure: (data, id) => personalRequestFixture(data, id, persona.reviewer) });
+      await page.clock.setFixedTime(new Date("2026-09-09T15:00:00Z"));
+      const otherBefore = structuredClone(data.attendance.filter(a => a.id !== "a-own"));
+      await page.goto("/#attendance/my-requests");
+      const personalTab = page.locator('.att-tabs a[href="#attendance/my-requests"]');
+      await expect(personalTab).toHaveAttribute("aria-current", "page");
+      await expect(personalTab).toContainText("My Requests");
+      await expect(personalTab.locator("span")).toHaveText("1");
+      await expect(page.locator('.att-tabs a[href="#attendance/notices"]')).toContainText("Absence & Schedule Requests");
+      await expect(page.locator(".att-request-card")).toHaveCount(1);
+      await expect(page.locator(".att-request-card")).toContainText("My existing synthetic request");
+      expect(await page.getByRole("combobox", { name: "Meeting for my request", exact: true }).locator("option").evaluateAll(options => options.map(o => (o as HTMLOptionElement).value).filter(Boolean))).toEqual(["m1", "m-own-second"]);
+      await assertPersonalRequestControls(page);
+      const dialog = await openPersonalRequest(page);
+      await expect(dialog.getByRole("heading", { name: "Preseason build", exact: true })).toBeVisible();
+      await expect(dialog.getByText("Meeting controls", { exact: true })).toHaveCount(0);
+      for (const [index, kind] of (["absent", "late", "early", "early"] as const).entries()) {
+        await dialog.getByText(index ? "Edit request" : "Report attendance issue", { exact: true }).click();
+        const form = dialog.locator(".att-report-issue form");
+        await form.getByLabel("How will your attendance be affected?").selectOption(kind);
+        const planned = kind === "late" ? "2026-09-10T17:45:00.000Z" : "2026-09-10T18:15:00.000Z";
+        if (kind !== "absent") await form.getByLabel(kind === "late" ? "Expected arrival" : "Expected departure", { exact: true }).fill(await localInput(page, planned));
+        const reason = index === 3 ? "Updated departure arrangement" : `My synthetic ${kind} request`;
+        await form.getByRole("textbox", { name: "Reason", exact: true }).fill(reason);
+        await form.getByRole("button", { name: "Report an attendance issue", exact: true }).click();
+        await expect(dialog.getByText("Attendance request submitted for leadership review", { exact: true })).toBeVisible();
+        await expect(dialog.getByRole("textbox", { name: "Reason", exact: true })).not.toBeVisible();
+        expect(calls).toHaveLength(index + 1);
+        expect(calls[index]).toEqual({ p: { meeting_id: "m1", version: index + 1, notice_type: kind, expected_at: kind === "absent" ? null : planned, reason } });
+        await expect(dialog.locator(".att-request-reason")).toHaveText(reason);
+        await assertPersonalRequestControls(page);
+      }
+      const own = data.attendance.find(a => a.id === "a-own")!;
+      expect(own).toMatchObject({ physical_status: "pending", review_status: "pending", checked_in_at: null, left_at: null, version: 5 });
+      expect(data.attendance.filter(a => a.id !== "a-own")).toEqual(otherBefore);
+      expect(data.strikes).toEqual([]);
+      await dialog.screenshot({ path: `test-results/attendance-self-requests-dialog-${persona.name.replaceAll(" ", "-")}-${width}.png` });
+      await dialog.getByRole("button", { name: "Close", exact: true }).click();
+      await expect(page.locator(".att-request-card")).toHaveCount(2);
+      await expect(personalTab.locator("span")).toHaveText("2");
+      await page.locator(".att-request-card").filter({ hasText: "Updated departure arrangement" }).getByRole("button", { name: "Open meeting", exact: true }).click();
+      await expect(dialog.locator(".att-request-reason")).toHaveText("Updated departure arrangement");
+      await assertPersonalRequestControls(page);
+      await dialog.getByRole("button", { name: "Close", exact: true }).click();
+      await page.screenshot({ path: `test-results/attendance-self-requests-page-${persona.name.replaceAll(" ", "-")}-${width}.png`, fullPage: true });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+
+      // The leadership queue and calendar continue to use their own controls.
+      await page.locator('.att-tabs a[href="#attendance/notices"]').click();
+      await expect(page.getByRole("heading", { name: "Absence & Schedule Requests", exact: true })).toBeVisible();
+      await expect(page.getByRole("combobox", { name: "Meeting for my request", exact: true })).toHaveCount(0);
+      const otherCard = page.locator(".att-request-card").filter({ hasText: "Another member private request" });
+      await expect(otherCard).toBeVisible();
+      await expect(otherCard.getByText("Advanced attendance & strikes", { exact: true })).toBeVisible();
+      if (persona.reviewer) {
+        await otherCard.getByLabel("Review reason", { exact: true }).fill("Synthetic confirmation checked");
+        await otherCard.getByRole("button", { name: "Excuse", exact: true }).click();
+        await expect.poll(() => calls.at(-1)?.p.attendance_id).toBe("a-other");
+        expect(calls.at(-1)).toMatchObject({ action: "attendance", p: { review_status: "excused" } });
+        expect(own.review_status).toBe("pending");
+      } else {
+        await expect(otherCard.getByRole("button", { name: "Excuse", exact: true })).toHaveCount(0);
+      }
+      await page.locator('.att-tabs a[href="#attendance/calendar"]').click();
+      await expect(page.getByRole("button", { name: "New meeting", exact: true })).toHaveCount(persona.role !== "student" ? 1 : 0);
+      await page.getByRole("button", { name: /Preseason build/ }).click();
+      await expect(dialog.getByRole("group", { name: "Live roster filter" })).toBeVisible();
+      await expect(dialog.getByText("Meeting controls", { exact: true })).toBeVisible();
+      await expect(dialog.getByRole("button", { name: "Edit meeting", exact: true })).toHaveCount(persona.role !== "student" ? 1 : 0);
+      expect(errors).toEqual([]);
+    });
+
+    test(`personal attendance requests: checked-in ${persona.name} can request early departure ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      const { data, calls } = await mock(page, persona.role, { configure: (data, id) => {
+        personalRequestFixture(data, id, persona.reviewer);
+        Object.assign(data.attendance.find(a => a.id === "a-own")!, { physical_status: "present", checked_in_at: "2026-09-10T17:00:00Z" });
+        data.meetings[0].status = "closed";
+      } });
+      const otherBefore = structuredClone(data.attendance[0]);
+      await page.goto("/#attendance/my-requests");
+      const dialog = await openPersonalRequest(page);
+      await expect(dialog.getByText("You're checked in", { exact: true })).toBeVisible();
+      await expect(dialog.getByRole("button", { name: "Check out", exact: true })).toBeVisible();
+      await dialog.getByText("Report attendance issue", { exact: true }).click();
+      await expect(dialog.getByLabel("How will your attendance be affected?").locator("option")).toHaveCount(1);
+      await expect(dialog.getByLabel("How will your attendance be affected?")).toHaveValue("early");
+      await dialog.getByLabel("Expected departure", { exact: true }).fill(await localInput(page, "2026-09-10T18:00:00Z"));
+      await dialog.getByRole("textbox", { name: "Reason", exact: true }).fill("My appointment after arrival");
+      await dialog.getByRole("button", { name: "Report an attendance issue", exact: true }).click();
+      await expect(dialog.getByText("Early departure requested · Pending", { exact: true })).toBeVisible();
+      await assertPersonalRequestControls(page);
+      expect(calls).toEqual([{ p: { meeting_id: "m1", version: 1, notice_type: "early", expected_at: "2026-09-10T18:00:00.000Z", reason: "My appointment after arrival" } }]);
+      expect(data.attendance.find(a => a.id === "a-own")).toMatchObject({ physical_status: "present", checked_in_at: "2026-09-10T17:00:00Z", left_at: null, review_status: "pending" });
+      await dialog.screenshot({ path: `test-results/attendance-self-requests-checked-in-${persona.name.replaceAll(" ", "-")}-${width}.png` });
+      await dialog.getByRole("button", { name: "Close", exact: true }).click();
+      await page.locator('.att-tabs a[href="#attendance/calendar"]').click();
+      const current = page.getByRole("region", { name: "Your current attendance" });
+      await expect(current.getByRole("button", { name: "Check out", exact: true })).toBeVisible();
+      page.once("dialog", dialog => dialog.accept());
+      await current.getByRole("button", { name: "Check out", exact: true }).click();
+      await expect(current.getByText("Checked out", { exact: true })).toBeVisible();
+      expect(calls.at(-1)).toEqual({ meeting_id: "m1" });
+      expect(data.attendance.find(a => a.id === "a-own")).toMatchObject({ physical_status: "left_early", review_status: "pending" });
+      expect(data.attendance[0]).toEqual(otherBefore);
+      expect(data.strikes).toEqual([]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    });
+  }
+}
+
+for (const width of [390, 1440]) {
+  test(`personal attendance requests: ordinary student keeps My Requests route ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const { calls } = await mock(page, "student", { configure: (data, id) => personalRequestFixture(data, id) });
+    await page.clock.setFixedTime(new Date("2026-09-09T15:00:00Z"));
+    await page.goto("/#attendance/notices");
+    await expect(page.locator('.att-tabs a[href="#attendance/notices"]')).toContainText("My Requests");
+    await expect(page.locator('.att-tabs a[href="#attendance/my-requests"]')).toHaveCount(0);
+    await expect(page.getByRole("link", { name: /Absence & Schedule Requests/ })).toHaveCount(0);
+    await assertPersonalRequestControls(page);
+    await expect(page.locator(".att-request-card")).toHaveCount(1);
+    const dialog = await openPersonalRequest(page);
+    await dialog.getByText("Report attendance issue", { exact: true }).click();
+    await dialog.getByRole("textbox", { name: "Reason", exact: true }).fill("Ordinary student request");
+    await dialog.getByRole("button", { name: "Report an attendance issue", exact: true }).click();
+    await expect(dialog.getByText("Absence requested · Pending", { exact: true })).toBeVisible();
+    expect(calls).toEqual([{ p: { meeting_id: "m1", version: 1, notice_type: "absent", expected_at: null, reason: "Ordinary student request" } }]);
+    await dialog.getByRole("button", { name: "Close", exact: true }).click();
+    await page.getByRole("link", { name: "Calendar", exact: true }).click();
+    await page.getByRole("button", { name: /Preseason build/ }).click();
+    await expect(dialog.getByText("Edit request", { exact: true })).toBeVisible();
+    await expect(dialog.getByRole("group", { name: "Live roster filter" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "New meeting", exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
+}
+for (const role of ["mentor", "admin"]) {
+  test(`personal attendance requests: ${role} retains review queue without a student request tab`, async ({ page }) => {
+    const { calls } = await mock(page, role);
+    await page.goto("/#attendance/my-requests");
+    await expect(page.getByRole("heading", { name: "Attendance · needs attention", exact: true })).toBeVisible();
+    await expect(page.locator(".att-tabs").getByRole("link", { name: /My Requests/ })).toHaveCount(0);
+    await expect(page.getByRole("combobox", { name: "Meeting for my request", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Report my attendance issue", exact: true })).toHaveCount(0);
+    await page.locator('.att-tabs a[href="#attendance/notices"]').click();
+    await expect(page.getByRole("heading", { name: "Absence & Schedule Requests", exact: true })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Meeting for my request", exact: true })).toHaveCount(0);
+    expect(calls).toEqual([]);
+  });
+}
+for (const account of [{ role: "lead", active: false }, { role: "student", active: false }, { role: "readonly", active: true }]) {
+  test(`personal attendance requests: ${account.active ? "active" : "inactive"} ${account.role} cannot access personal or review controls`, async ({ page }) => {
+    const { calls } = await mock(page, account.role, { active: account.active });
+    for (const route of ["my-requests", "notices"]) {
+      await page.goto(`/#attendance/${route}`);
+      await expect(page.locator(".attendance-section").getByRole("alert")).toContainText("Attendance access requires an active student or leadership account.");
+      await expect(page.getByRole("navigation", { name: "Attendance views" })).toHaveCount(0);
+      await expect(page.getByRole("combobox", { name: "Meeting for my request", exact: true })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Report my attendance issue", exact: true })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Excuse", exact: true })).toHaveCount(0);
+    }
+    expect(calls).toEqual([]);
+  });
+}
+
+test("personal attendance requests: empty own roster cannot borrow another member's meeting", async ({ page }) => {
+  const { calls } = await mock(page, "lead");
+  await page.goto("/#attendance/my-requests");
+  await expect(page.getByText("No upcoming or in-progress meetings on your roster. Contact leadership if a meeting is missing or has already ended.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Meeting for my request", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Report my attendance issue", exact: true })).toHaveCount(0);
+  expect(calls).toEqual([]);
+});
+
+for (const [index, persona] of leadershipRequestPersonas.entries()) {
+  test(`personal attendance requests: ${persona.name} pending, stale draft, reopen and navigation recovery`, async ({ page }) => {
+    await page.setViewportSize({ width: index ? 1440 : 390, height: 900 });
+    const { data, calls, handleRequest } = await mock(page, persona.role, { configure: (data, id) => personalRequestFixture(data, id, persona.reviewer) });
+    await page.clock.setFixedTime(new Date("2026-09-09T15:00:00Z"));
+    await page.goto("/#attendance/my-requests");
+    const dialog = await openPersonalRequest(page);
+    await dialog.getByText("Report attendance issue", { exact: true }).click();
+    await dialog.getByLabel("How will your attendance be affected?").selectOption("late");
+    const expected = await localInput(page, "2026-09-10T17:45:00Z");
+    await dialog.getByLabel("Expected arrival", { exact: true }).fill(expected);
+    await dialog.getByRole("textbox", { name: "Reason", exact: true }).fill("Keep my unsent synthetic draft");
+    const attempts: unknown[] = [];
+    let release!: () => void;
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    await page.route("**/rpc/team_attendance_request", async route => {
+      attempts.push(route.request().postDataJSON());
+      if (attempts.length === 1) {
+        await pending;
+        Object.assign(data.attendance.find(a => a.id === "a-own")!, { version: 2, notice_type: "absent", notice_at: "2026-09-09T14:00:00Z", notice_reason: "Saved in another tab", review_status: "pending" });
+        await route.fulfill({ status: 409, json: { message: "Attendance changed. Refresh and try again." } });
+      } else await handleRequest(route);
+    });
+    const submit = dialog.getByRole("button", { name: "Report an attendance issue", exact: true });
+    await submit.click();
+    try {
+      await expect(dialog.getByRole("status")).toHaveText("Updating attendance…");
+      await expect(submit).toBeDisabled();
+      await expect(dialog.getByRole("textbox", { name: "Reason", exact: true })).toBeDisabled();
+      await expect(dialog.getByRole("button", { name: "Close", exact: true })).toBeDisabled();
+      await submit.evaluate(button => { (button as HTMLButtonElement).click(); (button as HTMLButtonElement).click(); });
+      await dialog.press("Escape");
+      await expect(dialog).toBeVisible();
+      expect(attempts).toHaveLength(1);
+    } finally { release(); }
+    await expect(dialog.getByRole("alert")).toContainText("Attendance changed");
+    await expect(dialog.getByRole("textbox", { name: "Reason", exact: true })).toHaveValue("Keep my unsent synthetic draft");
+    await expect(dialog.getByLabel("How will your attendance be affected?")).toHaveValue("late");
+    await expect(dialog.getByLabel("Expected arrival", { exact: true })).toHaveValue(expected);
+    await expect(submit).toBeEnabled();
+    await expect(dialog.locator(".att-progress")).toHaveCount(0);
+    expect(calls).toEqual([]);
+    await dialog.getByRole("button", { name: "Close", exact: true }).click();
+    await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect(page.locator(".att-request-card").filter({ hasText: "Saved in another tab" })).toBeVisible();
+    await openPersonalRequest(page);
+    await dialog.getByText("Edit request", { exact: true }).click();
+    await expect(dialog.getByRole("textbox", { name: "Reason", exact: true })).toHaveValue("Saved in another tab");
+    await dialog.getByRole("textbox", { name: "Reason", exact: true }).fill("Retry after refreshing the latest request");
+    await submit.click();
+    await expect(dialog.getByText("Absence requested · Pending", { exact: true })).toBeVisible();
+    expect(attempts).toHaveLength(2);
+    expect(calls).toEqual([{ p: { meeting_id: "m1", version: 2, notice_type: "absent", expected_at: null, reason: "Retry after refreshing the latest request" } }]);
+    await dialog.getByText("Edit request", { exact: true }).click();
+    await dialog.getByRole("textbox", { name: "Reason", exact: true }).fill("Navigation should discard this unsent draft");
+    await dialog.getByRole("link", { name: "How to use Attendance →", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "How to use Attendance", exact: true })).toBeVisible();
+    await page.goBack();
+    await expect(page).toHaveURL(/#attendance\/my-requests$/);
+    await expect(dialog).toHaveCount(0);
+    await openPersonalRequest(page);
+    await dialog.getByText("Edit request", { exact: true }).click();
+    await expect(dialog.getByRole("textbox", { name: "Reason", exact: true })).toHaveValue("Retry after refreshing the latest request");
+    await dialog.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await page.goForward();
+    await expect(page.getByRole("heading", { name: "How to use Attendance", exact: true })).toBeVisible();
+    expect(attempts).toHaveLength(2);
+  });
+
+  test(`personal attendance requests: ${persona.name} only loads and shows their own meeting history`, async ({ page }) => {
+    const { data, calls } = await mock(page, persona.role, { configure: (data, id) => {
+      personalRequestFixture(data, id, persona.reviewer);
+      data.history = [
+        { id: 1, meeting_id: "m1", student_id: otherRequester, entity: "team_attendance", action: "Other member audit entry", performed_by: otherRequester, performed_at: "2026-09-09T12:00:00Z", before_data: null, after_data: { reason: "Another member private history" } },
+        { id: 2, meeting_id: "m1", student_id: id, entity: "team_attendance", action: "My own audit entry", performed_by: id, performed_at: "2026-09-09T12:00:00Z", before_data: null, after_data: { reason: "My synthetic history" } },
+      ];
+    } });
+    const historyQueries: URL[] = [];
+    page.on("request", request => {
+      const url = new URL(request.url());
+      if (url.pathname.endsWith("/team_attendance_history")) historyQueries.push(url);
+    });
+    await page.goto("/#attendance/my-requests");
+    const dialog = await openPersonalRequest(page);
+    await dialog.getByText("History & strikes", { exact: true }).click();
+    await dialog.getByRole("button", { name: "View my history · Preseason build", exact: true }).click();
+    await expect(dialog.locator("summary").filter({ hasText: "My own audit entry" })).toBeVisible();
+    await expect(dialog).not.toContainText("Other member audit entry");
+    await expect(dialog).not.toContainText("Another member private history");
+    expect(historyQueries.at(-1)?.searchParams.get("meeting_id")).toBe("eq.m1");
+    expect(historyQueries.at(-1)?.searchParams.get("student_id")).toBe(`eq.${data.policy!.user_id}`);
+    expect(calls).toEqual([]);
+  });
+}
+
+for (const reviewer of ['student','lead','mentor']) {
+ test(`Program Manager requests show lead-coach-only review controls to ${reviewer} reviewer`,async({page})=>{
+  const {data,calls}=await mock(page,reviewer,{configure:(data,id)=>{
+   personalRequestFixture(data,id,true);
+   data.policy!.can_review_program_manager_requests=reviewer==='mentor';
+   data.policy!.mentor_review_required_for=[id,otherRequester];
+   data.members[0].display_name='Morgan Program Manager';
+   data.attendance[0].notice_reason='Program Manager appointment';
+  }});
+  await page.goto('/#attendance/notices');
+  const card=page.locator('.att-request-card').filter({hasText:'Program Manager appointment'});
+  await expect(card.getByText('Awaiting lead coach review',{exact:true})).toBeVisible();
+  if(reviewer==='mentor') {
+   await card.getByLabel('Review reason',{exact:true}).fill('Mentor checked the request');
+   await card.getByRole('button',{name:'Excuse',exact:true}).click();
+   await expect.poll(()=>calls).toEqual([{action:'attendance',p:{meeting_id:'m1',attendance_id:'a-other',version:1,review_status:'excused',left_at:null,explanation:'Mentor checked the request'}}]);
+   expect(data.attendance[0]).toMatchObject({review_status:'excused',reviewed_by:lead});
+  } else {
+   for(const name of ['Excuse','Deny']) await expect(card.getByRole('button',{name,exact:true})).toHaveCount(0);
+   await card.getByText('Advanced attendance & strikes',{exact:true}).click();
+   await expect(card.getByLabel('Excuse status',{exact:true})).toHaveCount(0);
+   expect(calls).toEqual([]);
+  }
+ });
+}
+
+test('Program Manager decision links show own decisions without changing the team pending filter',async({page})=>{
+ await mock(page,'student',{configure:(data,id)=>{
+  personalRequestFixture(data,id,true);
+  Object.assign(data.attendance.find(a=>a.id==='a-own-second')!,{review_status:'excused',review_reason:'Mentor approved this request'});
+ }});
+ await page.goto('/#attendance/my-requests');
+ await expect(page.getByRole('combobox',{name:'Request status',exact:true})).toHaveValue('all');
+ await expect(page.getByText('Mentor approved this request',{exact:true})).toBeVisible();
+ await page.getByRole('combobox',{name:'Request status',exact:true}).selectOption('excused');
+ await page.locator('.att-tabs a[href="#attendance/notices"]').click();
+ await expect(page.getByRole('combobox',{name:'Request status',exact:true})).toHaveValue('pending');
+ await expect(page.getByText('Another member private request',{exact:true})).toBeVisible();
+ await expect(page.getByText('Mentor approved this request',{exact:true})).toHaveCount(0);
+ await page.locator('.att-tabs a[href="#attendance/my-requests"]').click();
+ await expect(page.getByRole('combobox',{name:'Request status',exact:true})).toHaveValue('excused');
+ await expect(page.getByText('Mentor approved this request',{exact:true})).toBeVisible();
+});
+
+for(const width of [390,1440])test(`member-scoped roster sync selects exact future IDs, preserves draft after denial, and never calls all-member sync ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});
+ const {calls}=await mock(page,'mentor',{configure:data=>{
+  const m=data.meetings[0];m.status='draft';
+  data.meetings=[m,
+   {...m,id:'m-active',title:'Active team practice',requirement:'active',starts_at:'2026-09-11T17:00:00Z',ends_at:'2026-09-11T19:00:00Z'},
+   {...m,id:'m-optional',title:'Optional practice',requirement:'optional'},
+   {...m,id:'m-area',title:'Area practice',requirement:'areas'},
+   {...m,id:'m-selected',title:'Selected practice',requirement:'selected'},
+   {...m,id:'m-past',title:'Past practice',starts_at:'2026-09-08T17:00:00Z',ends_at:'2026-09-08T19:00:00Z'},
+   {...m,id:'m-finalized',title:'Finalized practice',status:'finalized'},
+  ];
+ }});
+ await page.clock.setFixedTime(new Date('2026-09-09T15:00:00Z'));
+ const attempts:any[]=[];
+ await page.route('**/rpc/team_attendance_sync_participant_rosters',async route=>{
+  attempts.push(route.request().postDataJSON());
+  if(attempts.length===1)await route.fulfill({status:403,json:{message:'Leadership access required'}});
+  else await route.fulfill({json:{added:1,promoted:0,skipped:0}});
+ });
+ await page.goto('/#attendance/roster');
+ await page.locator('.att-record > summary').filter({hasText:'Alex Student'}).click();
+ await page.getByText('Sync this member’s future meetings',{exact:true}).click();
+ const region=page.getByRole('region',{name:'Roster sync for Alex Student'});
+ await expect(region).toBeVisible();
+ expect(await region.locator('input[type=checkbox]').evaluateAll(nodes=>nodes.map(n=>(n as HTMLInputElement).value))).toEqual(['m1','m-active']);
+ await region.locator('input[value=m1]').uncheck();
+ await region.getByRole('button',{name:'Sync selected meetings',exact:true}).click();
+ await expect(page.locator('.attendance-section').getByRole('alert')).toContainText('Leadership access required');
+ await expect(region.locator('input[value=m-active]')).toBeChecked();
+ await region.getByRole('button',{name:'Sync selected meetings',exact:true}).click();
+ await expect(region.getByText('Added 1; newly required 0; preserved for review 0.',{exact:true})).toBeVisible();
+ await expect(region.getByRole('button',{name:'Sync selected meetings',exact:true})).toBeDisabled();
+ expect(attempts).toEqual([{student_id:student,meeting_ids:['m-active']},{student_id:student,meeting_ids:['m-active']}]);
+ expect(calls).toEqual([]);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+
+for (const width of [390,1440]) test(`ordinary mentor cannot decide requests but retains corrections and strikes ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});
+ const {calls}=await mock(page,'mentor',{configure:(data,id)=>{
+  data.policy={user_id:id,can_review:true,can_review_requests:false,can_read_team:true,can_manage_meetings:true,can_review_program_manager_requests:false,mentor_review_required_for:[],strike_year_start:null,people:[],warnings:[]};
+  Object.assign(data.attendance[0],{notice_type:'absent',notice_at:'2026-09-09T17:00:00Z',notice_reason:'Synthetic ordinary member request',review_status:'pending'});
+ }});
+ await page.goto('/#attendance/notices');
+ const card=page.locator('.att-request-card').filter({hasText:'Synthetic ordinary member request'});
+ for(const name of ['Excuse','Deny'])await expect(card.getByRole('button',{name,exact:true})).toHaveCount(0);
+ await card.getByText('Advanced attendance & strikes',{exact:true}).click();
+ await expect(card.getByLabel('Excuse status',{exact:true})).toHaveCount(0);
+ await expect(card.locator('summary').filter({hasText:/^Assign strike$/})).toBeVisible();
+ await card.getByText('Review / correct attendance',{exact:true}).click();
+ await card.getByRole('combobox',{name:/^Attendance/}).selectOption('late');
+ await card.getByLabel('Review / correction explanation',{exact:true}).fill('Synthetic physical correction only');
+ await card.getByRole('button',{name:'Save attendance review',exact:true}).click();
+ await expect.poll(()=>calls).toEqual([{action:'attendance',p:{meeting_id:'m1',attendance_id:'a1',version:1,physical_status:'late',left_at:null,explanation:'Synthetic physical correction only'}}]);
+ expect(await page.evaluate(()=>document.body.scrollWidth<=innerWidth)).toBe(true);
 });

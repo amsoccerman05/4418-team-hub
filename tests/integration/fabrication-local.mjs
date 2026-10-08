@@ -12,8 +12,10 @@ import { CLI_VERSION, API_PORT, DB_PORT, ORIGIN, localStatus, localFetch, isolat
 import { attendanceEditingSources } from './attendance-editing-fixture.mjs';
 import { ownedMealsDatabaseAddress } from './meals-network.mjs';
 import { volunteerHoursSources } from './volunteer-hours-stack.spec.mjs';
+import { attendanceRequestSources } from './attendance-requests-stack.spec.mjs';
 
 const withVolunteerHours = process.env.VOLUNTEER_HOURS_INTEGRATION === '1';
+const withAttendanceRequests = process.env.ATTENDANCE_REQUESTS_INTEGRATION === '1';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const mode = process.argv[2] || '--run';
@@ -114,7 +116,7 @@ const mealsSources = mealsEnabled ? [
   'src/meals/types.ts', 'tests/helpers/meal-delivery-fixture.ts',
   'tests/integration/meals-fixture.mjs', 'tests/integration/meals-stack.spec.mjs', 'tests/integration/meals-edge.spec.mjs', 'tests/integration/meals-network.mjs',
 ] : [];
-const hashes = Object.fromEntries([...sourcePaths, ...attendanceEditingSources, ...mealsSources, ...(withVolunteerHours ? volunteerHoursSources : [])].map(path => [path, createHash('sha256').update(readFileSync(join(repo, path))).digest('hex')]));
+const hashes = Object.fromEntries([...sourcePaths, ...attendanceEditingSources, ...mealsSources, ...(withVolunteerHours ? volunteerHoursSources : []), ...(withAttendanceRequests ? attendanceRequestSources : [])].map(path => [path, createHash('sha256').update(readFileSync(join(repo, path))).digest('hex')]));
 try {
   const version = execFileSync(executable, ['--version'], common).trim();
   assert.equal(version, CLI_VERSION, `Install the pinned official Supabase CLI ${CLI_VERSION}`);
@@ -268,6 +270,10 @@ ${mealsEnabled ? '[functions.team-meals]\nverify_jwt = false\nimport_map = "./fu
       if (mealsEnabled) {
         const { runMealsIntegration } = await import('./meals-stack.spec.mjs');
         checks.push(...await runMealsIntegration({ ...status, sql, edge: mealEdgeContext, registerSecret: s => secrets.push(s) }));
+      }
+      if (withAttendanceRequests) {
+        const { runAttendanceRequestsIntegration } = await import('./attendance-requests-stack.spec.mjs');
+        checks.push(...await runAttendanceRequestsIntegration({ ...status, sql, registerSecret: s => secrets.push(s) }));
       }
       if (withVolunteerHours) {
         const { runVolunteerHoursIntegration } = await import('./volunteer-hours-stack.spec.mjs');

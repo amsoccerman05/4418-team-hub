@@ -10,12 +10,13 @@ import {
 import {
   supabase,
   isManager,
+  canParticipate,
   loadData,
   loadHistory,
   manage,
   rpc,
   summary,
-  strikeAction, canReview, checkInControls, noticeTiming, inStrikeYear,
+  strikeAction, canReview, requiresMentorReview, checkInControls, noticeTiming, inStrikeYear,
   label,
   meetingState,
   attendanceDuration,
@@ -32,6 +33,7 @@ import { MeetingCalendar } from "./Calendar";
 import { AttendanceHowTo } from "./HowTo";
 import { VolunteerHours } from "./volunteer/VolunteerHours";
 import { MeetingEditor } from "./MeetingEditor";
+import { ParticipantRosterSync } from "./ParticipantRosterSync";
 const time = (s: string | null) =>
   s
     ? new Date(s).toLocaleString([], {
@@ -342,7 +344,7 @@ function Student({ data, id, run, presenceOnly=false, selfCheckIn=false, meeting
    {!presenceOnly&&<>
    {a.notice_at&&<section className="att-request-summary"><h4>{a.notice_type==='late'?'Late arrival':a.notice_type==='early'?'Early departure':'Absence'} requested · {a.review_status==='pending'?'Pending':label(a.review_status)}</h4><p>{noticeTiming(a,m)} · Submitted {Math.abs((Date.parse(m.starts_at)-Date.parse(a.notice_at))/3600000).toFixed(1)} hours {Date.parse(a.notice_at)<=Date.parse(m.starts_at)?'before the meeting':'after start'}</p>{a.expected_at&&<p>Expected {a.notice_type==='early'?'departure':'arrival'}: {time(a.expected_at)}</p>}<p className="att-request-reason">{a.notice_reason}</p>{a.review_reason&&<p>Leadership review: {a.review_reason}</p>}</section>}
    <NoticeForm key={`${a.id}-${a.version}`} a={a} meeting={m} run={run}/>
-   <details className="att-meeting-tools"><summary>History &amp; strikes</summary><StrikeList data={data} attendance={a}/><button className="att-secondary" onClick={()=>void run(async()=>setHistory(await loadHistory(m.id)),'History loaded')}>View my history · {m.title}</button></details></>}
+   <details className="att-meeting-tools"><summary>History &amp; strikes</summary><StrikeList data={data} attendance={a}/><button className="att-secondary" onClick={()=>void run(async()=>setHistory((await loadHistory(m.id,id)).filter(h=>h.student_id===id)),'History loaded')}>View my history · {m.title}</button></details></>}
   </article>;
  })}{history&&<HistoryList members={data.members} history={history}/>}</>;
 }
@@ -1111,9 +1113,11 @@ function Workspace({
 }) {
   const [rosterSync, setRosterSync] = useState("");
   const manager = isManager(profile) || !!data.policy?.can_read_team;
+  const canRequestForSelf = canParticipate(profile,data);
   const tabs = manager
     ? ["dashboard", "calendar", "roster", "notices", "strikes", "history", "how-to"]
     : ["calendar", "notices", "strikes", "history", "how-to"];
+  if (manager && canRequestForSelf) tabs.splice(tabs.indexOf("notices"), 0, "my-requests");
   if (profile.active && ['mentor','admin'].includes(profile.role)) tabs.splice(tabs.length-1,0,'volunteer-hours');
   const current = tabs.includes(tab) ? tab : manager ? "dashboard" : "calendar";
   const [selected, setSelected] = useState<string | null>(null),
@@ -1121,12 +1125,30 @@ function Workspace({
     [search, setSearch] = useState("");
   const [historyMeeting, setHistoryMeeting] = useState(""),
     [history, setHistory] = useState<History[] | null>(null);
-  const [noticeFilter, setNoticeFilter] = useState("pending");
+  const [personalNoticeFilter, setPersonalNoticeFilter] = useState("all");
+  const [teamNoticeFilter, setTeamNoticeFilter] = useState("pending");
   useEffect(() => {
     setSelected(null);
     setCreating(null);
     setSearch("");
   }, [tab]);
+  // Personal participation is independent of leadership/reviewer access. Never
+  // use the team review queue as the source for the personal request view.
+  const personalData = {
+    ...data,
+    attendance: data.attendance.filter(a => a.student_id === profile.id),
+    snapshots: data.snapshots.filter(s => s.student_id === profile.id),
+    strikes: data.strikes.filter(s => s.student_id === profile.id),
+    history: data.history.filter(h => h.student_id === profile.id),
+  };
+  const requestsView = current === "notices" || current === "my-requests";
+  const personalRequests = current === "my-requests" || !manager;
+  const noticeFilter = personalRequests ? personalNoticeFilter : teamNoticeFilter;
+  const setNoticeFilter = personalRequests ? setPersonalNoticeFilter : setTeamNoticeFilter;
+  const requestMeetings = data.meetings.filter(m => m.status !== "finalized"
+    && Date.parse(m.ends_at) > Date.now()
+    && personalData.attendance.some(a => a.meeting_id === m.id))
+    .sort((a,b) => Date.parse(a.starts_at) - Date.parse(b.starts_at));
   const ownData = manager
     ? data
     : {
@@ -1136,13 +1158,13 @@ function Workspace({
       };
   const currentAttendanceMeetings = data.meetings.filter(m => m.status !== 'finalized' && Date.parse(m.ends_at)>Date.now() && data.attendance.some(a=>a.meeting_id===m.id&&a.student_id===profile.id&&a.checked_in_at));
   const selectedMeeting = data.meetings.find((m) => m.id === selected);
-  const notices = ownData.attendance.filter(
+  const notices = (personalRequests ? personalData : ownData).attendance.filter(
     (a) =>
       (a.notice_at || a.review_status === "pending") &&
       (noticeFilter === "all" || a.review_status === noticeFilter),
   );
   const incidentRows =
-    current === "notices"
+    requestsView
       ? notices
       : ownData.attendance.filter((a) =>
           ownData.strikes.some((s) => s.attendance_id === a.id),
@@ -1156,11 +1178,11 @@ function Workspace({
             href={`#attendance/${name}`}
             aria-current={current === name ? "page" : undefined}
           >
-            {name === "volunteer-hours" ? "Volunteer hours" : name === "how-to" ? "How to use Attendance" : name === "notices" ? (manager ? "Absence & Schedule Requests" : "My Requests") : label(name)}
-            {name === "notices" && (
+            {name === "my-requests" ? "My Requests" : name === "volunteer-hours" ? "Volunteer hours" : name === "how-to" ? "How to use Attendance" : name === "notices" ? (manager ? "Absence & Schedule Requests" : "My Requests") : label(name)}
+            {["notices", "my-requests"].includes(name) && (
               <span>
                 {
-                  ownData.attendance.filter(
+                  (name === "my-requests" ? personalData : ownData).attendance.filter(
                     (a) => a.review_status === "pending",
                   ).length
                 }
@@ -1171,7 +1193,7 @@ function Workspace({
       </nav>
       {current !== "volunteer-hours" && <PolicyHelp/>}
       {current === "volunteer-hours" && <VolunteerHours key={profile.id} profile={profile} meetings={data.meetings}/>}
-      {current === "how-to" && <AttendanceHowTo canManage={!!data.policy?.can_manage_meetings} canReadTeam={manager}/>}
+      {current === "how-to" && <AttendanceHowTo canManage={!!data.policy?.can_manage_meetings} canReadTeam={manager} canRequest={canRequestForSelf}/>}
       {current === "dashboard" && manager && <LeadershipDashboard data={data} run={run} openMeeting={setSelected}/>}
       {current === "calendar" && (
         <>
@@ -1201,15 +1223,15 @@ function Workspace({
             setRosterSync(`Added ${result.added}; newly required ${result.promoted}; preserved for review ${result.skipped}.`);
           }, "Future rosters synced")}>Sync future rosters</button><p>Updates future All active students and Registered students only meetings. Existing attendance decisions are preserved.</p>{rosterSync && <p role="status">{rosterSync}</p>}</details>}
           {!manager&&(()=>{const next=[...data.meetings].filter(m=>Date.parse(m.ends_at)>Date.now()&&data.snapshots.some(s=>s.meeting_id===m.id&&s.student_id===profile.id&&s.required)).sort((a,b)=>Date.parse(a.starts_at)-Date.parse(b.starts_at))[0];return next?<section className="att-next-meeting"><div><small>Next required meeting</small><h3>{next.title}</h3><p>{time(next.starts_at)}</p></div><button onClick={()=>setSelected(next.id)}>{data.attendance.some(a=>a.meeting_id===next.id&&a.student_id===profile.id&&a.checked_in_at&&!a.left_at&&['present','late'].includes(a.physical_status))?'View meeting / check out':'View meeting / check in'}</button></section>:<p className="att-muted">No upcoming required meetings. Your other meetings and records are below.</p>;})()}
-          {!selectedMeeting && ['student','lead'].includes(profile.role) && currentAttendanceMeetings.length>0 && <section aria-label="Your current attendance"><Student data={{...ownData,meetings:currentAttendanceMeetings}} id={profile.id} run={run} presenceOnly/></section>}
+          {!selectedMeeting && canRequestForSelf && currentAttendanceMeetings.length>0 && <section aria-label="Your current attendance"><Student data={{...ownData,meetings:currentAttendanceMeetings}} id={profile.id} run={run} presenceOnly/></section>}
           <MeetingCalendar
             meetings={data.meetings}
             onOpen={setSelected}
             onCreate={data.policy?.can_manage_meetings ? setCreating : undefined}
           />
-          {profile.role === "lead" && (
+          {manager && canRequestForSelf && (
             <details className="att-panel">
-              <summary>My Attendance (lead)</summary>
+              <summary>My Attendance</summary>
               <Student data={{...data,meetings:data.meetings.filter(m=>!currentAttendanceMeetings.some(current=>current.id===m.id))}} id={profile.id} run={run} />
             </details>
           )}
@@ -1245,7 +1267,7 @@ function Workspace({
                     {label(m.member_status)} · {m.team_area || "No team area"}
                   </span>
                 </summary>
-                <MemberAttendance data={data} member={m}/>{data.policy?.can_manage_meetings&&<MemberForm member={m} run={run} />}
+                <MemberAttendance data={data} member={m}/>{data.policy?.can_manage_meetings&&<><MemberForm member={m} run={run}/><ParticipantRosterSync key={`${m.student_id}-${m.member_status}`} data={data} member={m} run={run}/></>}
               </details>
             ))}
           {!data.members.filter((m) =>
@@ -1262,20 +1284,24 @@ function Workspace({
         </>
       )}
       {current === "strikes" && <StrikeWorkspace data={ownData} run={run}/> }
-      {current === "notices" && (
+      {requestsView && (
         <>
-          <h2>
-            {current === "notices"
-              ? (manager ? "Absence & Schedule Requests" : "My Requests")
-              : "Strikes & leadership actions"}
-          </h2>
-          <p className="att-muted">
-            {current === "notices"
-              ? (manager ? "Review absences, late arrivals, and early departures. Excuses do not change check-in or check-out times." : "Track your absence, late arrival, and early departure requests here.")
-              : "Totals use active strike records. Two strikes require warning / parent contact; five reach the removal threshold. Access is never changed automatically."}
-          </p>
-          {current === "notices" && (
-            <label className="att-select">
+          <h2>{personalRequests ? "My Requests" : "Absence & Schedule Requests"}</h2>
+          <p className="att-muted">{personalRequests
+            ? "Track your absence, late arrival, and early departure requests here."
+            : "Review absences, late arrivals, and early departures. Excuses do not change check-in or check-out times."}</p>
+          {personalRequests && canRequestForSelf && <section className="att-panel" aria-label="Submit my attendance request">
+            <h3>Report my attendance issue</h3>
+            <p>Choose one of your meetings to request an absence, late arrival, or early departure. {requiresMentorReview(data,profile.id) ? "A lead coach must review your request. Program Managers cannot approve their own or another Program Manager’s request." : "Another lead coach or Program Manager must review your request."}</p>
+            {requestMeetings.length ? <form className="att-inline" onSubmit={e=>{const f=fields(e);setSelected(text(f,"meeting"));}}>
+              <label>Meeting for my request<select name="meeting" required defaultValue="">
+                <option value="" disabled>Choose your meeting</option>
+                {requestMeetings.map(m=><option key={m.id} value={m.id}>{m.title} · {time(m.starts_at)}</option>)}
+              </select></label>
+              <button>Report my attendance issue</button>
+            </form> : <p>No upcoming or in-progress meetings on your roster. Contact leadership if a meeting is missing or has already ended.</p>}
+          </section>}
+          <label className="att-select">
               Request status
               <select
                 value={noticeFilter}
@@ -1286,15 +1312,8 @@ function Workspace({
                 <option value="denied">Denied / unexcused</option>
                 <option value="all">All requests</option>
               </select>
-            </label>
-          )}
-          {!incidentRows.length && (
-            <p className="att-empty">
-              {current === "notices"
-                ? "You’re all caught up. No requests match this view."
-                : "No strikes recorded."}
-            </p>
-          )}
+          </label>
+          {!incidentRows.length && <p className="att-empty">You’re all caught up. No requests match this view.</p>}
           {incidentRows.map((a) => {
             const meeting = data.meetings.find((m) => m.id === a.meeting_id);
             return (
@@ -1302,7 +1321,7 @@ function Workspace({
                 <article className="att-panel att-request-card" key={a.id}>
                   <div className="att-toolbar">
                     <h3>
-                      {manager
+                      {!personalRequests
                         ? `${data.members.find((m) => m.student_id === a.student_id)?.display_name ?? "Member"} · `
                         : ""}
                       {meeting.title}
@@ -1314,15 +1333,15 @@ function Workspace({
                       Open meeting
                     </button>
                   </div>
-                  {current === "notices" ? (
-                    <>
+                  <>
                       <span className={`att-badge ${a.review_status}`}>{a.review_status === "pending" ? "Pending review" : label(a.review_status)}</span>
                       <p className="att-muted">{time(meeting.starts_at)} · {a.notice_type ? label(a.notice_type) : "Attendance issue"}{a.expected_at && <> · Expected {time(a.expected_at)}</>}</p>
                       <p className="att-request-reason">{a.notice_reason || "Excuse review requested"}</p>
                       <details><summary>Submission details</summary><p>{time(a.notice_at)} · {noticeTiming(a, meeting)}</p></details>
-                      {canReview(data,a) && a.review_status === "pending" && <RequestReview key={`${a.id}-${a.version}`} a={a} meeting={meeting} run={run} />}
+                      {!personalRequests && canReview(data,a) && a.review_status === "pending" && <RequestReview key={`${a.id}-${a.version}`} a={a} meeting={meeting} run={run} />}
+                      {requiresMentorReview(data,a.student_id) && a.review_status === "pending" && <p className="att-muted">Awaiting lead coach review</p>}
                       {a.review_reason && <p>{a.review_reason}</p>}
-                      {manager && (
+                      {!personalRequests && manager && (
                         <details>
                           <summary>Advanced attendance &amp; strikes</summary>
                           <AttendanceEditor
@@ -1334,19 +1353,12 @@ function Workspace({
                           />
                         </details>
                       )}
-                    </>
-                  ) : (
-                    <StrikeList
-                      data={ownData}
-                      attendance={a}
-                      run={manager ? run : undefined}
-                    />
-                  )}
+                  </>
                 </article>
               )
             );
           })}
-          {current === "notices" && !manager && (
+          {personalRequests && (
             <a href="#attendance/calendar">
               Open a meeting to report an attendance issue →
             </a>
@@ -1431,19 +1443,19 @@ function Workspace({
           )}
           {message && <p className="att-success" role="status">{message}</p>}
           <p className="att-muted"><a href="#attendance/how-to">How to use Attendance →</a></p>
-          {manager ? (
+          {manager && !personalRequests ? (
             <Management
               key={selectedMeeting.id}
               selected={selectedMeeting.id}
               busy={busy}
-              selfId={['lead','student'].includes(profile.role)?profile.id:undefined}
+              selfId={canRequestForSelf?profile.id:undefined}
               data={data}
               run={run}
             />
           ) : (
             <Student
               key={selectedMeeting.id}
-              data={{ ...data, meetings: [selectedMeeting] }}
+              data={{ ...personalData, meetings: [selectedMeeting] }}
               id={profile.id}
               run={run}
             />
@@ -1575,7 +1587,7 @@ function NoticeForm({
           />
         </label>
         <p className="att-muted">
-          A Mentor or Program Manager reviews excuses; you cannot approve your own. Give 24 hours’ notice when possible. Shorter notice requires review against an excused reason and is not automatically denied. This does not check you in or out. Updates record a new submission time.
+          A lead coach or Program Manager reviews excuses; you cannot approve your own. Give 24 hours’ notice when possible. Shorter notice requires review against an excused reason and is not automatically denied. This does not check you in or out. Updates record a new submission time.
         </p>
         <button>Report an attendance issue</button>
       </form>
