@@ -49,6 +49,14 @@ jobs:
             test-results/attendance-preview.html
           if-no-files-found: error
           retention-days: 7
+      - name: Upload synthetic personal Attendance request review
+        if: ${{ always() && github.event_name == 'pull_request' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: attendance-self-requests-review
+          path: test-results/attendance-self-requests-*.png
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Retain Attendance browser failure evidence
         if: ${{ always() && github.event_name == 'pull_request' }}
         uses: actions/upload-artifact@v4

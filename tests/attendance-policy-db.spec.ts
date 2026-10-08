@@ -20,6 +20,7 @@ test.beforeEach(async()=>{
  create policy attendance_history_read on team_attendance_history for select to authenticated using(team_attendance_private.manager() or (student_id=auth.uid() and team_attendance_private.role()='student'));`);
  await db.exec(readFileSync('tests/fixtures/attendance-production-functions.sql','utf8'));
  await db.exec(readFileSync('supabase/migrations/202609300001_attendance_policy_v03.sql','utf8'));
+ await db.exec(readFileSync('supabase/migrations/20261008032037_attendance_program_manager_mentor_review.sql','utf8'));
  await as(1);mid=(await manage('create',{title:'Policy meeting',meeting_type:'preseason',requirement:'active',late_minutes:10,starts_at:new Date(Date.now()+48*3600000).toISOString(),ends_at:new Date(Date.now()+50*3600000).toISOString()})).id;
 });
 test.afterEach(()=>db.close());
@@ -70,4 +71,51 @@ test('January 1 reset and completed warning actions retain strike audit without 
 
  c=(await db.query<any>('select team_attendance_policy_context() c')).rows[0].c;expect(c.warnings[0].actor).toBe(id(1));expect(c.strike_year_start).not.toBeNull();
  expect((await db.query('select * from team_attendance_strikes')).rows).toHaveLength(1);
+});
+
+// Program Manager is a position on a student or lead account, not a profile role.
+for (const role of ['student','lead']) for (const kind of ['absent','late','early']) {
+ test(`${role} Program Manager ${kind} request is visible to mentors and only a mentor can decide it`,async()=>{
+  await db.exec(`reset role;update profiles set role='${role}' where id='${id(4)}';
+   insert into team_member_positions values('${id(2)}','program_manager',null),('${id(6)}','program_manager',null);`);
+  await request(4,kind); const submitted=await row(4);
+  expect(submitted).toMatchObject({student_id:id(4),notice_type:kind,review_status:'pending',reviewed_by:null,physical_status:'pending'});
+  const review={meeting_id:mid,attendance_id:submitted.id,version:submitted.version,review_status:'excused',explanation:'Verified decision'};
+  await expect(manage('attendance',review)).rejects.toThrow(/Another Mentor/);
+  for(const peer of [2,6]) {
+   await as(peer);
+   for(const status of ['excused','denied','not_required','none','pending'])
+    await expect(manage('attendance',{...review,review_status:status})).rejects.toThrow(/A Mentor must review Program Manager/);
+  }
+  await as(1);
+  const queue=(await db.query<any>("select * from team_attendance where review_status='pending' and student_id=$1",[id(4)])).rows;
+  expect(queue).toHaveLength(1);expect(queue[0].notice_reason).toBe('Policy request');
+  const context=(await db.query<any>('select team_attendance_policy_context() c')).rows[0].c;
+  expect(context.can_review_program_manager_requests).toBe(true);expect(context.mentor_review_required_for.sort()).toEqual([id(2),id(4)]);
+  await manage('attendance',review);
+  await as(4);const approved=await row(4);
+  expect(approved).toMatchObject({review_status:'excused',reviewed_by:id(1),notice_type:kind,physical_status:'pending',checked_in_at:null,left_at:null});
+  const audit=(await db.query<any>("select * from team_attendance_history where entity_id=$1 and action='UPDATE' order by id desc limit 1",[submitted.id])).rows[0];
+  expect(audit.performed_by).toBe(id(1));expect(audit.after_data.review_status).toBe('excused');
+  await request(4,kind);expect(await row(4)).toMatchObject({review_status:'pending',reviewed_by:null,reviewed_at:null,review_reason:''});
+ });
+}
+test('PM routing reads authoritative active positions; ordinary requests and physical correction authority remain unchanged',async()=>{
+ await request(3);await as(4);const ordinary=await row(3);
+ await manage('attendance',{meeting_id:mid,attendance_id:ordinary.id,version:ordinary.version,review_status:'excused',explanation:'Ordinary student reviewed by PM'});
+ expect((await row(3)).reviewed_by).toBe(id(4));
+ await request(4);let own=await row(4);
+ await db.exec(`reset role;insert into team_member_positions values('${id(2)}','program_manager',null);`);await as(2);
+ const context=(await db.query<any>('select team_attendance_policy_context() c')).rows[0].c;
+ expect(context.can_review).toBe(true);expect(context.can_review_program_manager_requests).toBe(false);expect(context.mentor_review_required_for).toContain(id(4));
+ // A lead still corrects physical evidence, without deciding the PM's excuse.
+ await manage('attendance',{meeting_id:mid,attendance_id:own.id,version:own.version,physical_status:'present',explanation:'Observed arrival'});
+ own=await row(4);expect(own.review_status).toBe('pending');expect(own.reviewed_by).toBeNull();
+ await db.exec(`reset role;update team_member_positions set revoked_at=now() where user_id='${id(4)}' and position_key='program_manager';`);await as(2);
+ expect((await db.query<any>('select team_attendance_policy_context() c')).rows[0].c.mentor_review_required_for).not.toContain(id(4));
+ await manage('attendance',{meeting_id:mid,attendance_id:own.id,version:own.version,review_status:'excused',explanation:'Former PM uses ordinary routing'});
+ expect((await row(4)).reviewed_by).toBe(id(2));
+ // Trusted-only helpers must not become arbitrary-identity RPC entry points.
+ await expect(db.query('select team_attendance_private.can_review_request($1,$2)',[id(4),id(1)])).rejects.toThrow(/permission denied/);
+ await expect(db.query('select team_attendance_private.is_student_program_manager($1)',[id(4)])).rejects.toThrow(/permission denied/);
 });

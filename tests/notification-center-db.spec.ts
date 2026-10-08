@@ -41,6 +41,8 @@ test.beforeEach(async()=>{
  await db.exec(readFileSync('supabase/migrations/202609300001_attendance_policy_v03.sql','utf8'));
  await db.exec(readFileSync('tests/fixtures/finance_notification_coverage.sql','utf8'));
  await db.exec(readFileSync('supabase/migrations/202610050001_notification_center.sql','utf8'));
+ await db.exec(readFileSync('supabase/migrations/20261008032037_attendance_program_manager_mentor_review.sql','utf8'));
+ await db.exec(readFileSync('supabase/migrations/20261008032108_attendance_program_manager_notification_routing.sql','utf8'));
 
 });
 test.afterEach(()=>db.close());
@@ -88,6 +90,60 @@ for(const kind of ['absent','late','early'])test(`Attendance ${kind} request not
  await db.exec('set role service_role');expect((await db.query<any>('select team_attendance_delivery_allowed($1) ok',[email.id])).rows[0].ok).toBe(false);await as(3);expect((await center()).items).toHaveLength(0);
  await position(5,'program_manager');await as(5);expect((await center()).items).toHaveLength(0);
 });
+for(const role of ['student','lead']) for(const kind of ['absent','late','early']) test(`Attendance ${role} Program Manager ${kind} request routes only to Mentors`,async()=>{
+ await db.exec(`reset role;update profiles set role='${role}' where id='${id(2)}'`);
+ await position(2,'program_manager');await position(3,'program_manager');await position(5,'program_manager');
+ await request(kind);expect(await counts()).toEqual({events:1,recipients:1,emails:1});
+ const deliveries=(await db.query<any>("select id,recipient_id,payload from team_notifications where source='attendance'")).rows;
+ expect(deliveries.map(n=>n.recipient_id)).toEqual([id(1)]);expect(JSON.stringify(deliveries)).not.toContain('PRIVATE');
+ await db.exec('set role service_role');expect((await db.query<any>('select team_attendance_delivery_allowed($1) ok',[deliveries[0].id])).rows[0].ok).toBe(true);
+ for(const user of [2,3,5,7]){await as(user);expect((await center()).items).toHaveLength(0);}
+ await as(1);const inbox=await center('action');expect(inbox.items).toHaveLength(1);expect(inbox.items[0].href).toBe('#attendance/notices');
+ await db.exec('reset role');
+ const before=(await db.query<any>('select to_jsonb(a) a from team_attendance a where id=$1',[id(212)])).rows[0].a;
+ const history=(await db.query<any>('select count(*)::int n from team_attendance_history')).rows[0].n;
+ for(const user of [2,3,5,7]) for(const review_status of ['excused','denied','not_required']){
+  await as(user);await expect(db.query("select team_attendance_manage('attendance',$1::jsonb)",[JSON.stringify({meeting_id:id(202),attendance_id:id(212),version:before.version,review_status,explanation:'Peer review is forbidden'})])).rejects.toThrow(/Mentor|review/);
+ }
+ await db.exec('reset role');expect((await db.query<any>('select to_jsonb(a) a from team_attendance a where id=$1',[id(212)])).rows[0].a).toEqual(before);
+ expect((await db.query<any>('select count(*)::int n from team_attendance_history')).rows[0].n).toBe(history);
+ expect(await counts()).toEqual({events:1,recipients:1,emails:1});
+ await review('excused');await as(2);const decision=await center();expect(decision.items).toHaveLength(1);expect(decision.items[0].title).toContain('approved');expect(decision.items[0].href).toBe('#attendance/my-requests');expect(JSON.stringify(decision)).not.toContain('PRIVATE');
+ await as(1);expect((await center('action')).items).toHaveLength(0);
+ for(const user of [3,5]){await as(user);expect((await center()).items).toHaveLength(0);}
+ await db.exec('reset role;set role service_role');expect((await db.query<any>('select team_attendance_delivery_allowed($1) ok',[deliveries[0].id])).rows[0].ok).toBe(false);
+});
+test('Attendance existing peer review notifications recheck a newly assigned Program Manager without replay',async()=>{
+ await position(3,'program_manager');await request();expect(await counts()).toEqual({events:1,recipients:2,emails:2});
+ const delivery=(await db.query<any>("select id from team_notifications where recipient_id=$1 and source='attendance'",[id(3)])).rows[0];
+ await as(3);const notice=(await center('action')).items[0];expect(notice).toBeTruthy();
+ await db.exec('reset role;set role service_role');expect((await db.query<any>('select team_attendance_delivery_allowed($1) ok',[delivery.id])).rows[0].ok).toBe(true);
+ await position(2,'program_manager');
+ expect(await counts()).toEqual({events:1,recipients:2,emails:2});
+ await as(3);expect((await center()).items).toHaveLength(0);await read(notice.id);
+ await db.exec('reset role');expect((await db.query<any>('select read_at from notifications_private.recipients where id=$1',[notice.id])).rows[0].read_at).toBeNull();
+ await db.exec('set role service_role');expect((await db.query<any>('select team_attendance_delivery_allowed($1) ok',[delivery.id])).rows[0].ok).toBe(false);
+ await as(1);expect((await center('action')).items).toHaveLength(1);
+ await db.exec(`reset role;update profiles set role='lead' where id='${id(2)}';set role service_role`);
+ expect((await db.query<any>('select team_attendance_delivery_allowed($1) ok',[delivery.id])).rows[0].ok).toBe(false);
+ await db.exec(`reset role;update team_member_positions set revoked_at=now(),revoked_by='${id(1)}',revoke_reason='Local request routing test' where user_id='${id(2)}' and position_key='program_manager'`);
+ await as(3);expect((await center('action')).items).toHaveLength(1);
+ await db.exec('reset role;set role service_role');expect((await db.query<any>('select team_attendance_delivery_allowed($1) ok',[delivery.id])).rows[0].ok).toBe(true);
+ expect(await counts()).toEqual({events:1,recipients:2,emails:2});
+});
+test('Attendance Program Manager request rechecks Mentor eligibility before visibility and delivery',async()=>{
+ await position(2,'program_manager');await position(3,'program_manager');await request();
+ expect(await counts()).toEqual({events:1,recipients:1,emails:1});
+ const delivery=(await db.query<any>("select id from team_notifications where source='attendance'")).rows[0];
+ await db.exec(`update profiles set role='lead' where id='${id(1)}'`);
+ await as(1);expect((await center()).items).toHaveLength(0);
+ await db.exec('reset role;set role service_role');expect((await db.query<any>('select team_attendance_delivery_allowed($1) ok',[delivery.id])).rows[0].ok).toBe(false);
+ await db.exec(`reset role;update profiles set role='mentor',active=false where id='${id(1)}';set role service_role`);
+ expect((await db.query<any>('select team_attendance_delivery_allowed($1) ok',[delivery.id])).rows[0].ok).toBe(false);
+ await db.exec(`reset role;update profiles set active=true where id='${id(1)}'`);
+ await as(1);expect((await center('action')).items).toHaveLength(1);
+ expect(await counts()).toEqual({events:1,recipients:1,emails:1});
+});
 for(const status of ['excused','denied'])test(`Attendance ${status} decision persists in-app and email independently; no check-in noise`,async()=>{
  await request();await review(status);await as(1);expect((await center('action')).items).toHaveLength(0);expect((await center()).items).toHaveLength(1);await as(2);let c=await center();expect(c.items).toHaveLength(1);expect(c.items[0].title).toContain(status==='excused'?'approved':'denied');expect(c.items[0].action_needed).toBe(false);expect(JSON.stringify(c)).not.toContain('PRIVATE');
  const before=await counts();await db.query("update team_attendance set checked_in_at=now(),physical_status='present',version=version+1 where id=$1",[id(212)]);await db.query("update team_attendance set left_at=now(),physical_status='left_early',version=version+1 where id=$1",[id(212)]);expect(await counts()).toEqual(before);
@@ -110,7 +166,7 @@ test('bounded keyset pagination, explicit announcement email dedup, revoked visi
 test('current Finance visibility and inactive recipient restrictions are rechecked; no direct helper/write bypass',async()=>{
  await purchase();await as(6);expect((await center()).items).toHaveLength(0);await as(2);expect((await center()).items).toHaveLength(1);
  await db.exec(`reset role;update team_member_positions set revoked_at=now(),revoked_by='${id(1)}',revoke_reason='Test' where user_id='${id(2)}' and position_key='finance_lead'`);await as(2);expect((await center()).items).toHaveLength(0);
- for(const role of ['anon','authenticated']){await db.exec('reset role;set role '+role);for(const query of ['select * from notifications_private.events','update notifications_private.recipients set user_id=event_id','truncate notifications_private.recipients','select notifications_private.center_rows()','select notifications_private.attendance_reviewer(null)'])await expect(db.exec(query)).rejects.toThrow(/permission/);}
+ for(const role of ['anon','authenticated']){await db.exec('reset role;set role '+role);for(const query of ['select * from notifications_private.events','update notifications_private.recipients set user_id=event_id','truncate notifications_private.recipients','select notifications_private.center_rows()','select notifications_private.attendance_reviewer(null)','select team_attendance_private.is_student_program_manager(null)','select team_attendance_private.can_review_request(null,null)','select team_attendance_delivery_allowed(null)'])await expect(db.exec(query)).rejects.toThrow(/permission/);}
 });
 test('concurrent/repeated read and event delivery retries preserve one identity and server read timestamp',async()=>{
  const pid=await purchase();await as(2);const n=(await center()).items[0];await Promise.all([read(n.id),read(n.id),read()]);const saved=(await center()).items[0];expect(saved.read_at).toBeTruthy();expect(saved.action_needed).toBe(true);await read(n.id);expect((await center()).items[0].read_at).toBe(saved.read_at);

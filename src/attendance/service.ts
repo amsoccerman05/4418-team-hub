@@ -82,6 +82,8 @@ export type History = {
 };
 export type PolicyContext = {
  user_id: string; can_review: boolean; can_read_team: boolean; can_manage_meetings: boolean; strike_year_start: string|null;
+ can_review_program_manager_requests?: boolean;
+ mentor_review_required_for?: string[];
  people: {id:string;name:string;role:string;positions:string[]}[];
  warnings: {student_id:string;at:string;actor:string;note:string}[];
 };
@@ -153,13 +155,13 @@ export async function loadData(manager: boolean): Promise<Data> {
     history: [],
   };
 }
-export async function loadHistory(meetingId: string) {
-  const { data, error } = await supabase!
+export async function loadHistory(meetingId: string, studentId?: string) {
+  let query = supabase!
     .from("team_attendance_history")
     .select("*")
-    .eq("meeting_id", meetingId)
-    .order("performed_at", { ascending: false })
-    .limit(100);
+    .eq("meeting_id", meetingId);
+  if (studentId) query = query.eq("student_id", studentId);
+  const { data, error } = await query.order("performed_at", { ascending: false }).limit(100);
   if (error) throw error;
   return data as History[];
 }
@@ -197,7 +199,11 @@ export function summary(data: Data, studentId: string) {
   };
 }
 export const inStrikeYear = (data:Data,s:Strike) => !data.policy?.strike_year_start || Date.parse(s.assigned_at)>=Date.parse(data.policy.strike_year_start);
-export const canReview = (data:Data,a?:Attendance) => !!data.policy?.can_review && (!a || a.student_id!==data.policy.user_id);
+export const requiresMentorReview = (data:Data, studentId:string) => data.policy?.mentor_review_required_for?.includes(studentId) ?? false;
+export const canReview = (data:Data,a?:Attendance) => !!data.policy?.can_review && (!a || (
+ a.student_id!==data.policy.user_id
+ && (!requiresMentorReview(data,a.student_id) || data.policy.can_review_program_manager_requests===true)
+));
 export const strikeAction = (n: number) =>
  n>=5 ? "Removal threshold reached" : n>=3 ? "Warning / parent contact previously required · monitor" : n>=2 ? "Warning / parent contact required" : "No strike threshold reached";
 export function checkInControls(m:Meeting,now=Date.now()){

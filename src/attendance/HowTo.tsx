@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { BookOpen, CalendarDays, Clock, ClipboardCheck, HelpCircle } from "lucide-react";
 
-export function AttendanceHowTo({ canManage, canReadTeam = false }: { canManage: boolean; canReadTeam?: boolean }) {
+export function AttendanceHowTo({ canManage, canReadTeam = false, canRequest = false }: { canManage: boolean; canReadTeam?: boolean; canRequest?: boolean }) {
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => { heading.current?.focus({preventScroll: true}); heading.current?.scrollIntoView({block: "start"}); }, []);
   return <section className="att-how-to" aria-labelledby="attendance-how-to-heading">
@@ -24,12 +24,12 @@ export function AttendanceHowTo({ canManage, canReadTeam = false }: { canManage:
       </ol><p>Leaving before the scheduled end records <strong>Left early</strong>. Checking out does not ask for an excuse. The self-service button is only available after you check in and while the meeting is in progress, before its scheduled end.</p>
       <p>If the meeting has ended or you forgot to check out, contact a lead or Mentor to correct the record. The app does not invent a departure time.</p></article>
       <article className="att-panel"><h3>Absent, arriving late, or leaving early?</h3><ol>
-        <li>Open the meeting and expand <strong>Report attendance issue</strong>.</li>
+        <li>{canRequest ? <>Open <strong>My Requests</strong>, choose your meeting, and select <strong>Report my attendance issue</strong>. </> : <>Open the meeting. </>}Expand <strong>Report attendance issue</strong>.</li>
         <li>Choose <strong>I will be absent</strong>, <strong>I will arrive late</strong>, or <strong>I need to leave early</strong>. For late arrival or early departure, enter the expected time.</li>
         <li>Add your reason and choose <strong>Report an attendance issue</strong>.</li>
-        <li>Open <strong>{canReadTeam ? "Absence & Schedule Requests" : "My Requests"}</strong> to see the review status. Choose <strong>All requests</strong> if it is no longer pending.</li>
+        <li>Open <strong>{canRequest || !canReadTeam ? "My Requests" : "Absence & Schedule Requests"}</strong> to see the review status. Choose <strong>All requests</strong> if it is no longer pending.</li>
       </ol><p>Give at least 24 hours’ notice when possible. Shorter notice still needs review. During a meeting, only early-departure requests are available; after it ends, contact leadership. If both late arrival and early departure apply, contact leadership.</p>
-      <p>Before the meeting ends, <strong>Edit request</strong> lets you update a request. Each update records a new submission time and sends it back for review. A Mentor or Program Manager decides whether to excuse it; a pending request is not approval.</p></article>
+      <p>Before the meeting ends, <strong>Edit request</strong> lets you update a request. Each update records a new submission time and sends it back for review. A Mentor or Program Manager decides whether to excuse it; a pending request is not approval. Student leaders, including the Program Manager, use the same request process and cannot approve their own request. Program Manager requests go to Mentors for review.</p></article>
       <article className="att-panel"><h3><HelpCircle size={20} aria-hidden="true" /> Check your record or ask for a correction</h3>
         <p>Open a meeting for your arrival, departure, request, and review result. Use <strong>History &amp; strikes</strong>, or the <strong>History</strong> and <strong>Strikes</strong> tabs, to see your record.</p>
         <p>For a wrong check-in, departure, or meeting requirement, tell a lead or Mentor which meeting and what needs correcting. For an excuse decision or strike, contact a Mentor or Program Manager. Students cannot edit meeting details or approve their own requests.</p>
