@@ -10,6 +10,7 @@ import {
 import {
   supabase,
   isManager,
+  canParticipate,
   loadData,
   loadHistory,
   manage,
@@ -1111,7 +1112,7 @@ function Workspace({
 }) {
   const [rosterSync, setRosterSync] = useState("");
   const manager = isManager(profile) || !!data.policy?.can_read_team;
-  const canRequestForSelf = profile.active && ["student", "lead"].includes(profile.role);
+  const canRequestForSelf = canParticipate(profile,data);
   const tabs = manager
     ? ["dashboard", "calendar", "roster", "notices", "strikes", "history", "how-to"]
     : ["calendar", "notices", "strikes", "history", "how-to"];
@@ -1221,15 +1222,15 @@ function Workspace({
             setRosterSync(`Added ${result.added}; newly required ${result.promoted}; preserved for review ${result.skipped}.`);
           }, "Future rosters synced")}>Sync future rosters</button><p>Updates future All active students and Registered students only meetings. Existing attendance decisions are preserved.</p>{rosterSync && <p role="status">{rosterSync}</p>}</details>}
           {!manager&&(()=>{const next=[...data.meetings].filter(m=>Date.parse(m.ends_at)>Date.now()&&data.snapshots.some(s=>s.meeting_id===m.id&&s.student_id===profile.id&&s.required)).sort((a,b)=>Date.parse(a.starts_at)-Date.parse(b.starts_at))[0];return next?<section className="att-next-meeting"><div><small>Next required meeting</small><h3>{next.title}</h3><p>{time(next.starts_at)}</p></div><button onClick={()=>setSelected(next.id)}>{data.attendance.some(a=>a.meeting_id===next.id&&a.student_id===profile.id&&a.checked_in_at&&!a.left_at&&['present','late'].includes(a.physical_status))?'View meeting / check out':'View meeting / check in'}</button></section>:<p className="att-muted">No upcoming required meetings. Your other meetings and records are below.</p>;})()}
-          {!selectedMeeting && ['student','lead'].includes(profile.role) && currentAttendanceMeetings.length>0 && <section aria-label="Your current attendance"><Student data={{...ownData,meetings:currentAttendanceMeetings}} id={profile.id} run={run} presenceOnly/></section>}
+          {!selectedMeeting && canRequestForSelf && currentAttendanceMeetings.length>0 && <section aria-label="Your current attendance"><Student data={{...ownData,meetings:currentAttendanceMeetings}} id={profile.id} run={run} presenceOnly/></section>}
           <MeetingCalendar
             meetings={data.meetings}
             onOpen={setSelected}
             onCreate={data.policy?.can_manage_meetings ? setCreating : undefined}
           />
-          {profile.role === "lead" && (
+          {manager && canRequestForSelf && (
             <details className="att-panel">
-              <summary>My Attendance (lead)</summary>
+              <summary>My Attendance</summary>
               <Student data={{...data,meetings:data.meetings.filter(m=>!currentAttendanceMeetings.some(current=>current.id===m.id))}} id={profile.id} run={run} />
             </details>
           )}
@@ -1446,7 +1447,7 @@ function Workspace({
               key={selectedMeeting.id}
               selected={selectedMeeting.id}
               busy={busy}
-              selfId={['lead','student'].includes(profile.role)?profile.id:undefined}
+              selfId={canRequestForSelf?profile.id:undefined}
               data={data}
               run={run}
             />

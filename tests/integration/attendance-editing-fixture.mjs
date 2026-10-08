@@ -12,6 +12,8 @@ export const attendanceEditingSources = [
   'supabase/migrations/202609300001_attendance_policy_v03.sql',
   'supabase/migrations/20261007033053_attendance_meeting_editing.sql',
   'supabase/migrations/20261008032037_attendance_program_manager_mentor_review.sql',
+  'supabase/migrations/202609130001_attendance_checkout.sql',
+  'supabase/migrations/20261008051847_attendance_program_manager_participation.sql',
 ];
 const source = path => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
 

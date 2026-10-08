@@ -43,6 +43,7 @@ test.beforeEach(async()=>{
  await db.exec(readFileSync('supabase/migrations/202610050001_notification_center.sql','utf8'));
  await db.exec(readFileSync('supabase/migrations/20261008032037_attendance_program_manager_mentor_review.sql','utf8'));
  await db.exec(readFileSync('supabase/migrations/20261008032108_attendance_program_manager_notification_routing.sql','utf8'));
+ await db.exec(readFileSync('supabase/migrations/20261008051847_attendance_program_manager_participation.sql','utf8'));
 
 });
 test.afterEach(()=>db.close());
@@ -90,9 +91,10 @@ for(const kind of ['absent','late','early'])test(`Attendance ${kind} request not
  await db.exec('set role service_role');expect((await db.query<any>('select team_attendance_delivery_allowed($1) ok',[email.id])).rows[0].ok).toBe(false);await as(3);expect((await center()).items).toHaveLength(0);
  await position(5,'program_manager');await as(5);expect((await center()).items).toHaveLength(0);
 });
-for(const role of ['student','lead']) for(const kind of ['absent','late','early']) test(`Attendance ${role} Program Manager ${kind} request routes only to Mentors`,async()=>{
+for(const role of ['student','lead','mentor','admin']) for(const kind of ['absent','late','early']) test(`Attendance ${role} Program Manager ${kind} request routes only to Mentors`,async()=>{
  await db.exec(`reset role;update profiles set role='${role}' where id='${id(2)}'`);
  await position(2,'program_manager');await position(3,'program_manager');await position(5,'program_manager');
+ await db.exec(`reset role;update profiles set role='mentor' where id='${id(3)}'`);
  await request(kind);expect(await counts()).toEqual({events:1,recipients:1,emails:1});
  const deliveries=(await db.query<any>("select id,recipient_id,payload from team_notifications where source='attendance'")).rows;
  expect(deliveries.map(n=>n.recipient_id)).toEqual([id(1)]);expect(JSON.stringify(deliveries)).not.toContain('PRIVATE');
@@ -141,6 +143,12 @@ test('Attendance Program Manager request rechecks Mentor eligibility before visi
  await db.exec(`reset role;update profiles set role='mentor',active=false where id='${id(1)}';set role service_role`);
  expect((await db.query<any>('select team_attendance_delivery_allowed($1) ok',[delivery.id])).rows[0].ok).toBe(false);
  await db.exec(`reset role;update profiles set active=true where id='${id(1)}'`);
+ await as(1);expect((await center('action')).items).toHaveLength(1);
+ // A previously eligible mentor becomes a peer PM: already queued delivery and
+ // action-center visibility must both disappear without replaying notifications.
+ await position(1,'program_manager');await as(1);expect((await center()).items).toHaveLength(0);
+ await db.exec('reset role;set role service_role');expect((await db.query<any>('select team_attendance_delivery_allowed($1) ok',[delivery.id])).rows[0].ok).toBe(false);
+ await db.exec(`reset role;update team_member_positions set revoked_at=now(),revoked_by='${id(1)}',revoke_reason='Test restored independent mentor' where user_id='${id(1)}' and position_key='program_manager'`);
  await as(1);expect((await center('action')).items).toHaveLength(1);
  expect(await counts()).toEqual({events:1,recipients:1,emails:1});
 });

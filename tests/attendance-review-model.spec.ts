@@ -1,5 +1,5 @@
 import {test,expect} from '@playwright/test';
-import {canReview,requiresMentorReview,type Attendance,type Data} from '../src/attendance/service';
+import {canReview,requiresMentorReview,canParticipate,isManager,type Attendance,type Data} from '../src/attendance/service';
 const record=(student_id:string)=>({student_id} as Attendance);
 function data(mentor=false):Data {
  return {meetings:[],attendance:[],snapshots:[],strikes:[],history:[],members:[],policy:{
@@ -32,4 +32,21 @@ test('general reviewer permission is mandatory even when mentor-specific permiss
  expect(canReview(value,record('student'))).toBe(false);
  expect(canReview(value)).toBe(false);
  delete value.policy;expect(canReview(value,record('student-pm'))).toBe(false);
+});
+
+for(const role of ['mentor','admin']) test(`${role} Program Manager participates without changing shared management role`,()=>{
+ const profile={id:'pm',display_name:'Synthetic PM',role,active:true};
+ const d=data();d.policy!.can_participate=true;
+ expect(canParticipate(profile,d)).toBe(true);expect(isManager(profile)).toBe(true);expect(profile.role).toBe(role);
+ d.policy!.can_participate=false;expect(canParticipate(profile,d)).toBe(false);expect(isManager(profile)).toBe(true);
+ delete d.policy!.can_participate;expect(canParticipate(profile,d)).toBe(false);
+});
+test('participant capability honors inactive accounts and authoritative denial',()=>{
+ const d=data();d.policy!.can_participate=true;
+ expect(canParticipate({id:'p',display_name:'Inactive',role:'mentor',active:false},d)).toBe(false);
+ expect(canParticipate({id:'p',display_name:'Readonly',role:'readonly',active:true},d)).toBe(false);
+ d.policy!.can_participate=false;
+ expect(canParticipate({id:'p',display_name:'Denied',role:'lead',active:true},d)).toBe(false);
+ delete d.policy!.can_participate;
+ for(const role of ['student','lead'])expect(canParticipate({id:'p',display_name:'Legacy',role,active:true},d)).toBe(true);
 });

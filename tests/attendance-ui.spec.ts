@@ -981,7 +981,7 @@ function personalRequestFixture(data: Data, userId: string, reviewer = false) {
   data.policy = {
     user_id: userId, can_review: reviewer, can_read_team: userId === lead || reviewer,
     can_manage_meetings: userId === lead, strike_year_start: null, people: [], warnings: [],
-    can_review_program_manager_requests: false, mentor_review_required_for: reviewer ? [userId] : [],
+    can_participate: true, can_review_program_manager_requests: false, mentor_review_required_for: reviewer ? [userId] : [],
   };
   data.meetings = [
     { ...meeting, status: "draft", check_in_open: false, code_expires_at: null },
@@ -1031,6 +1031,8 @@ const leadershipRequestPersonas = [
   { name: "lead", role: "lead", reviewer: false },
   { name: "student Program Manager", role: "student", reviewer: true },
   { name: "lead Program Manager", role: "lead", reviewer: true },
+  { name: "mentor-role Program Manager", role: "mentor", reviewer: true },
+  { name: "admin-role Program Manager", role: "admin", reviewer: true },
 ] as const;
 for (const width of [390, 1440]) {
   for (const persona of leadershipRequestPersonas) {
@@ -1102,11 +1104,11 @@ for (const width of [390, 1440]) {
         await expect(otherCard.getByRole("button", { name: "Excuse", exact: true })).toHaveCount(0);
       }
       await page.locator('.att-tabs a[href="#attendance/calendar"]').click();
-      await expect(page.getByRole("button", { name: "New meeting", exact: true })).toHaveCount(persona.role === "lead" ? 1 : 0);
+      await expect(page.getByRole("button", { name: "New meeting", exact: true })).toHaveCount(persona.role !== "student" ? 1 : 0);
       await page.getByRole("button", { name: /Preseason build/ }).click();
       await expect(dialog.getByRole("group", { name: "Live roster filter" })).toBeVisible();
       await expect(dialog.getByText("Meeting controls", { exact: true })).toBeVisible();
-      await expect(dialog.getByRole("button", { name: "Edit meeting", exact: true })).toHaveCount(persona.role === "lead" ? 1 : 0);
+      await expect(dialog.getByRole("button", { name: "Edit meeting", exact: true })).toHaveCount(persona.role !== "student" ? 1 : 0);
       expect(errors).toEqual([]);
     });
 

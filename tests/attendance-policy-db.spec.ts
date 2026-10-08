@@ -21,6 +21,7 @@ test.beforeEach(async()=>{
  await db.exec(readFileSync('tests/fixtures/attendance-production-functions.sql','utf8'));
  await db.exec(readFileSync('supabase/migrations/202609300001_attendance_policy_v03.sql','utf8'));
  await db.exec(readFileSync('supabase/migrations/20261008032037_attendance_program_manager_mentor_review.sql','utf8'));
+ await db.exec(readFileSync('supabase/migrations/20261008051847_attendance_program_manager_participation.sql','utf8'));
  await as(1);mid=(await manage('create',{title:'Policy meeting',meeting_type:'preseason',requirement:'active',late_minutes:10,starts_at:new Date(Date.now()+48*3600000).toISOString(),ends_at:new Date(Date.now()+50*3600000).toISOString()})).id;
 });
 test.afterEach(()=>db.close());
@@ -73,8 +74,8 @@ test('January 1 reset and completed warning actions retain strike audit without 
  expect((await db.query('select * from team_attendance_strikes')).rows).toHaveLength(1);
 });
 
-// Program Manager is a position on a student or lead account, not a profile role.
-for (const role of ['student','lead']) for (const kind of ['absent','late','early']) {
+// Program Manager participation is independent of the supported shared profile role.
+for (const role of ['student','lead','mentor','admin']) for (const kind of ['absent','late','early']) {
  test(`${role} Program Manager ${kind} request is visible to mentors and only a mentor can decide it`,async()=>{
   await db.exec(`reset role;update profiles set role='${role}' where id='${id(4)}';
    insert into team_member_positions values('${id(2)}','program_manager',null),('${id(6)}','program_manager',null);`);
@@ -91,7 +92,7 @@ for (const role of ['student','lead']) for (const kind of ['absent','late','earl
   const queue=(await db.query<any>("select * from team_attendance where review_status='pending' and student_id=$1",[id(4)])).rows;
   expect(queue).toHaveLength(1);expect(queue[0].notice_reason).toBe('Policy request');
   const context=(await db.query<any>('select team_attendance_policy_context() c')).rows[0].c;
-  expect(context.can_review_program_manager_requests).toBe(true);expect(context.mentor_review_required_for.sort()).toEqual([id(2),id(4)]);
+  expect(context.can_review_program_manager_requests).toBe(true);expect(context.mentor_review_required_for.sort()).toEqual([id(2),id(4),id(6)]);
   await manage('attendance',review);
   await as(4);const approved=await row(4);
   expect(approved).toMatchObject({review_status:'excused',reviewed_by:id(1),notice_type:kind,physical_status:'pending',checked_in_at:null,left_at:null});

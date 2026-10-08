@@ -68,20 +68,25 @@ export async function runAttendanceRequestsIntegration({ base, anonKey, sql, reg
   const users = {};
   for (const [name, role, active = true] of [
     ['student', 'student'], ['lead', 'lead'], ['studentPM', 'student'], ['leadPM', 'lead'],
+    ['mentorPM', 'mentor'], ['adminPM', 'admin'],
     ['mentor', 'mentor'], ['admin', 'admin'], ['reader', 'readonly'],
     ['inactiveStudent', 'student', false], ['inactiveLead', 'lead', false], ['noProfile', null],
   ]) users[name] = await signup(name, role, active);
-  const { student, lead, studentPM, leadPM, mentor, admin, reader, inactiveStudent, inactiveLead, noProfile } = users;
-  const participants = [student, lead, studentPM, leadPM];
+  const { student, lead, studentPM, leadPM, mentorPM, adminPM, mentor, admin, reader, inactiveStudent, inactiveLead, noProfile } = users;
+  const programManagers = [studentPM, leadPM, mentorPM, adminPM];
+  const participants = [student, lead, ...programManagers];
+  const nonparticipants = [reader, inactiveStudent, inactiveLead, mentor, admin, noProfile];
   sql(`insert into public.team_positions(key,name,active) values('program_manager','Program Manager',true) on conflict(key) do nothing;
     insert into public.team_member_positions(user_id,position_key,revoked_at) values
-    (${lit(studentPM.id)},'program_manager',null),(${lit(leadPM.id)},'program_manager',null);`);
-  const createMeeting = async (title, starts = 120) => (await json(await manage('create', {
+    ${programManagers.map(actor => `(${lit(actor.id)},'program_manager',null)`).join(',')};`);
+  const createMeeting = async (title, starts = 120, actor = mentor) => (await json(await manage('create', {
     title, meeting_type: 'preseason', requirement: 'active', starts_at: future(starts), ends_at: future(starts + 120),
-  }, mentor))).id;
+  }, actor))).id;
   const meetingVersion = mid => Number(sql(`select version from public.team_meetings where id=${lit(mid)}`));
   const mid = await createMeeting('Synthetic own request matrix');
   const untouchedID = await createMeeting('Synthetic unrelated request occurrence', 360);
+  const unrosteredID = await createMeeting('Synthetic unrostered physical attendance boundary', -10);
+  const unrosteredOpening = await json(await manage('open', { meeting_id: unrosteredID, version: meetingVersion(unrosteredID) }, mentor));
   const untouched = fingerprint(['public.team_meeting_members', 'public.team_attendance', 'public.team_attendance_history'], `where meeting_id=${lit(untouchedID)}`);
   // A genuinely new active account has no entry in an already-snapshotted meeting.
   const unrostered = await signup('unrostered', 'lead');
@@ -91,24 +96,55 @@ export async function runAttendanceRequestsIntegration({ base, anonKey, sql, reg
     and not (n.nspname='public' and c.relname in ('team_meetings','team_meeting_members','team_attendance','team_attendance_history'))
     order by 1`).split('\n').filter(Boolean);
   const canonical = fingerprint(canonicalTables);
+  const accountRoles = () => query(`select jsonb_object_agg(id,role) from public.profiles
+    where id in (${Object.values(users).filter(actor => actor.role).map(actor => lit(actor.id)).join(',')})`);
+  const originalRoles = accountRoles();
   for (const actor of [...participants, mentor, admin]) {
     const context = await json(await rpc('team_attendance_policy_context', {}, actor));
     assert.equal(context.user_id, actor.id);
-    assert.equal(context.can_review, [studentPM, leadPM, mentor].includes(actor));
+    assert.equal(context.can_participate, participants.includes(actor));
+    assert.equal(context.can_review, [...programManagers, mentor].includes(actor));
     assert.equal(context.can_manage_meetings, ['lead', 'mentor', 'admin'].includes(actor.role));
+    assert.equal(context.can_review_program_manager_requests, actor === mentor);
+    if (context.can_read_team) {
+      for (const pm of programManagers) assert(context.mentor_review_required_for.includes(pm.id));
+      assert.equal(context.people.find(person => person.id === actor.id)?.role, actor.role);
+    }
   }
-  pass('eleven real Auth identities use authoritative profiles; student and lead Program Managers keep separate request/review capabilities');
+  const roster = await json(await rpc('team_attendance_roster', {}, mentor));
+  for (const actor of participants) assert(roster.some(row => row.student_id === actor.id));
+  for (const actor of nonparticipants) assert(!roster.some(row => row.student_id === actor.id));
+  pass('thirteen real Auth identities use authoritative profiles; all four Program Manager account roles participate without changing management access or shared roles');
+
+  for (const actor of [mentorPM, adminPM]) {
+    const managedID = await createMeeting(`Synthetic ${actor.name} retained management`, 120, actor);
+    const managed = query(`select to_jsonb(m) from public.team_meetings m where id=${lit(managedID)}`);
+    assert.equal(managed.created_by, actor.id);
+    const edited = await json(await rpc('team_attendance_edit_meeting', { p: {
+      meeting_id: managedID, version: managed.version, title: `${managed.title} edited`,
+      meeting_type: managed.meeting_type, starts_at: managed.starts_at, ends_at: managed.ends_at,
+    } }, actor));
+    assert.deepEqual(edited, { id: managedID, version: managed.version + 1, changed: true });
+    assert.deepEqual(accountRoles(), originalRoles);
+  }
+  pass('mentor/admin Program Managers retain real create/edit meeting authority while using their unchanged shared account roles');
 
   // Every permission denial must leave both records and audit unchanged.
   const deniedBefore = state();
   const notice = { meeting_id: mid, version: 1, notice_type: 'absent', reason: 'Synthetic permission probe' };
-  for (const actor of [reader, inactiveStudent, inactiveLead, mentor, admin, noProfile]) {
-    await rejected(await submit(notice, actor), '42501', /Student access required/, 403);
+  for (const actor of nonparticipants) {
+    await rejected(await submit(notice, actor), '42501', /Active Attendance participant required/, 403);
+    await rejected(await rpc('team_attendance_check_in', { meeting_id: unrosteredID, code: unrosteredOpening.code }, actor), '42501', /Active Attendance participant required/, 403);
+    await rejected(await rpc('team_attendance_check_out', { meeting_id: unrosteredID }, actor), '42501', /Active Attendance participant required/, 403);
   }
   await rejected(await submit(notice, null), '42501', /permission denied/, 401);
+  await rejected(await rpc('team_attendance_check_in', { meeting_id: unrosteredID, code: unrosteredOpening.code }, null), '42501', /permission denied/, 401);
+  await rejected(await rpc('team_attendance_check_out', { meeting_id: unrosteredID }, null), '42501', /permission denied/, 401);
   await rejected(await submit(notice, unrostered), 'P0001', /not on this meeting roster/);
+  await rejected(await rpc('team_attendance_check_in', { meeting_id: unrosteredID, code: unrosteredOpening.code }, unrostered), 'P0001', /not on this meeting roster/);
+  await rejected(await rpc('team_attendance_check_out', { meeting_id: unrosteredID }, unrostered), 'P0001', /not on this meeting roster/);
   assert.equal(state(), deniedBefore);
-  pass('inactive student/lead, readonly, mentor, admin, missing profile, anonymous, and unrostered accounts cannot request or create audit');
+  pass('inactive student/lead, readonly, ordinary mentor/admin, missing profile, anonymous, and unrostered accounts cannot request, check in/out, or create audit');
 
   async function verifySaved(actor, before, p) {
     const audits = auditCount(before.id);
@@ -128,6 +164,25 @@ export async function runAttendanceRequestsIntegration({ base, anonKey, sql, reg
     assert.equal(audit.performed_by, actor.id); assert.equal(audit.student_id, actor.id);
     assert.equal(audit.before_data.version, before.version); assert.equal(audit.after_data.version, after.version);
     assert.equal(audit.after_data.notice_reason, p.reason.trim());
+    return after;
+  }
+  async function verifyCheckedOut(meeting_id, actor) {
+    const before = await record(meeting_id, actor), audits = auditCount(before.id);
+    const others = () => fingerprint(['public.team_attendance'], `where not (meeting_id=${lit(meeting_id)} and student_id=${lit(actor.id)})`);
+    const otherBefore = others();
+    const serverBefore = Date.parse(sql('select clock_timestamp()'));
+    assert.equal((await json(await rpc('team_attendance_check_out', { meeting_id }, actor))).message, 'Check-out recorded');
+    const serverAfter = Date.parse(sql('select clock_timestamp()'));
+    const after = await record(meeting_id, actor);
+    assert.deepEqual(after, { ...before, physical_status: 'left_early', left_at: after.left_at, version: before.version + 1 });
+    assert(Date.parse(after.left_at) >= serverBefore && Date.parse(after.left_at) <= serverAfter);
+    assert.equal(others(), otherBefore); assert.equal(auditCount(before.id), audits + 1);
+    const audit = latestAudit(before.id);
+    assert.equal(audit.performed_by, actor.id); assert.equal(audit.student_id, actor.id);
+    assert.equal(audit.before_data.version, before.version); assert.equal(audit.after_data.version, after.version);
+    const unchanged = state();
+    assert.equal((await json(await rpc('team_attendance_check_out', { meeting_id }, actor))).message, 'Check-out already recorded');
+    assert.equal(state(), unchanged, 'Check-out replay must preserve the original departure and audit');
     return after;
   }
   for (const actor of participants) {
@@ -180,13 +235,13 @@ export async function runAttendanceRequestsIntegration({ base, anonKey, sql, reg
     review_status: status, explanation: 'Synthetic independent review',
   }, reviewer);
   const selfBefore = state();
-  for (const actor of [lead, studentPM, leadPM]) for (const status of ['excused', 'denied', 'not_required']) {
+  for (const actor of [lead, ...programManagers]) for (const status of ['excused', 'denied', 'not_required', 'none', 'pending']) {
     await rejected(await review(await record(mid, actor), actor, status), '42501', /Another Mentor or Program Manager/, 403);
   }
   for (const reviewer of [lead, admin]) await rejected(await review(await record(mid, student), reviewer), '42501', /Another Mentor or Program Manager/, 403);
   await rejected(await review(await record(mid, lead), student), '42501', /Leadership access required/, 403);
   assert.equal(state(), selfBefore);
-  for (const reviewer of [mentor, studentPM, leadPM]) {
+  for (const reviewer of [mentor, ...programManagers]) {
     const before = await record(mid, student);
     await json(await review(before, reviewer));
     const reviewed = await record(mid, student);
@@ -195,25 +250,28 @@ export async function runAttendanceRequestsIntegration({ base, anonKey, sql, reg
     assert.equal(latestAudit(before.id).performed_by, reviewer.id);
     await verifySaved(student, reviewed, { ...notice, version: reviewed.version, reason: 'Synthetic changed request needs a new review' });
   }
-  pass('lead and Program Managers cannot self-review; mentor and both Program Managers review others, and a changed request resets the decision');
+  pass('lead and all four Program Manager roles cannot self-review; a non-PM mentor and all PM roles review ordinary participants, and changed requests reset decisions');
 
-  for (const actor of [studentPM, leadPM]) {
+  for (const actor of programManagers) {
     const before = await record(mid, actor), unchanged = state();
-    const peer = actor === studentPM ? leadPM : studentPM;
-    for (const status of ['excused', 'denied', 'not_required', 'none', 'pending'])
-      await rejected(await review(before, peer, status), '42501', /A Mentor must review Program Manager/, 403);
+    for (const peer of programManagers.filter(reviewer => reviewer !== actor)) {
+      for (const status of ['excused', 'denied', 'not_required', 'none', 'pending'])
+        await rejected(await review(before, peer, status), '42501', /A Mentor must review Program Manager/, 403);
+    }
     assert.equal(state(), unchanged);
     const queue = await json(await localFetch(base, `/rest/v1/team_attendance?select=${fields}&review_status=eq.pending&student_id=eq.${actor.id}`, { headers: headers(mentor) }));
     assert(queue.some(row => row.id === before.id), 'The mentor must see the Program Manager request');
     await json(await review(before, mentor));
     const after = await record(mid, actor);
     assert.equal(after.review_status, 'excused'); assert.equal(after.reviewed_by, mentor.id);
+    assert.equal(after.version, before.version + 1); assert(after.reviewed_at);
+    assert.equal(latestAudit(before.id).performed_by, mentor.id);
     assert.deepEqual(physical(after), physical(before));
     const context = await json(await rpc('team_attendance_policy_context', {}, actor));
     assert.equal(context.can_review_program_manager_requests, false);
     assert(context.mentor_review_required_for.includes(actor.id));
   }
-  pass('student and lead Program Manager requests are mentor-visible, reject peer PM decisions, and show the mentor decision to the requester');
+  pass('all four Program Manager request roles reject every peer PM role including mentor-role PMs; only a non-PM mentor decides their visible requests');
 
 
   // Both before-start and during-meeting check-ins retain physical evidence when
@@ -222,9 +280,15 @@ export async function runAttendanceRequestsIntegration({ base, anonKey, sql, reg
     const checkedID = await createMeeting(`Synthetic ${expectedPhysical} before early request`, starts);
     const opening = await json(await manage('open', { meeting_id: checkedID, version: meetingVersion(checkedID) }, mentor));
     for (const actor of participants) {
+      const prior = await record(checkedID, actor), audits = auditCount(prior.id);
+      const others = () => fingerprint(['public.team_attendance'], `where not (meeting_id=${lit(checkedID)} and student_id=${lit(actor.id)})`);
+      const otherBefore = others();
       assert.equal((await json(await rpc('team_attendance_check_in', { meeting_id: checkedID, code: opening.code }, actor))).message, 'Checked in');
       const before = await record(checkedID, actor);
       assert.equal(before.physical_status, expectedPhysical); assert(before.checked_in_at);
+      assert.deepEqual(before, { ...prior, physical_status: expectedPhysical, checked_in_at: before.checked_in_at, version: prior.version + 1 });
+      assert.equal(others(), otherBefore); assert.equal(auditCount(before.id), audits + 1);
+      assert.equal(latestAudit(before.id).performed_by, actor.id);
       if (starts < 0) {
         const unchanged = state();
         for (const notice_type of ['absent', 'late']) await rejected(await submit({
@@ -235,9 +299,59 @@ export async function runAttendanceRequestsIntegration({ base, anonKey, sql, reg
       await verifySaved(actor, before, { ...notice, meeting_id: checkedID, version: before.version,
         notice_type: 'early', expected_at: future(50), reason: 'Synthetic departure after check-in',
       });
+      if (starts < 0) await verifyCheckedOut(checkedID, actor);
     }
   }
-  pass('all four participant types request early departure after present/late check-in without changing physical attendance; in-progress absent/late is rejected');
+  pass('all six participant types check in to their own row, request early departure without rewriting physical evidence, and check out once; in-progress absent/late is rejected');
+
+  // Keep the same real JWT while authoritative eligibility changes. A stale
+  // session cannot keep participant rights, including idempotent check-in paths.
+  const eligibilityID = await createMeeting('Synthetic live participant eligibility', -10);
+  const eligibilityOpening = await json(await manage('open', { meeting_id: eligibilityID, version: meetingVersion(eligibilityID) }, mentor));
+  for (const actor of [mentorPM, adminPM]) {
+    assert.equal((await json(await rpc('team_attendance_check_in', { meeting_id: eligibilityID, code: eligibilityOpening.code }, actor))).message, 'Checked in');
+    const before = await record(eligibilityID, actor);
+    for (const [label, invalidate, restore, profileActive] of [
+      ['position revocation', `update public.team_member_positions set revoked_at=clock_timestamp() where user_id=${lit(actor.id)} and position_key='program_manager' and revoked_at is null`,
+        `update public.team_member_positions set revoked_at=null where user_id=${lit(actor.id)} and position_key='program_manager'`, true],
+      ['position archival', "update public.team_positions set active=false where key='program_manager'",
+        "update public.team_positions set active=true where key='program_manager'", true],
+      ['profile inactivity', `update public.profiles set active=false where id=${lit(actor.id)}`,
+        `update public.profiles set active=true where id=${lit(actor.id)}`, false],
+    ]) {
+      const authorityBefore = fingerprint(canonicalTables);
+      sql(invalidate);
+      try {
+        const unchanged = state();
+        const contextResponse = await rpc('team_attendance_policy_context', {}, actor);
+        if (profileActive) {
+          const context = await json(contextResponse);
+          assert.equal(context.can_participate, false);
+          assert.equal(context.can_manage_meetings, true, 'Removing PM eligibility must retain the underlying active mentor/admin management role');
+          assert(!context.mentor_review_required_for.includes(actor.id));
+        } else await rejected(contextResponse, '42501', /Active Attendance account required/, 403);
+        await rejected(await submit({ ...notice, meeting_id: eligibilityID, version: before.version,
+          notice_type: 'early', expected_at: future(50), reason: `Synthetic ${label} request`,
+        }, actor), '42501', /Active Attendance participant required/, 403);
+        await rejected(await rpc('team_attendance_check_in', { meeting_id: eligibilityID, code: eligibilityOpening.code }, actor), '42501', /Active Attendance participant required/, 403);
+        await rejected(await rpc('team_attendance_check_out', { meeting_id: eligibilityID }, actor), '42501', /Active Attendance participant required/, 403);
+        assert.equal(state(), unchanged, `${label} denial must not change records or audit`);
+        assert.deepEqual(accountRoles(), originalRoles);
+      } finally {
+        sql(restore);
+        assert.equal(fingerprint(canonicalTables), authorityBefore, `Synthetic ${label} fixture must be restored exactly`);
+      }
+      const restored = await json(await rpc('team_attendance_policy_context', {}, actor));
+      assert.equal(restored.can_participate, true); assert.equal(restored.can_manage_meetings, true);
+      assert.equal(restored.can_review_program_manager_requests, false);
+      assert(restored.mentor_review_required_for.includes(actor.id));
+    }
+    await verifySaved(actor, before, { ...notice, meeting_id: eligibilityID, version: before.version,
+      notice_type: 'early', expected_at: future(50), reason: 'Synthetic participant eligibility restored',
+    });
+    await verifyCheckedOut(eligibilityID, actor);
+  }
+  pass('the same mentor/admin PM JWT loses request/check-in/check-out rights after assignment revocation, position archival, or profile inactivity; restoring fixtures restores eligibility without changing roles');
 
   const current = await record(mid, lead);
   const invalidBefore = state();
@@ -279,6 +393,7 @@ export async function runAttendanceRequestsIntegration({ base, anonKey, sql, reg
   }
   assert.equal(fingerprint(['public.team_meeting_members', 'public.team_attendance', 'public.team_attendance_history'], `where meeting_id=${lit(untouchedID)}`), untouched);
   assert.equal(fingerprint(canonicalTables), canonical, 'Requests changed profiles, positions, membership, strikes, or unrelated app records');
+  assert.deepEqual(accountRoles(), originalRoles, 'Attendance participation must never change shared account roles');
   assert.equal(sql("select pg_get_functiondef('auth.uid()'::regprocedure)"), authFunction);
   pass('audit failure rolls back atomically; other occurrences, profiles, positions, membership, strikes, unrelated apps, and real Auth remain unchanged');
   return checks;
