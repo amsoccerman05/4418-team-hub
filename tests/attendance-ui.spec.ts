@@ -242,7 +242,7 @@ for (const width of [390, 1440]) {
       .filter({ hasText: /^Report attendance issue$/ })
       .click();
     await page.getByLabel("Expected departure").fill("2026-09-10T12:30");
-    await page.getByLabel("Reason", { exact: true }).fill("Family commitment");
+    await page.getByRole("textbox", { name: "Reason", exact: true }).fill("Family commitment");
     await page
       .getByRole("button", { name: "Report an attendance issue", exact: true })
       .click();
@@ -638,7 +638,7 @@ for (const width of [390, 1440])
         .slice(0, 16);
     });
     await page.getByLabel("Expected arrival").fill(expected);
-    await page.getByLabel("Reason", { exact: true }).fill("Transportation");
+    await page.getByRole("textbox", { name: "Reason", exact: true }).fill("Transportation");
     await page
       .getByRole("button", { name: "Report an attendance issue", exact: true })
       .click();
@@ -1021,7 +1021,7 @@ async function assertPersonalRequestControls(page: Page) {
   await expect(workspace.getByText("Another member private request", { exact: true })).toHaveCount(0);
 }
 async function openPersonalRequest(page: Page, meetingId = "m1") {
-  await page.getByLabel("Meeting for my request", { exact: true }).selectOption(meetingId);
+  await page.getByRole("combobox", { name: "Meeting for my request", exact: true }).selectOption(meetingId);
   await page.getByRole("button", { name: "Report my attendance issue", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Meeting details" });
   await expect(dialog).toBeVisible();
@@ -1049,7 +1049,7 @@ for (const width of [390, 1440]) {
       await expect(page.locator('.att-tabs a[href="#attendance/notices"]')).toContainText("Absence & Schedule Requests");
       await expect(page.locator(".att-request-card")).toHaveCount(1);
       await expect(page.locator(".att-request-card")).toContainText("My existing synthetic request");
-      expect(await page.getByLabel("Meeting for my request", { exact: true }).locator("option").evaluateAll(options => options.map(o => (o as HTMLOptionElement).value).filter(Boolean))).toEqual(["m1", "m-own-second"]);
+      expect(await page.getByRole("combobox", { name: "Meeting for my request", exact: true }).locator("option").evaluateAll(options => options.map(o => (o as HTMLOptionElement).value).filter(Boolean))).toEqual(["m1", "m-own-second"]);
       await assertPersonalRequestControls(page);
       const dialog = await openPersonalRequest(page);
       await expect(dialog.getByRole("heading", { name: "Preseason build", exact: true })).toBeVisible();
@@ -1061,10 +1061,10 @@ for (const width of [390, 1440]) {
         const planned = kind === "late" ? "2026-09-10T17:45:00.000Z" : "2026-09-10T18:15:00.000Z";
         if (kind !== "absent") await form.getByLabel(kind === "late" ? "Expected arrival" : "Expected departure", { exact: true }).fill(await localInput(page, planned));
         const reason = index === 3 ? "Updated departure arrangement" : `My synthetic ${kind} request`;
-        await form.getByLabel("Reason", { exact: true }).fill(reason);
+        await form.getByRole("textbox", { name: "Reason", exact: true }).fill(reason);
         await form.getByRole("button", { name: "Report an attendance issue", exact: true }).click();
         await expect(dialog.getByText("Attendance request submitted for leadership review", { exact: true })).toBeVisible();
-        await expect(dialog.getByLabel("Reason", { exact: true })).not.toBeVisible();
+        await expect(dialog.getByRole("textbox", { name: "Reason", exact: true })).not.toBeVisible();
         expect(calls).toHaveLength(index + 1);
         expect(calls[index]).toEqual({ p: { meeting_id: "m1", version: index + 1, notice_type: kind, expected_at: kind === "absent" ? null : planned, reason } });
         await expect(dialog.locator(".att-request-reason")).toHaveText(reason);
@@ -1088,7 +1088,7 @@ for (const width of [390, 1440]) {
       // The leadership queue and calendar continue to use their own controls.
       await page.locator('.att-tabs a[href="#attendance/notices"]').click();
       await expect(page.getByRole("heading", { name: "Absence & Schedule Requests", exact: true })).toBeVisible();
-      await expect(page.getByLabel("Meeting for my request", { exact: true })).toHaveCount(0);
+      await expect(page.getByRole("combobox", { name: "Meeting for my request", exact: true })).toHaveCount(0);
       const otherCard = page.locator(".att-request-card").filter({ hasText: "Another member private request" });
       await expect(otherCard).toBeVisible();
       await expect(otherCard.getByText("Advanced attendance & strikes", { exact: true })).toBeVisible();
@@ -1126,7 +1126,7 @@ for (const width of [390, 1440]) {
       await expect(dialog.getByLabel("How will your attendance be affected?").locator("option")).toHaveCount(1);
       await expect(dialog.getByLabel("How will your attendance be affected?")).toHaveValue("early");
       await dialog.getByLabel("Expected departure", { exact: true }).fill(await localInput(page, "2026-09-10T18:00:00Z"));
-      await dialog.getByLabel("Reason", { exact: true }).fill("My appointment after arrival");
+      await dialog.getByRole("textbox", { name: "Reason", exact: true }).fill("My appointment after arrival");
       await dialog.getByRole("button", { name: "Report an attendance issue", exact: true }).click();
       await expect(dialog.getByText("Early departure requested · Pending", { exact: true })).toBeVisible();
       await assertPersonalRequestControls(page);
@@ -1162,7 +1162,7 @@ for (const width of [390, 1440]) {
     await expect(page.locator(".att-request-card")).toHaveCount(1);
     const dialog = await openPersonalRequest(page);
     await dialog.getByText("Report attendance issue", { exact: true }).click();
-    await dialog.getByLabel("Reason", { exact: true }).fill("Ordinary student request");
+    await dialog.getByRole("textbox", { name: "Reason", exact: true }).fill("Ordinary student request");
     await dialog.getByRole("button", { name: "Report an attendance issue", exact: true }).click();
     await expect(dialog.getByText("Absence requested · Pending", { exact: true })).toBeVisible();
     expect(calls).toEqual([{ p: { meeting_id: "m1", version: 1, notice_type: "absent", expected_at: null, reason: "Ordinary student request" } }]);
@@ -1181,11 +1181,11 @@ for (const role of ["mentor", "admin"]) {
     await page.goto("/#attendance/my-requests");
     await expect(page.getByRole("heading", { name: "Attendance · needs attention", exact: true })).toBeVisible();
     await expect(page.locator(".att-tabs").getByRole("link", { name: /My Requests/ })).toHaveCount(0);
-    await expect(page.getByLabel("Meeting for my request", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("combobox", { name: "Meeting for my request", exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Report my attendance issue", exact: true })).toHaveCount(0);
     await page.locator('.att-tabs a[href="#attendance/notices"]').click();
     await expect(page.getByRole("heading", { name: "Absence & Schedule Requests", exact: true })).toBeVisible();
-    await expect(page.getByLabel("Meeting for my request", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("combobox", { name: "Meeting for my request", exact: true })).toHaveCount(0);
     expect(calls).toEqual([]);
   });
 }
@@ -1196,7 +1196,7 @@ for (const account of [{ role: "lead", active: false }, { role: "student", activ
       await page.goto(`/#attendance/${route}`);
       await expect(page.locator(".attendance-section").getByRole("alert")).toContainText("Attendance access requires an active student or leadership account.");
       await expect(page.getByRole("navigation", { name: "Attendance views" })).toHaveCount(0);
-      await expect(page.getByLabel("Meeting for my request", { exact: true })).toHaveCount(0);
+      await expect(page.getByRole("combobox", { name: "Meeting for my request", exact: true })).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Report my attendance issue", exact: true })).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Excuse", exact: true })).toHaveCount(0);
     }
@@ -1208,7 +1208,7 @@ test("personal attendance requests: empty own roster cannot borrow another membe
   const { calls } = await mock(page, "lead");
   await page.goto("/#attendance/my-requests");
   await expect(page.getByText("No upcoming or in-progress meetings on your roster. Contact leadership if a meeting is missing or has already ended.", { exact: true })).toBeVisible();
-  await expect(page.getByLabel("Meeting for my request", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("combobox", { name: "Meeting for my request", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Report my attendance issue", exact: true })).toHaveCount(0);
   expect(calls).toEqual([]);
 });
@@ -1224,7 +1224,7 @@ for (const [index, persona] of leadershipRequestPersonas.entries()) {
     await dialog.getByLabel("How will your attendance be affected?").selectOption("late");
     const expected = await localInput(page, "2026-09-10T17:45:00Z");
     await dialog.getByLabel("Expected arrival", { exact: true }).fill(expected);
-    await dialog.getByLabel("Reason", { exact: true }).fill("Keep my unsent synthetic draft");
+    await dialog.getByRole("textbox", { name: "Reason", exact: true }).fill("Keep my unsent synthetic draft");
     const attempts: unknown[] = [];
     let release!: () => void;
     const pending = new Promise<void>(resolve => { release = resolve; });
@@ -1241,7 +1241,7 @@ for (const [index, persona] of leadershipRequestPersonas.entries()) {
     try {
       await expect(dialog.getByRole("status")).toHaveText("Updating attendance…");
       await expect(submit).toBeDisabled();
-      await expect(dialog.getByLabel("Reason", { exact: true })).toBeDisabled();
+      await expect(dialog.getByRole("textbox", { name: "Reason", exact: true })).toBeDisabled();
       await expect(dialog.getByRole("button", { name: "Close", exact: true })).toBeDisabled();
       await submit.evaluate(button => { (button as HTMLButtonElement).click(); (button as HTMLButtonElement).click(); });
       await dialog.press("Escape");
@@ -1249,7 +1249,7 @@ for (const [index, persona] of leadershipRequestPersonas.entries()) {
       expect(attempts).toHaveLength(1);
     } finally { release(); }
     await expect(dialog.getByRole("alert")).toContainText("Attendance changed");
-    await expect(dialog.getByLabel("Reason", { exact: true })).toHaveValue("Keep my unsent synthetic draft");
+    await expect(dialog.getByRole("textbox", { name: "Reason", exact: true })).toHaveValue("Keep my unsent synthetic draft");
     await expect(dialog.getByLabel("How will your attendance be affected?")).toHaveValue("late");
     await expect(dialog.getByLabel("Expected arrival", { exact: true })).toHaveValue(expected);
     await expect(submit).toBeEnabled();
@@ -1260,14 +1260,14 @@ for (const [index, persona] of leadershipRequestPersonas.entries()) {
     await expect(page.locator(".att-request-card").filter({ hasText: "Saved in another tab" })).toBeVisible();
     await openPersonalRequest(page);
     await dialog.getByText("Edit request", { exact: true }).click();
-    await expect(dialog.getByLabel("Reason", { exact: true })).toHaveValue("Saved in another tab");
-    await dialog.getByLabel("Reason", { exact: true }).fill("Retry after refreshing the latest request");
+    await expect(dialog.getByRole("textbox", { name: "Reason", exact: true })).toHaveValue("Saved in another tab");
+    await dialog.getByRole("textbox", { name: "Reason", exact: true }).fill("Retry after refreshing the latest request");
     await submit.click();
     await expect(dialog.getByText("Absence requested · Pending", { exact: true })).toBeVisible();
     expect(attempts).toHaveLength(2);
     expect(calls).toEqual([{ p: { meeting_id: "m1", version: 2, notice_type: "absent", expected_at: null, reason: "Retry after refreshing the latest request" } }]);
     await dialog.getByText("Edit request", { exact: true }).click();
-    await dialog.getByLabel("Reason", { exact: true }).fill("Navigation should discard this unsent draft");
+    await dialog.getByRole("textbox", { name: "Reason", exact: true }).fill("Navigation should discard this unsent draft");
     await dialog.getByRole("link", { name: "How to use Attendance →", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "How to use Attendance", exact: true })).toBeVisible();
@@ -1276,7 +1276,7 @@ for (const [index, persona] of leadershipRequestPersonas.entries()) {
     await expect(dialog).toHaveCount(0);
     await openPersonalRequest(page);
     await dialog.getByText("Edit request", { exact: true }).click();
-    await expect(dialog.getByLabel("Reason", { exact: true })).toHaveValue("Retry after refreshing the latest request");
+    await expect(dialog.getByRole("textbox", { name: "Reason", exact: true })).toHaveValue("Retry after refreshing the latest request");
     await dialog.press("Escape");
     await expect(dialog).toHaveCount(0);
     await page.goForward();
@@ -1342,14 +1342,14 @@ test('Program Manager decision links show own decisions without changing the tea
   Object.assign(data.attendance.find(a=>a.id==='a-own-second')!,{review_status:'excused',review_reason:'Mentor approved this request'});
  }});
  await page.goto('/#attendance/my-requests');
- await expect(page.getByLabel('Request status',{exact:true})).toHaveValue('all');
+ await expect(page.getByRole('combobox',{name:'Request status',exact:true})).toHaveValue('all');
  await expect(page.getByText('Mentor approved this request',{exact:true})).toBeVisible();
- await page.getByLabel('Request status',{exact:true}).selectOption('excused');
+ await page.getByRole('combobox',{name:'Request status',exact:true}).selectOption('excused');
  await page.locator('.att-tabs a[href="#attendance/notices"]').click();
- await expect(page.getByLabel('Request status',{exact:true})).toHaveValue('pending');
+ await expect(page.getByRole('combobox',{name:'Request status',exact:true})).toHaveValue('pending');
  await expect(page.getByText('Another member private request',{exact:true})).toBeVisible();
  await expect(page.getByText('Mentor approved this request',{exact:true})).toHaveCount(0);
  await page.locator('.att-tabs a[href="#attendance/my-requests"]').click();
- await expect(page.getByLabel('Request status',{exact:true})).toHaveValue('excused');
+ await expect(page.getByRole('combobox',{name:'Request status',exact:true})).toHaveValue('excused');
  await expect(page.getByText('Mentor approved this request',{exact:true})).toBeVisible();
 });

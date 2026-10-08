@@ -12,7 +12,7 @@ Mentors see the request in **Absence & Schedule Requests**. Approval/denial noti
 
 ## Additive rollout requirements
 
-This is a local review draft. It has not been published or deployed, and no production migration was applied.
+This change is published in [draft PR #16](https://github.com/amsoccerman05/4418-team-hub/pull/16). It has not been merged or deployed, and no production migration was applied.
 
 Apply the reviewed migrations in order, after the existing Team Management positions, Attendance Policy v0.3, and Notification Center prerequisites:
 
@@ -31,4 +31,4 @@ Before team rollout, verify a synthetic Program Manager request through real Aut
 - `npx playwright test tests/attendance-ui.spec.ts --workers=1`: mocked browser flows, including student/lead PMs and Mentor-only review controls
 - `ATTENDANCE_REQUESTS_INTEGRATION=1 node tests/integration/fabrication-local.mjs --run`: owned disposable real Supabase Auth/PostgREST stack, requires the pinned CLI and Docker
 
-The PGlite tests use a synthetic `auth.uid()` and cannot establish real Auth/PostgREST behavior. The browser fixture also cannot establish backend permissions. Both real-stack and browser checks must pass in a suitable environment before release; neither has run successfully in this cloud checkout because the pinned Supabase CLI and Docker are absent and Chromium's required socket creation is denied.
+The PGlite tests use a synthetic `auth.uid()` and cannot establish real Auth/PostgREST behavior. The browser fixture also cannot establish backend permissions. Both real-stack and browser checks must pass in a suitable environment before release. The approved CI run at `7e8e3fc` passed the real Auth/PostgREST suite, including peer PM denial and Mentor approval. The first full browser run exposed exact-label dropdown locator issues in the new tests; those locators are corrected in this follow-up. Follow the current PR-head checks for final results. Locally, the pinned Supabase CLI and Docker are absent and Chromium's required socket creation is denied.
