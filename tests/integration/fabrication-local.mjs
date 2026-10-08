@@ -11,6 +11,7 @@ import { CLI_VERSION, API_PORT, DB_PORT, ORIGIN, localStatus, localFetch, isolat
 
 import { attendanceEditingSources } from './attendance-editing-fixture.mjs';
 import { volunteerHoursSources } from './volunteer-hours-stack.spec.mjs';
+import { attendanceRequestSources } from './attendance-requests-stack.spec.mjs';
 
 const withVolunteerHours = process.env.VOLUNTEER_HOURS_INTEGRATION === '1';
 const withAttendanceRequests = process.env.ATTENDANCE_REQUESTS_INTEGRATION === '1';
@@ -106,7 +107,7 @@ const sourcePaths = [
   ...['types.ts', 'model.ts', 'decision-types.ts', 'decision-model.ts', 'trade-study.ts'].map(f => `src/planning/reviews/${f}`),
   ...['fabrication-local.mjs', 'fabrication-safety.mjs', 'fabrication-stack.spec.mjs', 'assembly-stack.spec.mjs', 'design-decision-stack.spec.mjs', 'attendance-editing-fixture.mjs', 'attendance-editing-stack.spec.mjs'].map(f => `tests/integration/${f}`),
 ];
-const hashes = Object.fromEntries([...sourcePaths, ...attendanceEditingSources, ...(withVolunteerHours ? volunteerHoursSources : []), ...(withAttendanceRequests ? ['tests/integration/attendance-requests-stack.spec.mjs'] : [])].map(path => [path, createHash('sha256').update(readFileSync(join(repo, path))).digest('hex')]));
+const hashes = Object.fromEntries([...sourcePaths, ...attendanceEditingSources, ...(withVolunteerHours ? volunteerHoursSources : []), ...(withAttendanceRequests ? attendanceRequestSources : [])].map(path => [path, createHash('sha256').update(readFileSync(join(repo, path))).digest('hex')]));
 try {
   const version = execFileSync(executable, ['--version'], common).trim();
   assert.equal(version, CLI_VERSION, `Install the pinned official Supabase CLI ${CLI_VERSION}`);

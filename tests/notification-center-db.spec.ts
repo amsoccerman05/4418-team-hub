@@ -1,16 +1,17 @@
-import {test,expect} from '@playwright/test';
+import {test as base,expect} from '@playwright/test';
 import {PGlite} from '@electric-sql/pglite';
 import {readFileSync} from 'node:fs';
+const test=base.extend<{coachReviewRouting:boolean}>({coachReviewRouting:[true,{option:true}]});
 let db:PGlite;const id=(n:number)=>`00000000-0000-0000-0000-${String(n).padStart(12,'0')}`;
 async function as(n:number){await db.exec(`reset role;select set_config('test.uid','${id(n)}',false);set role authenticated;`);}
 async function dashboard(){return (await db.query<any>('select team_dashboard_context() c')).rows[0].c;}
 async function announce(p:Record<string,unknown>){return (await db.query<any>('select team_announcement_save($1::jsonb) id',[JSON.stringify({title:'Team update',body:'Welcome',severity:'normal',...p})])).rows[0].id;}
-test.beforeEach(async()=>{
+test.beforeEach(async({coachReviewRouting})=>{
  db=new PGlite();await db.exec(`create role anon;create role authenticated;create role service_role;create schema auth;create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('test.uid',true),'')::uuid$$;grant usage on schema auth to authenticated;grant execute on function auth.uid() to authenticated;
  create table profiles(id uuid primary key,display_name text,role text,active boolean,primary_area_id uuid,updated_at timestamptz default now());
  create table areas(id uuid primary key default gen_random_uuid(),name text,active boolean default true,slug text unique default gen_random_uuid()::text);
  insert into areas(id,name) values('${id(101)}','Fabrication'),('${id(102)}','Electrical');
- insert into profiles(id,display_name,role,active,primary_area_id) values('${id(1)}','Mentor','mentor',true,'${id(101)}'),('${id(2)}','Student','student',true,'${id(101)}'),('${id(3)}','Other student','student',true,'${id(102)}'),('${id(4)}','Inactive','mentor',false,null),('${id(5)}','Lead','lead',true,'${id(101)}'),('${id(6)}','Reader','readonly',true,null),('${id(7)}','Admin','admin',true,null);
+ insert into profiles(id,display_name,role,active,primary_area_id) values('${id(1)}','Mentor','mentor',true,'${id(101)}'),('${id(2)}','Student','student',true,'${id(101)}'),('${id(3)}','Other student','student',true,'${id(102)}'),('${id(4)}','Inactive','mentor',false,null),('${id(5)}','Lead','lead',true,'${id(101)}'),('${id(6)}','Reader','readonly',true,null),('${id(7)}','Admin','admin',true,null),('${id(8)}','Ordinary mentor','mentor',true,null),('${id(9)}','Second coach','mentor',true,null);
  grant select on profiles,areas to authenticated;
  alter table profiles enable row level security;create policy profile_read on profiles for select to authenticated using(id=auth.uid());
  create table pit_events(id uuid primary key,name text,status text);create table pit_issues(id uuid primary key,event_id uuid,severity text,status text);
@@ -28,15 +29,17 @@ test.beforeEach(async()=>{
  await db.exec(`create schema storage;create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text references storage.buckets(id),name text,unique(bucket_id,name));alter table storage.objects enable row level security;grant usage on schema storage to authenticated;grant select,insert,delete on storage.objects to authenticated;`);
  await db.exec(readFileSync('supabase/migrations/202609120006_team_communications.sql','utf8'));
 
- await db.exec(`insert into team_meetings(id,title,meeting_type,starts_at,ends_at,requirement,status,created_by) values('${id(201)}','Past','preseason',now()-interval '2 days',now()-interval '1 day','registered','finalized','${id(1)}'),('${id(202)}','Next build','other',now()+interval '1 day',now()+interval '1 day 3 hours','registered','draft','${id(1)}');
+ await db.exec(`select set_config('test.uid','${id(1)}',false);
+ insert into team_meetings(id,title,meeting_type,starts_at,ends_at,requirement,status,created_by) values('${id(201)}','Past','preseason',now()-interval '2 days',now()-interval '1 day','registered','finalized','${id(1)}'),('${id(202)}','Next build','other',now()+interval '1 day',now()+interval '1 day 3 hours','registered','draft','${id(1)}');
  insert into team_meeting_members(meeting_id,student_id,required,member_status,team_area) values('${id(201)}','${id(2)}',true,'registered','Fabrication'),('${id(202)}','${id(2)}',true,'registered','Fabrication'),('${id(201)}','${id(3)}',true,'registered','Electrical');
- select set_config('test.uid','${id(1)}',false);
  insert into team_attendance(id,meeting_id,student_id,physical_status,review_status) values('${id(211)}','${id(201)}','${id(2)}','late','none'),('${id(212)}','${id(202)}','${id(2)}','pending','pending'),('${id(213)}','${id(201)}','${id(3)}','absent','pending');
  insert into team_attendance_strikes(attendance_id,student_id,meeting_id,category,quantity,explanation,assigned_by) values('${id(213)}','${id(3)}','${id(201)}','Other',5,'Internal discipline','${id(1)}');
  insert into finance_purchase_orders(id,requester_id,area_id,sheet_url,vendor,amount,purpose,status,revision) values('${id(501)}','${id(2)}','${id(101)}','https://docs.google.com/spreadsheets/d/fixture','My vendor',25,'Parts','awaiting_approval',1),('${id(502)}','${id(3)}','${id(102)}','https://docs.google.com/spreadsheets/d/fixture','Private vendor',99,'Parts','awaiting_approval',1);
  insert into finance_po_revisions(po_id,revision,metadata,submitted_by) values('${id(501)}',1,'{}','${id(2)}'),('${id(502)}',1,'{}','${id(3)}');`);
  await db.exec(readFileSync('supabase/migrations/202609120001_attendance_requests_recurrence.sql','utf8'));
- await db.exec(`reset role;drop view team_attendance_history;alter table team_attendance_private.history set schema public;alter table public.history rename to team_attendance_history;grant select on team_attendance_history to authenticated;create policy attendance_history_read on team_attendance_history for select to authenticated using(team_attendance_private.manager() or student_id=auth.uid());`);
+ // Match the legacy production audit table: ten columns, a required profile actor,
+ // and no database-session attribution trigger. Do not relax its constraints.
+ await db.exec(`reset role;drop view team_attendance_history;alter table team_attendance_private.history set schema public;alter table public.history rename to team_attendance_history;drop trigger team_history_actor on public.team_attendance_history;alter table public.team_attendance_history drop column actor_auth_uid,drop column actor_database_session,drop column actor_database_role,alter column performed_by set not null;grant select on team_attendance_history to authenticated;create policy attendance_history_read on team_attendance_history for select to authenticated using(team_attendance_private.manager() or student_id=auth.uid());`);
  await db.exec(readFileSync('tests/fixtures/attendance-production-functions.sql','utf8'));
  await db.exec(readFileSync('supabase/migrations/202609300001_attendance_policy_v03.sql','utf8'));
  await db.exec(readFileSync('tests/fixtures/finance_notification_coverage.sql','utf8'));
@@ -44,6 +47,7 @@ test.beforeEach(async()=>{
  await db.exec(readFileSync('supabase/migrations/20261008032037_attendance_program_manager_mentor_review.sql','utf8'));
  await db.exec(readFileSync('supabase/migrations/20261008032108_attendance_program_manager_notification_routing.sql','utf8'));
  await db.exec(readFileSync('supabase/migrations/20261008051847_attendance_program_manager_participation.sql','utf8'));
+ if(coachReviewRouting)await db.exec(readFileSync('supabase/migrations/20261008063138_attendance_coach_request_review.sql','utf8'));
 
 });
 test.afterEach(()=>db.close());
@@ -67,6 +71,8 @@ async function purchase(){await position(2,'finance_lead');await position(3,'lea
 async function request(kind='absent'){await as(2);const a=(await db.query<any>('select * from team_attendance where id=$1',[id(212)])).rows[0];await db.query('select team_attendance_request($1)',[JSON.stringify({meeting_id:id(202),version:a.version,notice_type:kind,reason:'PRIVATE medical information',expected_at:kind==='absent'?null:new Date(Date.now()+26*3600000).toISOString()})]);}
 async function review(status:string){await as(1);const a=(await db.query<any>('select * from team_attendance where id=$1',[id(212)])).rows[0];await db.query("select team_attendance_manage('attendance',$1)",[JSON.stringify({meeting_id:id(202),attendance_id:a.id,version:a.version,review_status:status,explanation:'PRIVATE reviewer note'})]);}
 async function counts(){await db.exec('reset role');return (await db.query<any>(`select (select count(*)::int from notifications_private.events) events,(select count(*)::int from notifications_private.recipients) recipients,(select count(*)::int from team_notifications) emails`)).rows[0];}
+async function attendanceDeliveries(event='request_review'){await db.exec('reset role');return (await db.query<any>("select id,recipient_id,center_event_id,status,payload from team_notifications where source='attendance' and event=$1 order by recipient_id",[event])).rows;}
+async function deliveryAllowed(notificationId:string){await db.exec('reset role;set role service_role');return (await db.query<{ok:boolean}>('select team_attendance_delivery_allowed($1) ok',[notificationId])).rows[0].ok;}
 test('Finance current approval/school action is independent of read state; events/email recipients remain v6',async()=>{
  const pid=await purchase();expect(await counts()).toEqual({events:1,recipients:2,emails:2});await as(2);let c=await center();expect(c.items[0].action_needed).toBe(true);expect(c.items[0].href).toBe('https://finance.frc4418.org/#po/'+pid);await read(c.items[0].id);expect((await center('action')).items).toHaveLength(1);
  await poAction(2,pid,'approve',{slot:'finance_approver'});await as(2);expect((await center()).items[0].action_needed).toBe(false);await as(3);expect((await center('action')).items.length).toBeGreaterThan(0);
@@ -83,39 +89,48 @@ test('Finance changes requested, resubmit, cancellation, retry dedup and no hist
  expect((await counts()).recipients).toBe(before.recipients);
 });
 for(const kind of ['absent','late','early'])test(`Attendance ${kind} request notifies only current reviewers, no reasons leaked`,async()=>{
- await position(3,'program_manager');await request(kind);expect(await counts()).toEqual({events:1,recipients:2,emails:2});
+ await position(1,'lead_coach_1');
+ await position(3,'program_manager');await position(9,'lead_coach_2');await request(kind);expect(await counts()).toEqual({events:1,recipients:3,emails:3});
+ const queued=await attendanceDeliveries();expect(queued.map(n=>n.recipient_id)).toEqual([id(1),id(3),id(9)]);
+ for(const delivery of queued)expect(await deliveryAllowed(delivery.id)).toBe(true);
  await as(1);const c=await center();expect(c.items[0].action_needed).toBe(true);expect(JSON.stringify(c)).not.toContain('PRIVATE');expect(c.items[0].href).toBe('#attendance/notices');await read(c.items[0].id);expect((await center('action')).items).toHaveLength(1);
- await as(2);expect((await center()).items).toHaveLength(0);await as(5);expect((await center()).items).toHaveLength(0);
+ await as(2);expect((await center()).items).toHaveLength(0);await as(5);expect((await center()).items).toHaveLength(0);await as(8);expect((await center()).items).toHaveLength(0);
  await db.exec('reset role');const email=(await db.query<any>("select id,payload from team_notifications where recipient_id=$1",[id(3)])).rows[0];expect(JSON.stringify(email.payload)).not.toContain('PRIVATE');
  await db.exec(`update team_member_positions set revoked_at=now(),revoked_by='${id(1)}',revoke_reason='Test' where user_id='${id(3)}' and position_key='program_manager'`);
  await db.exec('set role service_role');expect((await db.query<any>('select team_attendance_delivery_allowed($1) ok',[email.id])).rows[0].ok).toBe(false);await as(3);expect((await center()).items).toHaveLength(0);
  await position(5,'program_manager');await as(5);expect((await center()).items).toHaveLength(0);
 });
-for(const role of ['student','lead','mentor','admin']) for(const kind of ['absent','late','early']) test(`Attendance ${role} Program Manager ${kind} request routes only to Mentors`,async()=>{
+for(const role of ['student','lead','mentor','admin']) for(const kind of ['absent','late','early']) test(`Attendance ${role} Program Manager ${kind} request routes to both independent lead coaches`,async()=>{
+ await position(1,'lead_coach_1');
  await db.exec(`reset role;update profiles set role='${role}' where id='${id(2)}'`);
  await position(2,'program_manager');await position(3,'program_manager');await position(5,'program_manager');
+ await position(9,'lead_coach_2');await position(3,'lead_coach_2');await position(2,'lead_coach_1');
  await db.exec(`reset role;update profiles set role='mentor' where id='${id(3)}'`);
- await request(kind);expect(await counts()).toEqual({events:1,recipients:1,emails:1});
- const deliveries=(await db.query<any>("select id,recipient_id,payload from team_notifications where source='attendance'")).rows;
- expect(deliveries.map(n=>n.recipient_id)).toEqual([id(1)]);expect(JSON.stringify(deliveries)).not.toContain('PRIVATE');
- await db.exec('set role service_role');expect((await db.query<any>('select team_attendance_delivery_allowed($1) ok',[deliveries[0].id])).rows[0].ok).toBe(true);
- for(const user of [2,3,5,7]){await as(user);expect((await center()).items).toHaveLength(0);}
+ await request(kind);expect(await counts()).toEqual({events:1,recipients:2,emails:2});
+ const deliveries=(await db.query<any>("select id,recipient_id,payload from team_notifications where source='attendance' order by recipient_id")).rows;
+ expect(deliveries.map(n=>n.recipient_id)).toEqual([id(1),id(9)]);expect(JSON.stringify(deliveries)).not.toContain('PRIVATE');
+ for(const delivery of deliveries)expect(await deliveryAllowed(delivery.id)).toBe(true);
+ await as(9);expect((await center('action')).items).toHaveLength(1);
+ for(const user of [2,3,5,7,8]){await as(user);expect((await center()).items).toHaveLength(0);}
  await as(1);const inbox=await center('action');expect(inbox.items).toHaveLength(1);expect(inbox.items[0].href).toBe('#attendance/notices');
  await db.exec('reset role');
  const before=(await db.query<any>('select to_jsonb(a) a from team_attendance a where id=$1',[id(212)])).rows[0].a;
  const history=(await db.query<any>('select count(*)::int n from team_attendance_history')).rows[0].n;
- for(const user of [2,3,5,7]) for(const review_status of ['excused','denied','not_required']){
+ for(const user of [2,3,5,7,8]) for(const review_status of ['excused','denied','not_required']){
   await as(user);await expect(db.query("select team_attendance_manage('attendance',$1::jsonb)",[JSON.stringify({meeting_id:id(202),attendance_id:id(212),version:before.version,review_status,explanation:'Peer review is forbidden'})])).rejects.toThrow(/Mentor|review/);
  }
  await db.exec('reset role');expect((await db.query<any>('select to_jsonb(a) a from team_attendance a where id=$1',[id(212)])).rows[0].a).toEqual(before);
  expect((await db.query<any>('select count(*)::int n from team_attendance_history')).rows[0].n).toBe(history);
- expect(await counts()).toEqual({events:1,recipients:1,emails:1});
- await review('excused');await as(2);const decision=await center();expect(decision.items).toHaveLength(1);expect(decision.items[0].title).toContain('approved');expect(decision.items[0].href).toBe('#attendance/my-requests');expect(JSON.stringify(decision)).not.toContain('PRIVATE');
+ expect(await counts()).toEqual({events:1,recipients:2,emails:2});
+ const status=kind==='late'?'denied':'excused';await review(status);await as(2);const decision=await center();expect(decision.items).toHaveLength(1);expect(decision.items[0].title).toContain(status==='excused'?'approved':'denied');expect(decision.items[0].href).toBe('#attendance/my-requests');expect(JSON.stringify(decision)).not.toContain('PRIVATE');
  await as(1);expect((await center('action')).items).toHaveLength(0);
  for(const user of [3,5]){await as(user);expect((await center()).items).toHaveLength(0);}
- await db.exec('reset role;set role service_role');expect((await db.query<any>('select team_attendance_delivery_allowed($1) ok',[deliveries[0].id])).rows[0].ok).toBe(false);
+ for(const delivery of deliveries)expect(await deliveryAllowed(delivery.id)).toBe(false);
+ const owners=await attendanceDeliveries(status==='excused'?'request_approved':'request_denied');
+ expect(owners.map(n=>n.recipient_id)).toEqual([id(2)]);expect(await deliveryAllowed(owners[0].id)).toBe(true);
 });
 test('Attendance existing peer review notifications recheck a newly assigned Program Manager without replay',async()=>{
+ await position(1,'lead_coach_1');
  await position(3,'program_manager');await request();expect(await counts()).toEqual({events:1,recipients:2,emails:2});
  const delivery=(await db.query<any>("select id from team_notifications where recipient_id=$1 and source='attendance'",[id(3)])).rows[0];
  await as(3);const notice=(await center('action')).items[0];expect(notice).toBeTruthy();
@@ -133,7 +148,8 @@ test('Attendance existing peer review notifications recheck a newly assigned Pro
  await db.exec('reset role;set role service_role');expect((await db.query<any>('select team_attendance_delivery_allowed($1) ok',[delivery.id])).rows[0].ok).toBe(true);
  expect(await counts()).toEqual({events:1,recipients:2,emails:2});
 });
-test('Attendance Program Manager request rechecks Mentor eligibility before visibility and delivery',async()=>{
+test('Attendance Program Manager request rechecks lead coach eligibility before visibility and delivery',async()=>{
+ await position(1,'lead_coach_1');
  await position(2,'program_manager');await position(3,'program_manager');await request();
  expect(await counts()).toEqual({events:1,recipients:1,emails:1});
  const delivery=(await db.query<any>("select id from team_notifications where source='attendance'")).rows[0];
@@ -144,7 +160,7 @@ test('Attendance Program Manager request rechecks Mentor eligibility before visi
  expect((await db.query<any>('select team_attendance_delivery_allowed($1) ok',[delivery.id])).rows[0].ok).toBe(false);
  await db.exec(`reset role;update profiles set active=true where id='${id(1)}'`);
  await as(1);expect((await center('action')).items).toHaveLength(1);
- // A previously eligible mentor becomes a peer PM: already queued delivery and
+ // A previously eligible lead coach becomes a peer PM: already queued delivery and
  // action-center visibility must both disappear without replaying notifications.
  await position(1,'program_manager');await as(1);expect((await center()).items).toHaveLength(0);
  await db.exec('reset role;set role service_role');expect((await db.query<any>('select team_attendance_delivery_allowed($1) ok',[delivery.id])).rows[0].ok).toBe(false);
@@ -153,15 +169,19 @@ test('Attendance Program Manager request rechecks Mentor eligibility before visi
  expect(await counts()).toEqual({events:1,recipients:1,emails:1});
 });
 for(const status of ['excused','denied'])test(`Attendance ${status} decision persists in-app and email independently; no check-in noise`,async()=>{
+ await position(1,'lead_coach_1');
  await request();await review(status);await as(1);expect((await center('action')).items).toHaveLength(0);expect((await center()).items).toHaveLength(1);await as(2);let c=await center();expect(c.items).toHaveLength(1);expect(c.items[0].title).toContain(status==='excused'?'approved':'denied');expect(c.items[0].action_needed).toBe(false);expect(JSON.stringify(c)).not.toContain('PRIVATE');
  const before=await counts();await db.query("update team_attendance set checked_in_at=now(),physical_status='present',version=version+1 where id=$1",[id(212)]);await db.query("update team_attendance set left_at=now(),physical_status='left_early',version=version+1 where id=$1",[id(212)]);expect(await counts()).toEqual(before);
  await db.exec("update team_notifications set status='failed',last_error='PRIVATE provider error' where source='attendance'");await as(2);expect((await center()).items).toHaveLength(1);expect(JSON.stringify(await center())).not.toContain('provider');
 });
 test('self-review excluded; strike notifies affected member only and preserves audit',async()=>{
+ await position(1,'lead_coach_1');
  await position(2,'program_manager');await request();await as(2);expect((await center()).items).toHaveLength(0);
  await as(1);await db.query("select team_attendance_manage('strike',$1)",[JSON.stringify({attendance_id:id(212),meeting_id:id(202),category:'Other',quantity:1,explanation:'PRIVATE discipline details'})]);await as(2);const c=await center();expect(c.items).toHaveLength(1);expect(c.items[0].title).toContain('strike');expect(JSON.stringify(c)).not.toContain('PRIVATE');await db.exec('reset role');expect((await db.query<any>("select count(*)::int n from team_notifications where event='strike_assigned'")).rows[0].n).toBe(1);
+ const strikes=await attendanceDeliveries('strike_assigned');expect(strikes.map(n=>n.recipient_id)).toEqual([id(2)]);expect(await deliveryAllowed(strikes[0].id)).toBe(true);expect(c.items[0].href).toBe('#attendance/strikes');
 });
 test('notification persistence failure rolls back domain data and audit together',async()=>{
+ await position(1,'lead_coach_1');
  await db.exec(`reset role;create function notifications_private.fail_test() returns trigger language plpgsql as $$begin raise exception 'inbox unavailable';end$$;create trigger fail_test before insert on notifications_private.recipients for each row execute function notifications_private.fail_test();`);
  const before=(await db.query<any>('select to_jsonb(a) a from team_attendance a where id=$1',[id(212)])).rows[0].a;const hist=(await db.query<any>('select count(*)::int n from team_attendance_history')).rows[0].n;
  await expect(request()).rejects.toThrow(/inbox unavailable/);await db.exec('reset role');expect((await db.query<any>('select to_jsonb(a) a from team_attendance a where id=$1',[id(212)])).rows[0].a).toEqual(before);expect((await db.query<any>('select count(*)::int n from team_attendance_history')).rows[0].n).toBe(hist);expect(await counts()).toEqual({events:0,recipients:0,emails:0});
@@ -174,7 +194,7 @@ test('bounded keyset pagination, explicit announcement email dedup, revoked visi
 test('current Finance visibility and inactive recipient restrictions are rechecked; no direct helper/write bypass',async()=>{
  await purchase();await as(6);expect((await center()).items).toHaveLength(0);await as(2);expect((await center()).items).toHaveLength(1);
  await db.exec(`reset role;update team_member_positions set revoked_at=now(),revoked_by='${id(1)}',revoke_reason='Test' where user_id='${id(2)}' and position_key='finance_lead'`);await as(2);expect((await center()).items).toHaveLength(0);
- for(const role of ['anon','authenticated']){await db.exec('reset role;set role '+role);for(const query of ['select * from notifications_private.events','update notifications_private.recipients set user_id=event_id','truncate notifications_private.recipients','select notifications_private.center_rows()','select notifications_private.attendance_reviewer(null)','select team_attendance_private.is_student_program_manager(null)','select team_attendance_private.can_review_request(null,null)','select team_attendance_delivery_allowed(null)'])await expect(db.exec(query)).rejects.toThrow(/permission/);}
+ for(const role of ['anon','authenticated']){await db.exec('reset role;set role '+role);for(const query of ['select * from notifications_private.events','update notifications_private.recipients set user_id=event_id','truncate notifications_private.recipients','select notifications_private.center_rows()','select notifications_private.attendance_reviewer(null)','select team_attendance_private.is_student_program_manager(null)','select team_attendance_private.can_review_request(null,null)','select team_attendance_private.is_lead_coach(null)','select team_attendance_private.request_reviewer(null)','select team_attendance_delivery_allowed(null)'])await expect(db.exec(query)).rejects.toThrow(/permission/);}
 });
 test('concurrent/repeated read and event delivery retries preserve one identity and server read timestamp',async()=>{
  const pid=await purchase();await as(2);const n=(await center()).items[0];await Promise.all([read(n.id),read(n.id),read()]);const saved=(await center()).items[0];expect(saved.read_at).toBeTruthy();expect(saved.action_needed).toBe(true);await read(n.id);expect((await center()).items[0].read_at).toBe(saved.read_at);
@@ -186,4 +206,82 @@ test('Finance submission rolls back when in-app persistence fails; draft and pri
  await db.exec(`reset role;create function notifications_private.fail_finance() returns trigger language plpgsql as $$begin raise exception 'notification unavailable';end$$;create trigger fail_finance before insert on notifications_private.recipients for each row execute function notifications_private.fail_finance();`);
  const before=(await db.query<any>('select to_jsonb(p) p from finance_purchase_orders p where id=$1',[pid])).rows[0].p;const count=(await db.query<any>('select count(*)::int n from finance_private.history')).rows[0].n;
  await expect(poAction(5,pid,'submit')).rejects.toThrow(/notification unavailable/);await db.exec('reset role');expect((await db.query<any>('select to_jsonb(p) p from finance_purchase_orders p where id=$1',[pid])).rows[0].p).toEqual(before);expect((await db.query<any>('select count(*)::int n from finance_private.history')).rows[0].n).toBe(count);expect(await counts()).toEqual({events:0,recipients:0,emails:0});
+});
+
+test('Attendance notification fixture preserves the production audit constraints',async()=>{
+ const columns=(await db.query<{column_name:string;is_nullable:string}>("select column_name,is_nullable from information_schema.columns where table_schema='public' and table_name='team_attendance_history' order by ordinal_position")).rows;
+ expect(columns.map(c=>c.column_name)).toEqual(['id','meeting_id','student_id','entity','entity_id','action','before_data','after_data','performed_by','performed_at']);
+ expect(columns.find(c=>c.column_name==='performed_by')?.is_nullable).toBe('NO');
+ await expect(db.exec("insert into team_attendance_history(entity,entity_id,action) values('test','test','INSERT')")).rejects.toThrow(/null value.*performed_by/);
+});
+
+test.describe('Attendance notifications queued before coach-only review',()=>{
+ test.use({coachReviewRouting:false});
+ test('migration retains old ordinary-mentor queue items but hides and blocks their delivery without replay',async()=>{
+  await position(1,'lead_coach_1');await position(9,'lead_coach_2');await position(3,'program_manager');
+  await request();
+  const oldQueue=await attendanceDeliveries();
+  expect(oldQueue.map(n=>n.recipient_id)).toEqual([id(1),id(3),id(8),id(9)]);
+  const ordinaryMentor=oldQueue.find(n=>n.recipient_id===id(8));
+  expect(await deliveryAllowed(ordinaryMentor.id)).toBe(true);
+  await as(8);const oldNotice=(await center('action')).items[0];expect(oldNotice).toBeTruthy();
+  const before=await counts();
+  await db.exec(readFileSync('supabase/migrations/20261008063138_attendance_coach_request_review.sql','utf8'));
+  expect(await counts()).toEqual(before);expect(await attendanceDeliveries()).toEqual(oldQueue);
+  await as(8);expect((await center()).items).toEqual([]);expect((await center('action')).items).toEqual([]);
+  await read(oldNotice.id);
+  await db.exec('reset role');
+  expect((await db.query<any>('select read_at from notifications_private.recipients where id=$1',[oldNotice.id])).rows[0].read_at).toBeNull();
+  expect(await deliveryAllowed(ordinaryMentor.id)).toBe(false);
+  for(const delivery of oldQueue.filter(n=>n.recipient_id!==id(8)))expect(await deliveryAllowed(delivery.id)).toBe(true);
+  // The worker can still claim a legacy queue item; its pre-send eligibility RPC
+  // must reject it. This only exercises SQL, never an outbound email provider.
+  await db.exec('reset role;set role service_role');
+  const claimed=[...(await db.query<any>('select * from team_notification_claim(3)')).rows,...(await db.query<any>('select * from team_notification_claim(3)')).rows];
+  expect(claimed.some(n=>n.id===ordinaryMentor.id)).toBe(true);
+  expect(await deliveryAllowed(ordinaryMentor.id)).toBe(false);
+  await request('late');
+  const allQueued=await attendanceDeliveries();
+  expect(allQueued.filter(n=>!oldQueue.some(old=>old.id===n.id)).map(n=>n.recipient_id)).toEqual([id(1),id(3),id(9)]);
+  expect(await counts()).toEqual({events:2,recipients:7,emails:7});
+ });
+});
+
+for(const [user,key] of [[1,'lead_coach_1'],[9,'lead_coach_2'],[3,'program_manager']] as const){
+ for(const change of ['assignment revoked','profile inactive','position inactive'] as const){
+  test(`Attendance ${key} ${change} suppresses old queued and future review notifications`,async()=>{
+   await position(1,'lead_coach_1');await position(9,'lead_coach_2');await position(3,'program_manager');await request();
+   const queued=await attendanceDeliveries();expect(queued.map(n=>n.recipient_id)).toEqual([id(1),id(3),id(9)]);
+   const target=queued.find(n=>n.recipient_id===id(user));expect(await deliveryAllowed(target.id)).toBe(true);
+   await as(user);const notice=(await center('action')).items[0];expect(notice).toBeTruthy();
+   await db.exec('reset role');
+   if(change==='assignment revoked')await db.query("update team_member_positions set revoked_at=clock_timestamp(),revoked_by=$1,revoke_reason='Synthetic revocation' where user_id=$2 and position_key=$3 and revoked_at is null",[id(1),id(user),key]);
+   else if(change==='profile inactive')await db.query('update profiles set active=false where id=$1',[id(user)]);
+   else await db.query('update team_positions set active=false where key=$1',[key]);
+   expect(await attendanceDeliveries()).toEqual(queued);
+   expect(await deliveryAllowed(target.id)).toBe(false);
+   await as(user);
+   if(change==='profile inactive')await expect(center()).rejects.toThrow(/Active/);
+   else{
+    expect((await center()).items).toHaveLength(0);await read(notice.id);
+    await db.exec('reset role');expect((await db.query<any>('select read_at from notifications_private.recipients where id=$1',[notice.id])).rows[0].read_at).toBeNull();
+   }
+   for(const delivery of queued.filter(n=>n.recipient_id!==id(user)))expect(await deliveryAllowed(delivery.id)).toBe(true);
+   await request('early');
+   const future=(await attendanceDeliveries()).filter(n=>!queued.some(old=>old.id===n.id));
+   expect(future.map(n=>n.recipient_id)).toEqual([1,3,9].filter(n=>n!==user).map(id));
+   expect(await counts()).toEqual({events:2,recipients:5,emails:5});
+  });
+ }
+}
+
+for(const status of ['excused','denied'])test(`Attendance owner ${status} notification stays deliverable after reviewer loses coach position`,async()=>{
+ await position(1,'lead_coach_1');await request();await review(status);
+ const decision=await attendanceDeliveries(status==='excused'?'request_approved':'request_denied');
+ expect(decision.map(n=>n.recipient_id)).toEqual([id(2)]);expect(await deliveryAllowed(decision[0].id)).toBe(true);
+ await db.exec('reset role');
+ await db.query("update team_member_positions set revoked_at=clock_timestamp(),revoked_by=$1,revoke_reason='Synthetic coach change' where user_id=$1 and position_key='lead_coach_1'",[id(1)]);
+ expect(await deliveryAllowed(decision[0].id)).toBe(true);
+ await as(2);const c=await center();expect(c.items).toHaveLength(1);expect(c.items[0].href).toBe('#attendance/notices');expect(c.items[0].action_needed).toBe(false);
+ for(const user of [1,3,5,7,8,9]){await as(user);expect((await center()).items).toHaveLength(0);}
 });

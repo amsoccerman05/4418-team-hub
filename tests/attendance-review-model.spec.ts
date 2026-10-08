@@ -3,17 +3,17 @@ import {canReview,requiresMentorReview,canParticipate,isManager,rosterSyncMeetin
 const record=(student_id:string)=>({student_id} as Attendance);
 function data(mentor=false):Data {
  return {meetings:[],attendance:[],snapshots:[],strikes:[],history:[],members:[],policy:{
-  user_id:'reviewer',can_review:true,can_read_team:true,can_manage_meetings:mentor,
+  user_id:'reviewer',can_review:true,can_review_requests:true,can_read_team:true,can_manage_meetings:mentor,
   strike_year_start:null,people:[],warnings:[],
   can_review_program_manager_requests:mentor,mentor_review_required_for:['student-pm','lead-pm'],
  }};
 }
 for(const requester of ['student-pm','lead-pm']) {
- test(`only mentor review controls appear for ${requester}`,()=>{
+ test(`only lead-coach review controls appear for ${requester}`,()=>{
   expect(requiresMentorReview(data(),requester)).toBe(true);
   expect(canReview(data(),record(requester))).toBe(false);
   expect(canReview(data(true),record(requester))).toBe(true);
-  // A missing affirmative mentor capability cannot reveal the review form.
+  // A missing affirmative lead-coach capability cannot reveal the review form.
   const stale=data();delete stale.policy!.can_review_program_manager_requests;
   expect(canReview(stale,record(requester))).toBe(false);
  });
@@ -59,4 +59,11 @@ test('roster selection is member-specific and excludes past, finalized and non-b
  expect(rosterSyncMeetings(d,{...member,member_status:'registered'},now).map(m=>m.id)).toEqual(['active','registered']);
  expect(rosterSyncMeetings(d,{...member,member_status:'inactive'},now)).toEqual([]);
  expect(rosterSyncMeetings(d,{...member,member_status:'registered'},Date.parse(base.starts_at))).toEqual([]);
+});
+
+test('ordinary mentors retain strikes but have no request decision capability',()=>{
+ const d=data(true);d.policy!.can_review_requests=false;d.policy!.can_review_program_manager_requests=false;
+ for(const id of ['student','student-pm'])expect(canReview(d,record(id))).toBe(false);
+ expect(canReview(d)).toBe(true);expect(d.policy!.can_manage_meetings).toBe(true);
+ delete d.policy!.can_review_requests;expect(canReview(d,record('student'))).toBe(false);
 });

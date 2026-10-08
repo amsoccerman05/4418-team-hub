@@ -57,6 +57,8 @@ function fixture(): Data {
     ],
   };
 }
+// Default mentor fixture represents an assigned lead coach; denial tests provide
+// an explicit can_review_requests:false policy for ordinary mentors.
 async function mock(page: Page, role = "student", options: { active?: boolean; configure?: (data: Data, userId: string) => void } = {}) {
   await page.clock.setFixedTime(new Date("2026-09-10T17:10:00Z"));
   const data = fixture(),
@@ -104,7 +106,7 @@ async function mock(page: Page, role = "student", options: { active?: boolean; c
       else if (path === "/rest/v1/rpc/planning_my_work_context") result = {user_id:user.id,season_id:null,seasons:[],boards:[],tasks:[]};
       else if (path === "/rest/v1/pit_issues") return route.fulfill({json:[],headers:{"content-range":"*/0","access-control-expose-headers":"content-range"}});
       else if (path.endsWith("/team_dashboard_context")) result = {name:'Team member',role,admin:false,personal:{percent:null,strikes:0,pending:0},next_meeting:null,orders:[],finance:{allowed:false,approvals:0,school:0},attention:null,robot:null,inventory:null,announcements:[]};
-      else if (path.endsWith("/team_attendance_policy_context")) result = data.policy || {user_id:user.id,can_review:role==="mentor",can_read_team:role!=="student",can_manage_meetings:role!=="student",can_start_year:role==="mentor",strike_year_start:null,people:[],warnings:[]};
+      else if (path.endsWith("/team_attendance_policy_context")) result = data.policy || {user_id:user.id,can_review:role==="mentor",can_review_requests:role==="mentor",can_read_team:role!=="student",can_manage_meetings:role!=="student",can_start_year:role==="mentor",strike_year_start:null,people:[],warnings:[]};
       else if (path.endsWith("/team_meetings")) result = data.meetings;
       else if (path.endsWith("/team_attendance")) result = data.attendance;
       else if (path.endsWith("/team_meeting_members")) result = data.snapshots;
@@ -372,7 +374,7 @@ test("percentages exclude excuses/not-required, count late/early, and derive act
   expect(strikeAction(3)).toContain("parent contact");
   expect(strikeAction(5)).toContain("Removal threshold");
   expect(summary(fixture(), student).percent).toBeNull();
-  d.policy={user_id:student,can_review:false,can_read_team:false,can_manage_meetings:false,strike_year_start:'2026-01-01T00:00:00Z',people:[],warnings:[]};
+  d.policy={user_id:student,can_review:false,can_review_requests:false,can_read_team:false,can_manage_meetings:false,strike_year_start:'2026-01-01T00:00:00Z',people:[],warnings:[]};
   d.strikes[0].assigned_at='2025-12-31T23:59:59Z';d.strikes[1].assigned_at='2026-01-01T00:00:00Z';
   expect(summary(d,student).strikes).toBe(2);expect(d.strikes).toHaveLength(3);
 });
@@ -832,7 +834,7 @@ for(const width of [390,1440])test(`policy lead personal requests and future con
 });
 for(const width of [390,1440])test(`policy dashboard search strike thresholds and privacy ${width}`,async({page})=>{
  await page.setViewportSize({width,height:900});const {data}=await mock(page,'mentor');const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
- data.policy={user_id:lead,can_review:true,can_read_team:true,can_manage_meetings:true,strike_year_start:'2026-01-01T00:00:00Z',people:[{id:student,name:'Alex Student',role:'student',positions:['Software Lead']}],warnings:[]};
+ data.policy={user_id:lead,can_review:true,can_review_requests:true,can_read_team:true,can_manage_meetings:true,strike_year_start:'2026-01-01T00:00:00Z',people:[{id:student,name:'Alex Student',role:'student',positions:['Software Lead']}],warnings:[]};
  data.members.push({student_id:'other',display_name:'Jordan Five',member_status:'registered',team_area:'Build'});
  data.strikes=[{id:'s1',attendance_id:'a1',meeting_id:'m1',student_id:student,category:'Other',quantity:2,explanation:'Reviewed',assigned_by:lead,assigned_at:'2026-09-10T17:00:00Z',rescinded_at:null,rescind_reason:null},{id:'s2',attendance_id:'a2',meeting_id:'m1',student_id:'other',category:'Other',quantity:5,explanation:'Reviewed',assigned_by:lead,assigned_at:'2026-09-10T17:00:00Z',rescinded_at:null,rescind_reason:null}];
  await page.goto('/#attendance');await expect(page.getByRole('heading',{name:'Attendance · needs attention'})).toBeVisible();
@@ -847,7 +849,7 @@ for(const width of [390,1440])test(`policy dashboard search strike thresholds an
 
 test('Program Manager student can review another member without meeting-management controls',async({page})=>{
  const {data,calls}=await mock(page,'student');
- data.policy={user_id:student,can_review:true,can_read_team:true,can_manage_meetings:false,strike_year_start:'2026-01-01T00:00:00Z',people:[],warnings:[]};
+ data.policy={user_id:student,can_review:true,can_review_requests:true,can_read_team:true,can_manage_meetings:false,strike_year_start:'2026-01-01T00:00:00Z',people:[],warnings:[]};
  data.attendance[0].student_id=lead;data.attendance[0].notice_at='2026-09-09T12:00:00Z';data.attendance[0].notice_reason='School activity';data.attendance[0].review_status='pending';
  data.members.push({student_id:lead,display_name:'Lee Lead',member_status:'registered',team_area:''});
  await page.goto('/#attendance/calendar');await expect(page.getByRole('button',{name:'New meeting',exact:true})).toHaveCount(0);await expect(page.getByText('Roster tools',{exact:true})).toHaveCount(0);
@@ -857,7 +859,7 @@ test('Program Manager student can review another member without meeting-manageme
 
 for(const width of [390,768,1440])test(`UI sweep Attendance review queue and calendar navigation ${width}`,async({page})=>{
  await page.setViewportSize({width,height:900});const {data,calls}=await mock(page,'mentor');
- data.policy={user_id:lead,can_review:true,can_read_team:true,can_manage_meetings:true,strike_year_start:'2026-01-01T00:00:00Z',people:[],warnings:[]};
+ data.policy={user_id:lead,can_review:true,can_review_requests:true,can_read_team:true,can_manage_meetings:true,strike_year_start:'2026-01-01T00:00:00Z',people:[],warnings:[]};
  data.attendance[0].review_status='pending';data.attendance[0].notice_at='2026-09-09T12:00:00Z';data.attendance[0].notice_reason='School activity';
  await page.goto('/#attendance');await expect(page.locator('.att-leadership-stats>span')).toHaveCount(5);
  await page.screenshot({path:`test-results/ui-review-attendance-dashboard-${width}.png`,fullPage:true});
@@ -951,7 +953,7 @@ test('meeting edit failure preserves draft and explicit refresh/reload resolves 
  await page.getByLabel('Meeting title').fill('My new draft');await page.getByRole('button',{name:'Save meeting',exact:true}).click();await expect(page.getByRole('dialog').getByText('Meeting saved. Only this meeting was changed.')).toBeVisible();expect(calls.at(-1).p.version).toBe(2);
 });
 test('students and student Program Managers get instructions without meeting-edit authority',async({page})=>{
- const {data}=await mock(page);data.policy={user_id:student,can_review:true,can_read_team:true,can_manage_meetings:false,strike_year_start:null,people:[],warnings:[]};
+ const {data}=await mock(page);data.policy={user_id:student,can_review:true,can_review_requests:true,can_read_team:true,can_manage_meetings:false,strike_year_start:null,people:[],warnings:[]};
  await page.clock.setFixedTime(new Date('2026-09-10T16:00:00Z'));await page.goto('/#attendance/calendar');await page.getByRole('button',{name:/Preseason build/}).click();
  await expect(page.getByRole('button',{name:'Edit meeting',exact:true})).toHaveCount(0);await page.getByRole('dialog').getByRole('link',{name:'How to use Attendance →'}).click();
  await expect(page.getByRole('heading',{name:'How to use Attendance',exact:true})).toBeVisible();await expect(page.getByRole('heading',{name:'For meeting leadership: edit an upcoming meeting'})).toHaveCount(0);
@@ -979,7 +981,7 @@ const otherRequester = "00000000-0000-0000-0000-000000000004";
 function personalRequestFixture(data: Data, userId: string, reviewer = false) {
   const meeting = data.meetings[0], attendance = data.attendance[0], snapshot = data.snapshots[0];
   data.policy = {
-    user_id: userId, can_review: reviewer, can_read_team: userId === lead || reviewer,
+    user_id: userId, can_review: reviewer, can_review_requests: reviewer, can_read_team: userId === lead || reviewer,
     can_manage_meetings: userId === lead, strike_year_start: null, people: [], warnings: [],
     can_participate: true, can_review_program_manager_requests: false, mentor_review_required_for: reviewer ? [userId] : [],
   };
@@ -1313,7 +1315,7 @@ for (const [index, persona] of leadershipRequestPersonas.entries()) {
 }
 
 for (const reviewer of ['student','lead','mentor']) {
- test(`Program Manager requests show Mentor-only review controls to ${reviewer} reviewer`,async({page})=>{
+ test(`Program Manager requests show lead-coach-only review controls to ${reviewer} reviewer`,async({page})=>{
   const {data,calls}=await mock(page,reviewer,{configure:(data,id)=>{
    personalRequestFixture(data,id,true);
    data.policy!.can_review_program_manager_requests=reviewer==='mentor';
@@ -1323,7 +1325,7 @@ for (const reviewer of ['student','lead','mentor']) {
   }});
   await page.goto('/#attendance/notices');
   const card=page.locator('.att-request-card').filter({hasText:'Program Manager appointment'});
-  await expect(card.getByText('Awaiting Mentor review',{exact:true})).toBeVisible();
+  await expect(card.getByText('Awaiting lead coach review',{exact:true})).toBeVisible();
   if(reviewer==='mentor') {
    await card.getByLabel('Review reason',{exact:true}).fill('Mentor checked the request');
    await card.getByRole('button',{name:'Excuse',exact:true}).click();
@@ -1392,4 +1394,24 @@ for(const width of [390,1440])test(`member-scoped roster sync selects exact futu
  expect(attempts).toEqual([{student_id:student,meeting_ids:['m-active']},{student_id:student,meeting_ids:['m-active']}]);
  expect(calls).toEqual([]);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+
+for (const width of [390,1440]) test(`ordinary mentor cannot decide requests but retains corrections and strikes ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});
+ const {calls}=await mock(page,'mentor',{configure:(data,id)=>{
+  data.policy={user_id:id,can_review:true,can_review_requests:false,can_read_team:true,can_manage_meetings:true,can_review_program_manager_requests:false,mentor_review_required_for:[],strike_year_start:null,people:[],warnings:[]};
+  Object.assign(data.attendance[0],{notice_type:'absent',notice_at:'2026-09-09T17:00:00Z',notice_reason:'Synthetic ordinary member request',review_status:'pending'});
+ }});
+ await page.goto('/#attendance/notices');
+ const card=page.locator('.att-request-card').filter({hasText:'Synthetic ordinary member request'});
+ for(const name of ['Excuse','Deny'])await expect(card.getByRole('button',{name,exact:true})).toHaveCount(0);
+ await card.getByText('Advanced attendance & strikes',{exact:true}).click();
+ await expect(card.getByLabel('Excuse status',{exact:true})).toHaveCount(0);
+ await expect(card.locator('summary').filter({hasText:/^Assign strike$/})).toBeVisible();
+ await card.getByText('Review / correct attendance',{exact:true}).click();
+ await card.getByRole('combobox',{name:/^Attendance/}).selectOption('late');
+ await card.getByLabel('Review / correction explanation',{exact:true}).fill('Synthetic physical correction only');
+ await card.getByRole('button',{name:'Save attendance review',exact:true}).click();
+ await expect.poll(()=>calls).toEqual([{action:'attendance',p:{meeting_id:'m1',attendance_id:'a1',version:1,physical_status:'late',left_at:null,explanation:'Synthetic physical correction only'}}]);
+ expect(await page.evaluate(()=>document.body.scrollWidth<=innerWidth)).toBe(true);
 });
