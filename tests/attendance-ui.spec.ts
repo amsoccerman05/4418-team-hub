@@ -1570,7 +1570,7 @@ test('automatic absence completion blocks repeated clicks during its request',as
 });
 
 test('automatic absence warnings cover denial and correction but leave legacy meetings unchanged',async({page})=>{
- const {data}=await mock(page,'mentor',{configure(data){
+ const {data,calls}=await mock(page,'mentor',{configure(data){
   data.meetings[0].status='finalized';data.meetings[0].auto_absence_strikes_enabled=true;data.meetings[0].check_in_open=false;
   Object.assign(data.attendance[0],{physical_status:'absent',review_status:'pending',notice_at:'2026-09-09T15:00:00Z',notice_reason:'Synthetic request'});
  }});
@@ -1578,18 +1578,29 @@ test('automatic absence warnings cover denial and correction but leave legacy me
  await expect(card).toContainText('Denying this request will assign 1 automatic Unexcused Absence strike');
  await card.getByText('Advanced attendance & strikes',{exact:true}).click();
  await card.getByRole('button',{name:'Review excuse / correct attendance',exact:true}).click();
- await card.getByLabel('Excuse status',{exact:true}).selectOption('denied');
+ // These wrapping labels also contain the select's option text. Scope the
+ // non-exact label match to this correction form, as in existing review tests.
+ const reviewForm=card.locator('[data-review]');
+ const excuseStatus=reviewForm.getByLabel('Excuse status');
+ const physicalStatus=reviewForm.getByRole('combobox',{name:/^Attendance/});
+ await expect(excuseStatus).toHaveValue('pending');
+ await excuseStatus.selectOption('denied');await expect(excuseStatus).toHaveValue('denied');
  await expect(card).toContainText('Saving this correction will assign 1 automatic Unexcused Absence strike');
- await card.getByLabel('Attendance',{exact:true}).selectOption('late');
+ await physicalStatus.selectOption('late');await expect(physicalStatus).toHaveValue('late');
  await expect(card.getByText('Saving this correction will assign 1 automatic Unexcused Absence strike.',{exact:true})).toHaveCount(0);
  data.strikes.push({id:'automatic-a1',attendance_id:'a1',meeting_id:'m1',student_id:student,category:'Unexcused Absence',quantity:1,source:'automatic_absence',explanation:'Synthetic absence',assigned_by:lead,assigned_at:'2026-09-10T19:01:00Z',rescinded_at:null,rescind_reason:null});
  await page.reload();await card.getByText('Advanced attendance & strikes',{exact:true}).click();
  await card.getByRole('button',{name:'Review excuse / correct attendance',exact:true}).click();
- await card.getByLabel('Excuse status',{exact:true}).selectOption('excused');
+ await excuseStatus.selectOption('excused');await expect(excuseStatus).toHaveValue('excused');
  await expect(card).toContainText('Saving this correction will rescind 1 automatic absence strike');
  await expect(card).toContainText('Excusing this request will rescind 1 automatic absence strike');
  data.meetings[0].auto_absence_strikes_enabled=false;await page.reload();
+ await expect(card).toBeVisible();
+ await card.getByText('Advanced attendance & strikes',{exact:true}).click();
+ await card.getByRole('button',{name:'Review excuse / correct attendance',exact:true}).click();
+ await excuseStatus.selectOption('excused');await expect(excuseStatus).toHaveValue('excused');
  await expect(card.getByText(/will (assign|rescind).*automatic/)).toHaveCount(0);
+ expect(calls).toEqual([]);expect(data.strikes[0].rescinded_at).toBeNull();
  await card.getByRole('button',{name:'Open meeting',exact:true}).click();
  await expect(page.getByRole('dialog').getByRole('region',{name:'Automatic absence strike preview'})).toHaveCount(0);
 });
