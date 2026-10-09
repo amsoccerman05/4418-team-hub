@@ -34,6 +34,7 @@ export function AttendanceHowTo({ canManage, canReadTeam = false, canRequest = f
         <p>Open a meeting for your arrival, departure, request, and review result. Use <strong>History &amp; strikes</strong>, or the <strong>History</strong> and <strong>Strikes</strong> tabs, to see your record.</p>
         <p>For a wrong check-in, departure, or meeting requirement, tell a lead or Mentor which meeting and what needs correcting. For an excuse decision, contact a lead coach or Program Manager. For a strike, contact a Mentor or Program Manager. Meeting details are limited to meeting leadership. Nobody can approve their own requests.</p>
         <p>Attendance percentage uses required, completed meetings. Excused and Not Required records are excluded; Present, Late, and Left Early count as attended.</p>
+        <p>When leadership completes attendance, each required unexcused absence receives one automatic strike. Pending requests wait for a decision. Approved excuses, optional attendance, late arrivals, and early departures do not receive automatic absence strikes. Previously completed meetings are not backfilled.</p>
         <p>Read <strong>Attendance Policy · v0.3</strong> above for the full policy and Slack #Absent procedure. For a private reason, contact a Mentor directly.</p></article>
     </div>
     {canManage && <section className="att-panel" aria-labelledby="attendance-edit-help"><h3 id="attendance-edit-help">For meeting leadership: edit an upcoming meeting</h3><ol>
@@ -43,6 +44,11 @@ export function AttendanceHowTo({ canManage, canReadTeam = false, canRequest = f
     </ol><p>Only the selected meeting changes, including when it was created as part of a repeating schedule. The required roster stays the same. Attendance records, excuse decisions, and strikes are not recalculated.</p>
     <p>All meeting details are locked once the meeting starts or its attendance is complete. Before start, the schedule is also locked if someone has checked in or attendance decisions or strikes have been recorded. If another leader changes the meeting while you are editing, reload the latest version before trying again.</p>
     <p>Changes are recorded in <strong>Meeting controls → View audit history</strong>. Tell attendees about schedule changes through your normal team channel; saving a meeting does not send a message.</p></section>}
+    {canManage && <section className="att-panel"><h3>Complete attendance and review automatic strikes</h3>
+      <p>After the meeting ends, review missing check-ins and pending requests, then close check-in. Check the automatic strike count and affected members before choosing <strong>Complete attendance</strong>. Use <strong>Refresh attendance preview</strong> if another leader has changed a record.</p>
+      <p>One automatic <strong>Unexcused Absence</strong> strike is assigned for each required absence with no excuse or a denied excuse. A pending request is skipped; denying it later can assign the strike. Existing absence strikes, including rescinded strikes, are not assigned again.</p>
+      <p>For meetings completed with this rule, a later correction can assign a first absence strike or rescind an automatic strike when the absence no longer qualifies. Manual strikes require manual review. Earlier completed meetings stay unchanged. All strike changes retain their history.</p>
+    </section>}
     <a className="att-link-button" href="#attendance/calendar">Open meeting calendar →</a>
   </section>;
 }

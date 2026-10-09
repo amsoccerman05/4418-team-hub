@@ -34,6 +34,8 @@ import { AttendanceHowTo } from "./HowTo";
 import { VolunteerHours } from "./volunteer/VolunteerHours";
 import { MeetingEditor } from "./MeetingEditor";
 import { ParticipantRosterSync } from "./ParticipantRosterSync";
+import { AutomaticAbsencePreview } from "./AutomaticAbsencePreview";
+import { automaticAbsenceStrikePreview, automaticAbsenceFinalizationConfirmation, automaticAbsenceCorrection } from "./automaticAbsenceStrikes";
 const time = (s: string | null) =>
   s
     ? new Date(s).toLocaleString([], {
@@ -372,6 +374,7 @@ function Status({ attendance: a }: { attendance: Attendance }) {
 }
 function Management({data,run,selected,selfId,busy}:{data:Data;run:Run;selected:string;selfId?:string;busy:boolean}) {
  const [editing,setEditing]=useState(false);
+ const finalizing=useRef(false);
  const [code,setCode]=useState<{meetingId:string;code:string;expires:string}|null>(null);
  const [history,setHistory]=useState<History[]|null>(null),[rosterFilter,setRosterFilter]=useState('all'),[now,setNow]=useState(Date.now());
  useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer);},[]);
@@ -383,6 +386,15 @@ function Management({data,run,selected,selfId,busy}:{data:Data;run:Run;selected:
  const attention=(a:Attendance)=>a.review_status==='pending'||(now>=Date.parse(m.starts_at)&&m.status!=='finalized'&&missing(a))||(a.physical_status==='left_early'&&!a.left_at);
  const needs=records.filter(attention);
  const {ended,complete,canOpen,open,canClose}=checkInControls(m,now);
+ const absencePreview=automaticAbsenceStrikePreview(data,m);
+ const finalize=()=>{
+  if(busy||finalizing.current||!window.confirm(automaticAbsenceFinalizationConfirmation(absencePreview.additions.length,absencePreview.pendingRequests.length)))return;
+  finalizing.current=true;
+  void run(()=>manage('finalize',{meeting_id:m.id,version:m.version,
+   automatic_absence_strike_count:absencePreview.additions.length,
+   automatic_absence_strike_attendance_ids:absencePreview.additions.map(a=>a.id).sort(),
+  }),'Attendance complete').finally(()=>{finalizing.current=false;});
+ };
  const closeCheckIn=()=>void run(async()=>{await manage('close',{meeting_id:m.id,version:m.version});setCode(null);},'Check-in closed');
  const openCode=()=>void run(async()=>{const r=await manage('open',{meeting_id:m.id,version:m.version});setCode({meetingId:m.id,code:r.code,expires:r.expires_at});},'Temporary code opened');
  const visible=records.filter(a=>rosterFilter==='all'||(rosterFilter==='here'?here(a):rosterFilter==='out'?!!a.left_at:rosterFilter==='pending'?missing(a):rosterFilter==='notice'?!!a.notice_at:rosterFilter==='attention'?attention(a):rosterFilter==='excused'?a.review_status==='excused':a.physical_status===rosterFilter));
@@ -394,12 +406,13 @@ function Management({data,run,selected,selfId,busy}:{data:Data;run:Run;selected:
     {data.policy?.can_manage_meetings&&canOpen&&!open&&m.status!=='closed'&&<button onClick={openCode}>Open check-in</button>}
     {data.policy?.can_manage_meetings&&canClose&&<button className="att-secondary" onClick={closeCheckIn}>Close check-in</button>}
     {!complete&&ended&&<button className="att-secondary" onClick={()=>{setRosterFilter(needs.length?'attention':'all');document.getElementById('live-roster-heading')?.scrollIntoView({block:'nearest'});}}>Review attendance</button>}
-    {data.policy?.can_manage_meetings&&m.status==='closed'&&ended&&<button onClick={()=>{if(window.confirm('Complete attendance? Missing required students will be marked absent. Leadership can still make corrections.'))void run(()=>manage('finalize',{meeting_id:m.id,version:m.version}),'Attendance complete');}}>Complete attendance</button>}
+    {data.policy?.can_manage_meetings&&m.status==='closed'&&ended&&<button onClick={finalize}>Complete attendance</button>}
    </div>
    {editing&&data.policy?.can_manage_meetings&&<MeetingEditor meeting={m} data={data} busy={busy} run={run} onCancel={()=>setEditing(false)} onSaved={scheduleChanged=>{setEditing(false);if(scheduleChanged)setCode(null);}}/>}
    {code&&code.meetingId===m.id&&open&&now<Date.parse(code.expires)&&<div className="att-code">Meeting code: <strong>{code.code}</strong><small>Expires {time(code.expires)}. Share only with attendees.</small><button className="att-secondary" onClick={()=>void run(()=>navigator.clipboard.writeText(code.code),'Check-in code copied')}>Copy check-in code</button></div>}
    {open&&!code&&<p className="att-muted">Check-in open. Rotate the code in Meeting controls to show a new one.</p>}
    {ended&&!complete&&<p className="att-muted">Review requests and missing check-ins, then {m.status==='closed'?'complete attendance.':'close check-in to complete attendance.'}</p>}
+   {data.policy?.can_manage_meetings&&ended&&!complete&&<><AutomaticAbsencePreview data={data} meeting={m}/><button className="att-secondary" onClick={()=>void run(async()=>{},'Attendance preview refreshed')}>Refresh attendance preview</button></>}
    {!ended&&!open&&<p className="att-muted">Check-in can open 30 minutes before start. Codes last up to 30 minutes.</p>}
    <details className="att-meeting-tools"><summary>Meeting controls</summary><div className="att-toolbar">{data.policy?.can_manage_meetings&&canOpen&&m.status==='closed'&&<button className="att-secondary" onClick={openCode}>Reopen check-in</button>}{data.policy?.can_manage_meetings&&canOpen&&open&&<button className="att-secondary" onClick={openCode}>Rotate check-in code</button>}<button className="att-secondary" onClick={()=>void run(async()=>setHistory(await loadHistory(m.id)),'History loaded')}>View audit history</button></div><p className="att-muted">5-minute check-in grace period. Rotating invalidates the previous code.</p></details>
   </div>
@@ -730,13 +743,18 @@ function MeetingForm({
     </form>
   );
 }
-function RequestReview({a,meeting,run}:{a:Attendance;meeting:Meeting;run:Run}) {
+function RequestReview({a,meeting,data,run}:{a:Attendance;meeting:Meeting;data:Data;run:Run}) {
+ const denial=automaticAbsenceCorrection(data,meeting,{...a,review_status:'denied'});
+ const excuse=automaticAbsenceCorrection(data,meeting,{...a,review_status:'excused'});
  return <form className="att-quick-review" onSubmit={e=>{
   e.preventDefault();const form=e.currentTarget;const decision=(e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement|null;
   if(!decision || !["excused","denied"].includes(decision.value))return;
   const explanation=String(new FormData(form).get("explanation")||"").trim();
   void run(()=>manage("attendance",{meeting_id:meeting.id,attendance_id:a.id,version:a.version,review_status:decision.value,left_at:a.left_at,explanation}),"Request reviewed");
- }}><p>Check the excused reasons in Attendance Policy. Family events need parent confirmation; extracurricular activities need school confirmation. Educational needs require Mentor discretion. Mental health days follow the policy’s honor system.</p><label>Review reason<textarea name="explanation" required maxLength={2000} rows={2} placeholder="Briefly explain the decision"/></label><div className="att-toolbar"><button value="excused">Excuse</button><button className="att-secondary" value="denied">Deny</button></div></form>;
+ }}><p>Check the excused reasons in Attendance Policy. Family events need parent confirmation; extracurricular activities need school confirmation. Educational needs require Mentor discretion. Mental health days follow the policy’s honor system.</p>
+ {denial.additions>0&&<p className="att-attention">Denying this request will assign 1 automatic Unexcused Absence strike for this completed meeting.</p>}
+ {excuse.rescissions>0&&<p className="att-attention">Excusing this request will rescind {excuse.rescissions} automatic absence {excuse.rescissions===1?'strike':'strikes'}.</p>}
+ <label>Review reason<textarea name="explanation" required maxLength={2000} rows={2} placeholder="Briefly explain the decision"/></label><div className="att-toolbar"><button value="excused">Excuse</button><button className="att-secondary" value="denied">Deny</button></div></form>;
 }
 function AttendanceEditor({
   a,
@@ -750,6 +768,11 @@ function AttendanceEditor({
   run: Run;
 }) {
   const [physical, setPhysical] = useState(a.physical_status);
+  const [review, setReview] = useState(a.review_status);
+  const automaticChange=automaticAbsenceCorrection(data,m,{...a,
+    physical_status:data.policy?.can_manage_meetings?physical:a.physical_status,
+    review_status:canReview(data,a)?review:a.review_status,
+  });
   const member = data.members.find((s) => s.student_id === a.student_id),
     snapshot = data.snapshots.find(
       (s) => s.meeting_id === m.id && s.student_id === a.student_id,
@@ -847,7 +870,7 @@ function AttendanceEditor({
             </label>}
             {canReview(data,a)&&<label>
               Excuse status
-              <select name="review" defaultValue={a.review_status}>
+              <select name="review" value={review} onChange={e=>setReview(e.target.value)}>
                 {["none", "pending", "excused", "denied", "not_required"].map(
                   (s) => (
                     <option key={s} value={s}>
@@ -873,6 +896,8 @@ function AttendanceEditor({
             Review / correction explanation
             <textarea name="explanation" maxLength={2000} required />
           </label>
+          {automaticChange.additions>0&&<p className="att-attention">Saving this correction will assign 1 automatic Unexcused Absence strike.</p>}
+          {automaticChange.rescissions>0&&<p className="att-attention">Saving this correction will rescind {automaticChange.rescissions} automatic absence {automaticChange.rescissions===1?'strike':'strikes'}.</p>}
           <button>Save attendance review</button>
         </form>
       </details>}
@@ -952,12 +977,13 @@ function StrikeList({
               <strong>
                 {s.rescinded_at ? "Rescinded" : `+${s.quantity}`} · {s.category}
               </strong>{" "}
+              {s.source === "automatic_absence" && <span className="att-badge">Automatic</span>}{" "}
               — {s.explanation}
               <br />
               <small>
-                Assigned {time(s.assigned_at)} by{" "}
-                {data.members.find((m) => m.student_id === s.assigned_by)
-                  ?.display_name ?? "Name unavailable"}
+                {s.source === "automatic_absence" ? "Recorded" : "Assigned"} {time(s.assigned_at)} by{" "}
+                {data.policy?.people.find(p=>p.id===s.assigned_by)?.name || data.members.find((m) => m.student_id === s.assigned_by)
+                  ?.display_name || "Name unavailable"}
               </small>
               {s.rescinded_at && (
                 <small>
@@ -1338,7 +1364,7 @@ function Workspace({
                       <p className="att-muted">{time(meeting.starts_at)} · {a.notice_type ? label(a.notice_type) : "Attendance issue"}{a.expected_at && <> · Expected {time(a.expected_at)}</>}</p>
                       <p className="att-request-reason">{a.notice_reason || "Excuse review requested"}</p>
                       <details><summary>Submission details</summary><p>{time(a.notice_at)} · {noticeTiming(a, meeting)}</p></details>
-                      {!personalRequests && canReview(data,a) && a.review_status === "pending" && <RequestReview key={`${a.id}-${a.version}`} a={a} meeting={meeting} run={run} />}
+                      {!personalRequests && canReview(data,a) && a.review_status === "pending" && <RequestReview key={`${a.id}-${a.version}`} a={a} meeting={meeting} data={data} run={run} />}
                       {requiresMentorReview(data,a.student_id) && a.review_status === "pending" && <p className="att-muted">Awaiting lead coach review</p>}
                       {a.review_reason && <p>{a.review_reason}</p>}
                       {!personalRequests && manager && (
