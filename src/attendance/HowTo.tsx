@@ -9,7 +9,7 @@ export function AttendanceHowTo({ canManage, canReadTeam = false, canRequest = f
       <p>Sign in to Team Hub with your existing team account, then open Attendance. Start here for check-in, schedule requests, and help with your record.</p></div>
     <div className="att-panel att-help-start"><CalendarDays size={24} aria-hidden="true" /><div><h3>Find your meeting</h3>
       <p>Open <a href="#attendance/calendar">Calendar</a> and choose a meeting. “You’re expected at this meeting” means you are on its required roster. Check the date and time, especially after a schedule change. Times use your device’s local time zone.</p>
-      <p>If a meeting is missing, or your required status looks wrong, contact a lead or Mentor. Use <strong>Refresh</strong> to load changes made on another device.</p></div></div>
+      <p>If a meeting is missing, or your required status looks wrong, contact a lead or Mentor. After leadership updates your roster, use <strong>Refresh</strong> to load the meeting, even if it has already started.</p></div></div>
     <div className="att-help-grid">
       <article className="att-panel"><h3><ClipboardCheck size={20} aria-hidden="true" /> When you arrive</h3><ol>
         <li>Open the meeting from <strong>Calendar</strong> or <strong>View meeting / check in</strong>.</li>

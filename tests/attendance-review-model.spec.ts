@@ -51,14 +51,22 @@ test('participant capability honors inactive accounts and authoritative denial',
  for(const role of ['student','lead'])expect(canParticipate({id:'p',display_name:'Legacy',role,active:true},d)).toBe(true);
 });
 
-test('roster selection is member-specific and excludes past, finalized and non-broad meetings',()=>{
+test('roster selection includes upcoming and in-progress draft/open meetings until end, for eligible members only',()=>{
  const d=data(),base={id:'active',title:'Meeting',meeting_type:'preseason',starts_at:'2026-10-09T17:00:00Z',ends_at:'2026-10-09T19:00:00Z',late_minutes:5,requirement:'active',status:'draft',check_in_open:false,code_expires_at:null,version:1};
- d.meetings=[base,{...base,id:'registered',requirement:'registered'},{...base,id:'optional',requirement:'optional'},{...base,id:'area',requirement:'areas'},{...base,id:'selected',requirement:'selected'},{...base,id:'final',status:'finalized'},{...base,id:'past',starts_at:'2026-10-01T17:00:00Z'}];
+ d.meetings=[base,{...base,id:'registered',requirement:'registered'},
+  {...base,id:'ongoing-draft',starts_at:'2026-10-08T16:00:00Z',ends_at:'2026-10-08T18:00:00Z'},
+  {...base,id:'ongoing-open',status:'open',starts_at:'2026-10-08T16:00:00Z',ends_at:'2026-10-08T18:00:00Z'},
+  {...base,id:'optional',requirement:'optional'},{...base,id:'area',requirement:'areas'},{...base,id:'selected',requirement:'selected'},
+  {...base,id:'closed',status:'closed'},{...base,id:'final',status:'finalized'},
+  {...base,id:'ended',starts_at:'2026-10-08T15:00:00Z',ends_at:'2026-10-08T17:00:00Z'},
+  {...base,id:'past',starts_at:'2026-10-01T17:00:00Z',ends_at:'2026-10-01T19:00:00Z'}];
  const member={student_id:'pm',display_name:'Synthetic PM',member_status:'prospective',team_area:''},now=Date.parse('2026-10-08T17:00:00Z');
- expect(rosterSyncMeetings(d,member,now).map(m=>m.id)).toEqual(['active']);
- expect(rosterSyncMeetings(d,{...member,member_status:'registered'},now).map(m=>m.id)).toEqual(['active','registered']);
+ expect(rosterSyncMeetings(d,member,now).map(m=>m.id)).toEqual(['ongoing-draft','ongoing-open','active']);
+ expect(rosterSyncMeetings(d,{...member,member_status:'registered'},now).map(m=>m.id)).toEqual(['ongoing-draft','ongoing-open','active','registered']);
  expect(rosterSyncMeetings(d,{...member,member_status:'inactive'},now)).toEqual([]);
- expect(rosterSyncMeetings(d,{...member,member_status:'registered'},Date.parse(base.starts_at))).toEqual([]);
+ expect(rosterSyncMeetings(d,{...member,member_status:'registered'},Date.parse(base.starts_at)).map(m=>m.id)).toEqual(['active','registered']);
+ expect(rosterSyncMeetings(d,{...member,member_status:'registered'},Date.parse(base.ends_at)-1).map(m=>m.id)).toEqual(['active','registered']);
+ expect(rosterSyncMeetings(d,{...member,member_status:'registered'},Date.parse(base.ends_at))).toEqual([]);
 });
 
 test('ordinary mentors retain strikes but have no request decision capability',()=>{

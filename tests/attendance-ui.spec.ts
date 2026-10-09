@@ -692,10 +692,10 @@ test("leadership request filters separate pending, excused and denied", async ({
   ).toBeVisible();
 });
 
-for(const width of [390,1440])test(`future roster sync and active default ${width}`,async({page})=>{
+for(const width of [390,1440])test(`upcoming and in-progress roster sync and active default ${width}`,async({page})=>{
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));await mock(page,'lead');await page.setViewportSize({width,height:900});let synced=0;
  await page.route('**/rpc/team_attendance_sync_future_rosters',async r=>{synced++;await r.fulfill({json:{added:2,promoted:1,skipped:1}});});
- await page.goto('/#attendance/calendar');await expect(page.getByRole('button',{name:'Sync future rosters',exact:true})).not.toBeVisible();await page.getByText('Roster tools',{exact:true}).click();await page.getByRole('button',{name:'Sync future rosters',exact:true}).click();
+ await page.goto('/#attendance/calendar');await expect(page.getByRole('button',{name:'Sync meeting rosters',exact:true})).not.toBeVisible();await page.getByText('Roster tools',{exact:true}).click();await page.getByRole('button',{name:'Sync meeting rosters',exact:true}).click();
  await expect(page.getByText('Added 2; newly required 1; preserved for review 1.',{exact:true})).toBeVisible();expect(synced).toBe(1);
  await page.getByRole('button',{name:'New meeting',exact:true}).click();const d=page.getByRole('dialog');
  await expect(d.getByLabel('Required attendance')).toHaveValue('active');await expect(d.getByRole('option',{name:'Registered students only',exact:true})).toHaveCount(1);
@@ -703,7 +703,43 @@ for(const width of [390,1440])test(`future roster sync and active default ${widt
  await d.getByRole('button',{name:'Preseason',exact:true}).click();await expect(d.getByLabel('Required attendance')).toHaveValue('active');
  await page.screenshot({path:`test-results/roster-sync-${width}.png`,fullPage:true});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);expect(errors).toEqual([]);
 });
-test('students have no future roster sync action',async({page})=>{await mock(page);await page.goto('/#attendance/calendar');await expect(page.getByRole('button',{name:'Sync future rosters'})).toHaveCount(0);});
+test('students have no meeting roster sync action',async({page})=>{await mock(page);await page.goto('/#attendance/calendar');await expect(page.getByRole('button',{name:'Sync meeting rosters'})).toHaveCount(0);});
+
+for(const width of [390,1440])test(`student refresh reveals newly rostered in-progress meeting without bypassing check-in ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});
+ const {data,calls}=await mock(page,'student',{configure:data=>{
+  data.meetings=[];data.attendance=[];data.snapshots=[];
+ }});
+ await page.goto('/#attendance/calendar');
+ await expect(page.getByText('Your meetings will appear here when leadership adds you to a roster.',{exact:false})).toBeVisible();
+ await expect(page.getByRole('button',{name:/Preseason build/})).toHaveCount(0);
+ // Simulate the RLS-visible records returned after leadership syncs this member.
+ const synced=fixture();
+ data.meetings=synced.meetings;data.attendance=synced.attendance;data.snapshots=synced.snapshots;
+ data.meetings[0].code_expires_at='2026-09-10T17:09:00Z';
+ await page.getByRole('button',{name:'Refresh',exact:true}).click();
+ await expect(page.getByRole('button',{name:/Preseason build.*In progress/})).toBeVisible();
+ await page.getByRole('button',{name:'View meeting / check in',exact:true}).click();
+ const dialog=page.getByRole('dialog');
+ await expect(dialog.getByText("You're expected at this meeting",{exact:true})).toBeVisible();
+ await expect(dialog.getByText('Not checked in',{exact:true})).toBeVisible();
+ await expect(dialog.getByText('Check-in is not open. Ask leadership for a current code.',{exact:true})).toBeVisible();
+ await expect(dialog.getByRole('button',{name:'Check in',exact:true})).toHaveCount(0);
+ expect(calls).toEqual([]);expect(data.attendance[0].checked_in_at).toBeNull();
+ await dialog.getByRole('button',{name:'Close',exact:true}).click();
+ data.meetings[0].code_expires_at='2026-09-10T18:00:00Z';
+ await page.getByRole('button',{name:'Refresh',exact:true}).click();
+ await page.getByRole('button',{name:/Preseason build/}).click();
+ await dialog.getByLabel('6-digit meeting code').fill('000000');
+ await dialog.getByRole('button',{name:'Check in',exact:true}).click();
+ await expect(dialog.getByRole('alert')).toContainText('Invalid meeting code');
+ expect(data.attendance[0].checked_in_at).toBeNull();
+ await dialog.getByLabel('6-digit meeting code').fill('123456');
+ await dialog.getByRole('button',{name:'Check in',exact:true}).click();
+ await expect(dialog.getByText('Check-in recorded',{exact:true})).toBeVisible();
+ expect(calls).toEqual([{meeting_id:'m1',code:'000000'},{meeting_id:'m1',code:'123456'}]);
+ expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+});
 
 for(const width of [390,1440])test(`compact request inbox decisions preserve physical attendance ${width}`,async({page})=>{
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));await page.setViewportSize({width,height:900});const {data,calls}=await mock(page,'mentor');
@@ -1358,16 +1394,19 @@ test('Program Manager decision links show own decisions without changing the tea
  await expect(page.getByText('Mentor approved this request',{exact:true})).toBeVisible();
 });
 
-for(const width of [390,1440])test(`member-scoped roster sync selects exact future IDs, preserves draft after denial, and never calls all-member sync ${width}`,async({page})=>{
+for(const width of [390,1440])test(`member-scoped roster sync selects exact upcoming and in-progress IDs, preserves draft after denial, and never calls all-member sync ${width}`,async({page})=>{
  await page.setViewportSize({width,height:900});
  const {calls}=await mock(page,'mentor',{configure:data=>{
   const m=data.meetings[0];m.status='draft';
   data.meetings=[m,
+   {...m,id:'m-current',title:'In-progress team practice',requirement:'active',status:'open',starts_at:'2026-09-09T14:00:00Z',ends_at:'2026-09-09T16:00:00Z'},
    {...m,id:'m-active',title:'Active team practice',requirement:'active',starts_at:'2026-09-11T17:00:00Z',ends_at:'2026-09-11T19:00:00Z'},
    {...m,id:'m-optional',title:'Optional practice',requirement:'optional'},
    {...m,id:'m-area',title:'Area practice',requirement:'areas'},
    {...m,id:'m-selected',title:'Selected practice',requirement:'selected'},
    {...m,id:'m-past',title:'Past practice',starts_at:'2026-09-08T17:00:00Z',ends_at:'2026-09-08T19:00:00Z'},
+   {...m,id:'m-ended',title:'Ended practice',starts_at:'2026-09-09T14:00:00Z',ends_at:'2026-09-09T15:00:00Z'},
+   {...m,id:'m-closed',title:'Closed practice',status:'closed'},
    {...m,id:'m-finalized',title:'Finalized practice',status:'finalized'},
   ];
  }});
@@ -1380,20 +1419,39 @@ for(const width of [390,1440])test(`member-scoped roster sync selects exact futu
  });
  await page.goto('/#attendance/roster');
  await page.locator('.att-record > summary').filter({hasText:'Alex Student'}).click();
- await page.getByText('Sync this member’s future meetings',{exact:true}).click();
+ await page.getByText('Sync this member’s meetings',{exact:true}).click();
  const region=page.getByRole('region',{name:'Roster sync for Alex Student'});
  await expect(region).toBeVisible();
- expect(await region.locator('input[type=checkbox]').evaluateAll(nodes=>nodes.map(n=>(n as HTMLInputElement).value))).toEqual(['m1','m-active']);
+ expect(await region.locator('input[type=checkbox]').evaluateAll(nodes=>nodes.map(n=>(n as HTMLInputElement).value))).toEqual(['m-current','m1','m-active']);
  await region.locator('input[value=m1]').uncheck();
  await region.getByRole('button',{name:'Sync selected meetings',exact:true}).click();
  await expect(page.locator('.attendance-section').getByRole('alert')).toContainText('Leadership access required');
  await expect(region.locator('input[value=m-active]')).toBeChecked();
+ await expect(region.locator('input[value=m-current]')).toBeChecked();
  await region.getByRole('button',{name:'Sync selected meetings',exact:true}).click();
  await expect(region.getByText('Added 1; newly required 0; preserved for review 0.',{exact:true})).toBeVisible();
  await expect(region.getByRole('button',{name:'Sync selected meetings',exact:true})).toBeDisabled();
- expect(attempts).toEqual([{student_id:student,meeting_ids:['m-active']},{student_id:student,meeting_ids:['m-active']}]);
+ expect(attempts).toEqual([{student_id:student,meeting_ids:['m-current','m-active']},{student_id:student,meeting_ids:['m-current','m-active']}]);
  expect(calls).toEqual([]);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+
+test('member-scoped roster sync rechecks scheduled end before submitting selected IDs',async({page})=>{
+ await mock(page,'mentor',{configure:data=>{data.meetings[0].ends_at='2026-09-10T17:11:00Z';}});
+ const attempts:any[]=[];
+ await page.route('**/rpc/team_attendance_sync_participant_rosters',async route=>{
+  attempts.push(route.request().postDataJSON());
+  await route.fulfill({json:{added:1,promoted:0,skipped:0}});
+ });
+ await page.goto('/#attendance/roster');
+ await page.locator('.att-record > summary').filter({hasText:'Alex Student'}).click();
+ await page.getByText('Sync this member’s meetings',{exact:true}).click();
+ const region=page.getByRole('region',{name:'Roster sync for Alex Student'});
+ await expect(region.locator('input[value=m1]')).toBeChecked();
+ await page.clock.setFixedTime(new Date('2026-09-10T17:11:00Z'));
+ await region.getByRole('button',{name:'Sync selected meetings',exact:true}).click();
+ await expect(page.locator('.attendance-section').getByRole('alert')).toHaveText('Choose 1–52 eligible upcoming or in-progress meetings.');
+ expect(attempts).toEqual([]);
 });
 
 for (const width of [390,1440]) test(`ordinary mentor cannot decide requests but retains corrections and strikes ${width}`,async({page})=>{
