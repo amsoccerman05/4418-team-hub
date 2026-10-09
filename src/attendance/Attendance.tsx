@@ -1221,7 +1221,7 @@ function Workspace({
           {data.policy?.can_manage_meetings && <details className="att-roster-tools"><summary>Roster tools</summary><button className="att-secondary" disabled={busy} onClick={() => void run(async () => {
             const result = await rpc("team_attendance_sync_future_rosters", {}) as {added:number;promoted:number;skipped:number};
             setRosterSync(`Added ${result.added}; newly required ${result.promoted}; preserved for review ${result.skipped}.`);
-          }, "Future rosters synced")}>Sync future rosters</button><p>Updates future All active students and Registered students only meetings. Existing attendance decisions are preserved.</p>{rosterSync && <p role="status">{rosterSync}</p>}</details>}
+          }, "Meeting rosters synced")}>Sync meeting rosters</button><p>Updates upcoming and in-progress All active students and Registered students only meetings until their scheduled end. Closed and finalized meetings are excluded. Existing attendance decisions are preserved.</p>{rosterSync && <p role="status">{rosterSync}</p>}</details>}
           {!manager&&(()=>{const next=[...data.meetings].filter(m=>Date.parse(m.ends_at)>Date.now()&&data.snapshots.some(s=>s.meeting_id===m.id&&s.student_id===profile.id&&s.required)).sort((a,b)=>Date.parse(a.starts_at)-Date.parse(b.starts_at))[0];return next?<section className="att-next-meeting"><div><small>Next required meeting</small><h3>{next.title}</h3><p>{time(next.starts_at)}</p></div><button onClick={()=>setSelected(next.id)}>{data.attendance.some(a=>a.meeting_id===next.id&&a.student_id===profile.id&&a.checked_in_at&&!a.left_at&&['present','late'].includes(a.physical_status))?'View meeting / check out':'View meeting / check in'}</button></section>:<p className="att-muted">No upcoming required meetings. Your other meetings and records are below.</p>;})()}
           {!selectedMeeting && canRequestForSelf && currentAttendanceMeetings.length>0 && <section aria-label="Your current attendance"><Student data={{...ownData,meetings:currentAttendanceMeetings}} id={profile.id} run={run} presenceOnly/></section>}
           <MeetingCalendar
@@ -1241,8 +1241,8 @@ function Workspace({
         <>
           <h2>Team roster</h2>
           <p className="att-muted">
-            After adding students or changing registration, use Sync future rosters.
-            Past, finalized, custom and area rosters stay unchanged.
+            After adding students or changing registration, use Sync meeting rosters for upcoming and in-progress meetings.
+            Ended, closed, finalized, custom, area and optional rosters stay unchanged.
           </p>
           <label className="att-select">
             Find a member

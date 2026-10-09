@@ -26,7 +26,7 @@ jobs:
           version: "2.119.0"
       - name: Check local-only integration guards
         run: node --test tests/integration/fabrication-safety.test.mjs
-      - name: Verify own requests through real disposable Auth and PostgREST
+      - name: Verify own requests and active rosters through real disposable Auth and PostgREST
         env:
           ATTENDANCE_REQUESTS_INTEGRATION: "1"
         run: node tests/integration/fabrication-local.mjs --run
