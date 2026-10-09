@@ -31,6 +31,7 @@ export type Meeting = {
   check_in_open: boolean;
   code_expires_at: string | null;
   version: number;
+  auto_absence_strikes_enabled?: boolean;
 };
 export type Attendance = {
   id: string;
@@ -68,6 +69,7 @@ export type Strike = {
   assigned_at: string;
   rescinded_at: string | null;
   rescind_reason: string | null;
+  source?: "manual" | "automatic_absence";
 };
 export type History = {
   id: number;
@@ -137,7 +139,7 @@ export async function loadData(manager: boolean): Promise<Data> {
     [
       allRows<Meeting>(
         "team_meetings",
-        "id,title,meeting_type,starts_at,ends_at,late_minutes,requirement,status,check_in_open,code_expires_at,version",
+        "id,title,meeting_type,starts_at,ends_at,late_minutes,requirement,status,check_in_open,code_expires_at,version,auto_absence_strikes_enabled",
         "starts_at",
       ),
       allRows<Attendance>("team_attendance"),

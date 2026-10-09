@@ -26,7 +26,21 @@ jobs:
           version: "2.119.0"
       - name: Check local-only integration guards
         run: node --test tests/integration/fabrication-safety.test.mjs
-      - name: Verify own requests and active rosters through real disposable Auth and PostgREST
+      - name: Verify requests, active rosters, and automatic strikes through real disposable Auth and PostgREST
         env:
           ATTENDANCE_REQUESTS_INTEGRATION: "1"
         run: node tests/integration/fabrication-local.mjs --run
+  attendance-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - name: Verify Attendance browser, model, and database regressions
+        run: npx playwright test tests/attendance-*.spec.ts --workers=2

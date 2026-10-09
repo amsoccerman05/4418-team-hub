@@ -165,11 +165,26 @@ async function mock(page: Page, role = "student", options: { active?: boolean; c
           result = opened;
           data.meetings[0].status="open";data.meetings[0].check_in_open=true;data.meetings[0].code_expires_at=opened.expires_at;
         }
-        if (body.action === "close" || body.action === "finalize") {
-          data.meetings[0].status =
-            body.action === "close" ? "closed" : "finalized";
+        if (body.action === "close") {
+          data.meetings[0].status = "closed";
           data.meetings[0].check_in_open = false;
           data.meetings[0].version++;
+        }
+        if (body.action === "finalize") {
+          const meeting = data.meetings.find(m => m.id === body.p.meeting_id)!;
+          const eligible = data.attendance.filter(a => a.meeting_id === meeting.id
+            && data.snapshots.some(s => s.meeting_id === a.meeting_id && s.student_id === a.student_id && s.required)
+            && ["pending", "absent"].includes(a.physical_status) && ["none", "denied"].includes(a.review_status)
+            && !data.strikes.some(s => s.attendance_id === a.id && (s.category.trim().toLowerCase() === "unexcused absence" || s.source === "automatic_absence")));
+          if (body.p.automatic_absence_strike_count !== eligible.length
+            || JSON.stringify(body.p.automatic_absence_strike_attendance_ids) !== JSON.stringify(eligible.map(a => a.id).sort())) result = { error: "Automatic absence strike preview changed or is missing. Refresh and review before completing attendance" };
+          else {
+            meeting.status = "finalized"; meeting.check_in_open = false; meeting.version++;
+            meeting.auto_absence_strikes_enabled = true;
+            for (const a of data.attendance.filter(a => a.meeting_id === meeting.id && a.physical_status === "pending" && data.snapshots.some(s => s.meeting_id === a.meeting_id && s.student_id === a.student_id && s.required))) a.physical_status = "absent";
+            for (const a of eligible) data.strikes.push({ id: `automatic-${a.id}`, attendance_id: a.id, meeting_id: a.meeting_id, student_id: a.student_id, category: "Unexcused Absence", quantity: 1, source: "automatic_absence", explanation: "Unexcused absence at completion", assigned_by: user.id, assigned_at: "2026-09-10T19:01:00Z", rescinded_at: null, rescind_reason: null });
+            result = { automatic_absence_strikes: eligible.length };
+          }
         }
         if (body.action === "attendance") {
           const attendance = data.attendance.find(a => a.id === body.p.attendance_id && a.meeting_id === body.p.meeting_id)!;
@@ -1472,4 +1487,140 @@ for (const width of [390,1440]) test(`ordinary mentor cannot decide requests but
  await card.getByRole('button',{name:'Save attendance review',exact:true}).click();
  await expect.poll(()=>calls).toEqual([{action:'attendance',p:{meeting_id:'m1',attendance_id:'a1',version:1,physical_status:'late',left_at:null,explanation:'Synthetic physical correction only'}}]);
  expect(await page.evaluate(()=>document.body.scrollWidth<=innerWidth)).toBe(true);
+});
+
+function addAutomaticStrikeFixture(data: Data, id: string, physical = 'absent', review = 'none', required = true) {
+ const a = {...data.attendance[0], id:`attendance-${id}`,student_id:id,physical_status:physical,review_status:review};
+ data.attendance.push(a);data.snapshots.push({...data.snapshots[0],student_id:id,required});
+ data.members.push({student_id:id,display_name:`Synthetic ${id}`,member_status:'registered',team_area:'Build'});
+ return a;
+}
+
+for(const width of [390,1440])test(`automatic absence preview confirms exact count and supports cancel ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});
+ const {data,calls}=await mock(page,'mentor',{configure(data){
+  data.meetings[0].status='closed';data.meetings[0].check_in_open=false;
+  addAutomaticStrikeFixture(data,'denied','absent','denied');
+  addAutomaticStrikeFixture(data,'pending','pending','pending');
+  addAutomaticStrikeFixture(data,'excused','absent','excused');
+  addAutomaticStrikeFixture(data,'optional','absent','none',false);
+  addAutomaticStrikeFixture(data,'late','late','denied');
+  const prior=addAutomaticStrikeFixture(data,'prior');
+  data.strikes.push({id:'prior-strike',attendance_id:prior.id,meeting_id:'m1',student_id:prior.student_id,category:'Unexcused Absence',quantity:1,source:'manual',explanation:'Synthetic reviewed absence',assigned_by:lead,assigned_at:'2026-09-10T19:00:00Z',rescinded_at:'2026-09-10T19:00:30Z',rescind_reason:'Synthetic prior decision'});
+ }});
+ await page.clock.setFixedTime(new Date('2026-09-10T19:01:00Z'));await page.goto('/#attendance/calendar');
+ await page.getByRole('button',{name:/Preseason build/}).click();const dialog=page.getByRole('dialog');
+ const preview=dialog.getByRole('region',{name:'Automatic absence strike preview'});
+ await expect(preview).toContainText('Completing attendance will assign 2 automatic strikes');
+ await expect(preview).toContainText('1 pending absence request skipped for now');
+ await preview.getByText('Members receiving automatic strikes',{exact:true}).click();
+ await expect(preview.getByRole('listitem')).toHaveText(['Alex Student','Synthetic denied']);
+ const confirmations:string[]=[];
+ page.once('dialog',async d=>{confirmations.push(d.message());await d.dismiss();});
+ await dialog.getByRole('button',{name:'Complete attendance',exact:true}).click();
+ expect(confirmations[0]).toContain('assign 2 automatic Unexcused Absence strikes');
+ expect(confirmations[0]).toContain('1 pending absence request is skipped');
+ expect(calls.filter(c=>c.action==='finalize')).toEqual([]);
+ await dialog.getByRole('button',{name:'Close',exact:true}).click();await expect(dialog).toHaveCount(0);
+ await page.getByRole('button',{name:/Preseason build/}).click();
+ await expect(preview).toContainText('Completing attendance will assign 2 automatic strikes');
+ await dialog.screenshot({path:`test-results/automatic-absence-preview-${width}.png`});
+ expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+ page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'Complete attendance',exact:true}).click();
+ await expect(dialog.locator('.att-badge.finalized')).toHaveText('Attendance complete');
+ expect(calls.filter(c=>c.action==='finalize')).toEqual([{action:'finalize',p:{meeting_id:'m1',version:1,automatic_absence_strike_count:2,automatic_absence_strike_attendance_ids:['a1','attendance-denied']}}]);
+ expect(data.strikes.filter(s=>s.source==='automatic_absence')).toHaveLength(2);
+ await expect(preview).toHaveCount(0);await expect(dialog.getByRole('button',{name:'Complete attendance',exact:true})).toHaveCount(0);
+ await dialog.getByRole('button',{name:'Close',exact:true}).click();await page.goto('/#attendance/strikes');
+ await expect(page.locator('.att-badge').filter({hasText:/^Automatic$/})).toHaveCount(2);
+});
+
+test('automatic absence stale preview is rejected and refresh requires a new confirmation',async({page})=>{
+ const {data,calls}=await mock(page,'mentor',{configure(data){data.meetings[0].status='closed';data.meetings[0].check_in_open=false;}});
+ await page.clock.setFixedTime(new Date('2026-09-10T19:01:00Z'));await page.goto('/#attendance/calendar');
+ await page.getByRole('button',{name:/Preseason build/}).click();const dialog=page.getByRole('dialog');
+ const preview=dialog.getByRole('region',{name:'Automatic absence strike preview'});
+ await expect(preview).toContainText('assign 1 automatic strike');
+ addAutomaticStrikeFixture(data,'newly-unexcused');
+ page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'Complete attendance',exact:true}).click();
+ await expect(dialog.getByRole('alert')).toContainText('Automatic absence strike preview changed');
+ expect(data.meetings[0].status).toBe('closed');expect(data.strikes).toEqual([]);
+ await dialog.getByRole('button',{name:'Refresh attendance preview',exact:true}).click();
+ await expect(preview).toContainText('assign 2 automatic strikes');
+ expect(calls.filter(c=>c.action==='finalize')).toHaveLength(1);
+ page.once('dialog',async d=>{expect(d.message()).toContain('assign 2 automatic Unexcused Absence strikes');await d.accept();});
+ await dialog.getByRole('button',{name:'Complete attendance',exact:true}).click();
+ await expect(dialog.locator('.att-badge.finalized')).toHaveText('Attendance complete');
+ expect(calls.filter(c=>c.action==='finalize').map(c=>c.p.automatic_absence_strike_count)).toEqual([1,2]);
+});
+
+test('automatic absence completion blocks repeated clicks during its request',async({page})=>{
+ const {calls,handleRequest}=await mock(page,'mentor',{configure(data){data.meetings[0].status='closed';data.meetings[0].check_in_open=false;}});
+ await page.clock.setFixedTime(new Date('2026-09-10T19:01:00Z'));await page.goto('/#attendance/calendar');
+ await page.getByRole('button',{name:/Preseason build/}).click();const dialog=page.getByRole('dialog');
+ let release!:()=>void;const held=new Promise<void>(resolve=>{release=resolve;});let received=0;
+ await page.route('https://attendance-test.supabase.invalid/rest/v1/rpc/team_attendance_manage',async route=>{
+  if(route.request().postDataJSON().action==='finalize'){received++;await held;}await handleRequest(route);
+ });
+ page.once('dialog',d=>d.accept());const button=dialog.getByRole('button',{name:'Complete attendance',exact:true});await button.click();
+ await expect.poll(()=>received).toBe(1);await expect(button).toBeDisabled();
+ await button.evaluate((element:HTMLButtonElement)=>element.click());expect(received).toBe(1);
+ release();await expect(dialog.locator('.att-badge.finalized')).toHaveText('Attendance complete');
+ expect(calls.filter(c=>c.action==='finalize')).toHaveLength(1);
+});
+
+test('automatic absence warnings cover denial and correction but leave legacy meetings unchanged',async({page})=>{
+ const {data,calls}=await mock(page,'mentor',{configure(data){
+  data.meetings[0].status='finalized';data.meetings[0].auto_absence_strikes_enabled=true;data.meetings[0].check_in_open=false;
+  Object.assign(data.attendance[0],{physical_status:'absent',review_status:'pending',notice_at:'2026-09-09T15:00:00Z',notice_reason:'Synthetic request'});
+ }});
+ await page.goto('/#attendance/notices');const card=page.locator('.att-request-card').first();
+ await expect(card).toContainText('Denying this request will assign 1 automatic Unexcused Absence strike');
+ await card.getByText('Advanced attendance & strikes',{exact:true}).click();
+ await card.getByRole('button',{name:'Review excuse / correct attendance',exact:true}).click();
+ // These wrapping labels also contain the select's option text. Scope the
+ // non-exact label match to this correction form, as in existing review tests.
+ const reviewForm=card.locator('[data-review]');
+ const excuseStatus=reviewForm.getByLabel('Excuse status');
+ const physicalStatus=reviewForm.getByRole('combobox',{name:/^Attendance/});
+ await expect(excuseStatus).toHaveValue('pending');
+ await excuseStatus.selectOption('denied');await expect(excuseStatus).toHaveValue('denied');
+ await expect(card).toContainText('Saving this correction will assign 1 automatic Unexcused Absence strike');
+ await physicalStatus.selectOption('late');await expect(physicalStatus).toHaveValue('late');
+ await expect(card.getByText('Saving this correction will assign 1 automatic Unexcused Absence strike.',{exact:true})).toHaveCount(0);
+ data.strikes.push({id:'automatic-a1',attendance_id:'a1',meeting_id:'m1',student_id:student,category:'Unexcused Absence',quantity:1,source:'automatic_absence',explanation:'Synthetic absence',assigned_by:lead,assigned_at:'2026-09-10T19:01:00Z',rescinded_at:null,rescind_reason:null});
+ await page.reload();await card.getByText('Advanced attendance & strikes',{exact:true}).click();
+ await card.getByRole('button',{name:'Review excuse / correct attendance',exact:true}).click();
+ await excuseStatus.selectOption('excused');await expect(excuseStatus).toHaveValue('excused');
+ await expect(card).toContainText('Saving this correction will rescind 1 automatic absence strike');
+ await expect(card).toContainText('Excusing this request will rescind 1 automatic absence strike');
+ data.meetings[0].auto_absence_strikes_enabled=false;await page.reload();
+ await expect(card).toBeVisible();
+ await card.getByText('Advanced attendance & strikes',{exact:true}).click();
+ await card.getByRole('button',{name:'Review excuse / correct attendance',exact:true}).click();
+ await excuseStatus.selectOption('excused');await expect(excuseStatus).toHaveValue('excused');
+ await expect(card.getByText(/will (assign|rescind).*automatic/)).toHaveCount(0);
+ expect(calls).toEqual([]);expect(data.strikes[0].rescinded_at).toBeNull();
+ await card.getByRole('button',{name:'Open meeting',exact:true}).click();
+ await expect(page.getByRole('dialog').getByRole('region',{name:'Automatic absence strike preview'})).toHaveCount(0);
+});
+
+test('automatic absence stale recipient change is rejected even when the count is unchanged',async({page})=>{
+ const {data,calls}=await mock(page,'mentor',{configure(data){data.meetings[0].status='closed';data.meetings[0].check_in_open=false;}});
+ await page.clock.setFixedTime(new Date('2026-09-10T19:01:00Z'));await page.goto('/#attendance/calendar');
+ await page.getByRole('button',{name:/Preseason build/}).click();const dialog=page.getByRole('dialog');
+ const preview=dialog.getByRole('region',{name:'Automatic absence strike preview'});
+ await expect(preview).toContainText('assign 1 automatic strike');
+ data.attendance[0].review_status='excused';addAutomaticStrikeFixture(data,'replacement');
+ page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'Complete attendance',exact:true}).click();
+ await expect(dialog.getByRole('alert')).toContainText('Automatic absence strike preview changed');
+ expect(data.meetings[0].status).toBe('closed');expect(data.strikes).toEqual([]);
+ expect(calls.at(-1).p.automatic_absence_strike_attendance_ids).toEqual(['a1']);
+ await dialog.getByRole('button',{name:'Refresh attendance preview',exact:true}).click();
+ await expect(preview).toContainText('assign 1 automatic strike');
+ await preview.getByText('Members receiving automatic strikes',{exact:true}).click();
+ await expect(preview.getByRole('listitem')).toHaveText(['Synthetic replacement']);
+ page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'Complete attendance',exact:true}).click();
+ await expect(dialog.locator('.att-badge.finalized')).toHaveText('Attendance complete');
+ expect(calls.at(-1).p.automatic_absence_strike_attendance_ids).toEqual(['attendance-replacement']);
 });
