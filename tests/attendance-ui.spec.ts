@@ -852,6 +852,17 @@ test('expected lead explicitly checks self in without changing another attendee'
  page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'Check out',exact:true}).click();await expect(dialog.locator('.att-roster-counts')).toContainText('1 checked out');await dialog.getByRole('group',{name:'Live roster filter'}).getByRole('button',{name:'Checked out',exact:true}).click();await expect(dialog.locator('.att-record')).toHaveCount(1);await expect(dialog.locator('.att-record')).toContainText('Alex Lead');await expect(dialog.locator('.att-record')).toContainText('Duration: 7 min');await expect(dialog.locator('.att-record')).toContainText('Left early');
 });
 
+for(const width of [390,1440])test(`admin-role Operations Lead explicitly checks self in and retains meeting controls ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});
+ const {data,calls}=await mock(page,'admin',{configure:(data,id)=>{data.policy={user_id:id,can_participate:true,can_review:false,can_review_requests:false,can_read_team:true,can_manage_meetings:true,strike_year_start:null,people:[],warnings:[]};}});data.attendance[0].student_id=lead;data.snapshots[0].student_id=lead;data.members.push({student_id:lead,display_name:'Synthetic Operations Lead',member_status:'registered',team_area:'Build'});
+ data.attendance.push({...data.attendance[0],id:'other-attendance',student_id:student});data.meetings[0].check_in_open=false;data.meetings[0].status='draft';
+ await page.goto('/#attendance/calendar');
+ await page.getByRole('button',{name:/Preseason build/}).click();const dialog=page.getByRole('dialog');await dialog.getByRole('button',{name:'Open check-in',exact:true}).click();
+ expect(data.attendance[0].checked_in_at).toBeNull();expect(calls).toHaveLength(1);
+ await dialog.getByRole('button',{name:'Check myself in',exact:true}).click();expect(calls.at(-1)).toEqual({meeting_id:'m1',code:'123456'});expect(data.attendance[1].checked_in_at).toBeNull();await expect(dialog.getByRole('button',{name:'Close check-in',exact:true})).toBeVisible();
+ page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'Check out',exact:true}).click();await expect(dialog.locator('.att-roster-counts')).toContainText('1 checked out');await dialog.getByRole('group',{name:'Live roster filter'}).getByRole('button',{name:'Checked out',exact:true}).click();await expect(dialog.locator('.att-record')).toHaveCount(1);await expect(dialog.locator('.att-record')).toContainText('Synthetic Operations Lead');await expect(dialog.locator('.att-record')).toContainText('Duration: 7 min');await expect(dialog.locator('.att-record')).toContainText('Left early');
+});
+
 test('policy check-in controls and notice thresholds share exact boundaries',()=>{
  const m=fixture().meetings[0],start=Date.parse(m.starts_at);
  expect(checkInControls(m,start-7*86400000)).toMatchObject({canOpen:false,canClose:false,open:false});
@@ -1086,6 +1097,7 @@ const leadershipRequestPersonas = [
   { name: "lead Program Manager", role: "lead", reviewer: true },
   { name: "mentor-role Program Manager", role: "mentor", reviewer: true },
   { name: "admin-role Program Manager", role: "admin", reviewer: true },
+  { name: "admin-role Operations Lead", role: "admin", reviewer: false },
 ] as const;
 for (const width of [390, 1440]) {
   for (const persona of leadershipRequestPersonas) {

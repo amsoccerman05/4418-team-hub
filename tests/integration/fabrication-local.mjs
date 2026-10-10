@@ -14,6 +14,7 @@ import { volunteerHoursSources } from './volunteer-hours-stack.spec.mjs';
 import { attendanceRequestSources } from './attendance-requests-stack.spec.mjs';
 import { attendanceActiveRosterSources } from './attendance-active-roster-stack.spec.mjs';
 import { attendanceAutoStrikeSources } from './attendance-auto-strikes-stack.spec.mjs';
+import { attendanceOperationsLeadSources } from './attendance-operations-lead-stack.spec.mjs';
 
 const withVolunteerHours = process.env.VOLUNTEER_HOURS_INTEGRATION === '1';
 const withAttendanceRequests = process.env.ATTENDANCE_REQUESTS_INTEGRATION === '1';
@@ -109,7 +110,7 @@ const sourcePaths = [
   ...['types.ts', 'model.ts', 'decision-types.ts', 'decision-model.ts', 'trade-study.ts'].map(f => `src/planning/reviews/${f}`),
   ...['fabrication-local.mjs', 'fabrication-safety.mjs', 'fabrication-stack.spec.mjs', 'assembly-stack.spec.mjs', 'design-decision-stack.spec.mjs', 'attendance-editing-fixture.mjs', 'attendance-editing-stack.spec.mjs'].map(f => `tests/integration/${f}`),
 ];
-const hashes = Object.fromEntries([...sourcePaths, ...attendanceEditingSources, ...(withVolunteerHours ? volunteerHoursSources : []), ...(withAttendanceRequests ? [...attendanceRequestSources, ...attendanceActiveRosterSources, ...attendanceAutoStrikeSources] : [])].map(path => [path, createHash('sha256').update(readFileSync(join(repo, path))).digest('hex')]));
+const hashes = Object.fromEntries([...sourcePaths, ...attendanceEditingSources, ...(withVolunteerHours ? volunteerHoursSources : []), ...(withAttendanceRequests ? [...attendanceRequestSources, ...attendanceActiveRosterSources, ...attendanceAutoStrikeSources, ...attendanceOperationsLeadSources] : [])].map(path => [path, createHash('sha256').update(readFileSync(join(repo, path))).digest('hex')]));
 try {
   const version = execFileSync(executable, ['--version'], common).trim();
   assert.equal(version, CLI_VERSION, `Install the pinned official Supabase CLI ${CLI_VERSION}`);
@@ -249,9 +250,12 @@ verify_jwt = false
         // Active-roster checks establish the production audit-table shape.
         const { runAttendanceActiveRosterIntegration } = await import('./attendance-active-roster-stack.spec.mjs');
         checks.push(...await runAttendanceActiveRosterIntegration({ ...status, sql, registerSecret: s => secrets.push(s) }));
-        // Last: finalization now requires an explicit automatic-strike count.
+        // Finalization now requires an explicit automatic-strike count.
         const { runAttendanceAutoStrikesIntegration } = await import('./attendance-auto-strikes-stack.spec.mjs');
         checks.push(...await runAttendanceAutoStrikesIntegration({ ...status, sql, registerSecret: s => secrets.push(s) }));
+        // Last: verify Operations Lead eligibility against the current contract.
+        const { runAttendanceOperationsLeadIntegration } = await import('./attendance-operations-lead-stack.spec.mjs');
+        checks.push(...await runAttendanceOperationsLeadIntegration({ ...status, sql, registerSecret: s => secrets.push(s) }));
       }
       assert.equal(sql("select pg_get_functiondef('auth.uid()'::regprocedure)"), authFunction, 'Auth function changed');
       const images = JSON.parse(docker(['inspect', `supabase_db_${project}`]))[0].Config.Image;
