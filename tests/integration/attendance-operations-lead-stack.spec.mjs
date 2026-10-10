@@ -245,10 +245,14 @@ export async function runAttendanceOperationsLeadIntegration({ base, anonKey, sq
     review_status: 'excused', explanation: 'Synthetic reviewer self-review denial' }, mentorOps), /Another active Lead Coach or Program Manager must review/);
   assert.equal(state(), stable);
   const adminRequest = await own(adminOps, activeID);
+  assert.equal(adminRequest.physical_status, 'left_early'); assert(adminRequest.left_at);
+  // The existing review RPC validates the departure for a left_early record,
+  // even when changing only review_status. Carry its recorded timestamp through.
   await json(await manage('attendance', { meeting_id: activeID, attendance_id: adminRequest.id, version: adminRequest.version,
-    review_status: 'excused', explanation: 'Synthetic independent coach review' }, mentorOps));
+    review_status: 'excused', left_at: adminRequest.left_at, explanation: 'Synthetic independent coach review' }, mentorOps));
   const reviewed = await own(adminOps, activeID);
   assert.equal(reviewed.review_status, 'excused'); assert.equal(reviewed.reviewed_by, mentorOps.id);
+  assert.equal(reviewed.physical_status, adminRequest.physical_status);
   assert.equal(reviewed.checked_in_at, adminRequest.checked_in_at); assert.equal(reviewed.left_at, adminRequest.left_at);
   // Remove only this temporary synthetic fixture grant, restoring the fingerprint.
   sql(`delete from public.team_member_positions where user_id=${lit(mentorOps.id)} and position_key='lead_coach_1';`);
