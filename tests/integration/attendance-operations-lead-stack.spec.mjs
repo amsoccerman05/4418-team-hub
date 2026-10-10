@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { localFetch, localURL, ORIGIN, API_PORT } from './fabrication-safety.mjs';
 
 export const attendanceOperationsLeadSources = [
-  'supabase/migrations/20261010144421_attendance_operations_lead_participation.sql',
+  'supabase/migrations/20261010144754_attendance_operations_lead_participation.sql',
   'tests/integration/attendance-operations-lead-stack.spec.mjs',
 ];
 const lit = value => `'${String(value).replaceAll("'", "''")}'`;

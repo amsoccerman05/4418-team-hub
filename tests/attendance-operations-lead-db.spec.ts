@@ -40,7 +40,7 @@ test.beforeEach(async()=>{
 });
 test.afterEach(()=>db.close());
 
-const migration = () => readFileSync('supabase/migrations/20261010144421_attendance_operations_lead_participation.sql','utf8');
+const migration = () => readFileSync('supabase/migrations/20261010144754_attendance_operations_lead_participation.sql','utf8');
 async function migrate(){await db.exec('reset role');await db.exec(migration());}
 async function sync(){return (await db.query<any>('select team_attendance_sync_future_rosters() r')).rows[0].r;}
 async function scoped(n:number,meetings:string[]){return (await db.query<any>('select team_attendance_sync_participant_rosters($1,$2::uuid[]) r',[id(n),meetings])).rows[0].r;}

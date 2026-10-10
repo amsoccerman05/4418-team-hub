@@ -2,7 +2,7 @@
 
 An active Operations Lead may participate in Attendance while keeping a shared `admin` or `mentor` profile role. The existing server-derived `can_participate` capability already drives check-in/out and My Requests in the deployed frontend.
 
-Apply `20261010144421_attendance_operations_lead_participation.sql` after the current Attendance participation, coach-review, active-roster, and automatic-absence migrations. It replaces only the private participant predicate. Student/lead behavior and Program Manager eligibility are unchanged. An unrevoked `operations_lead` assignment and active position/profile are required; readonly, inactive, revoked, unrelated mentor/admin accounts remain excluded. Display names and user metadata are never authority.
+Apply `20261010144754_attendance_operations_lead_participation.sql` after the current Attendance participation, coach-review, active-roster, and automatic-absence migrations. It replaces only the private participant predicate. Student/lead behavior and Program Manager eligibility are unchanged. An unrevoked `operations_lead` assignment and active position/profile are required; readonly, inactive, revoked, unrelated mentor/admin accounts remain excluded. Display names and user metadata are never authority.
 
 The migration changes no profiles, membership, rosters, attendance, history, strikes, reviewer rules, or cross-suite permissions. It does not grant request-review permission or allow self-review. As with any participant, future meetings may include eligible Operations Leads under existing roster rules.
 
@@ -20,3 +20,7 @@ Use a genuine signed-in leader, never fabricated Auth claims or an invented audi
 - Existing attendance regression suites, production build, and exact-commit GitHub CI before release
 
 No real account identifiers or check-in codes belong in this document, migration, tests, or PR.
+
+## Migration receipt
+
+Production applied this migration as version `20261010144754` on October 10, 2026. The CLI-generated file was renamed to that verified database-assigned version so source and migration history match; its SQL is unchanged. The migration is safe to reapply, but an already-recorded version should not be replayed as a new migration.
