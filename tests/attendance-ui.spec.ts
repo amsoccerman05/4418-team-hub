@@ -57,6 +57,72 @@ function fixture(): Data {
     ],
   };
 }
+// This strict synthetic RPC mirrors the write boundary instead of silently
+// accepting arbitrary payloads. It deliberately does not call frontend helpers.
+function editMeetingFixture(data: Data, p: Record<string, any>, canManage: boolean, now: number) {
+  const fail = (error: string) => ({ error });
+  if (!canManage) return fail("Leadership access required");
+  const allowed = ["meeting_id", "version", "title", "meeting_type", "starts_at", "ends_at", "acknowledge_schedule_change", "required_student_ids", "expected_required_student_ids", "acknowledge_roster_change"];
+  if (!p || Object.keys(p).some(key => !allowed.includes(key))) return fail("Unsupported meeting edit field");
+  if (["meeting_id", "version", "title", "meeting_type", "starts_at", "ends_at"].some(key => !(key in p))) return fail("Meeting details and version are required");
+  const m = data.meetings.find(row => row.id === p.meeting_id);
+  if (!m) return fail("Meeting not found");
+  const current = data.snapshots.filter(row => row.meeting_id === m.id && row.required).map(row => row.student_id).sort();
+  const equal = (a: string[], b: string[]) => JSON.stringify(a) === JSON.stringify(b);
+  const hasRoster = "required_student_ids" in p;
+  if ((!hasRoster && ("expected_required_student_ids" in p || "acknowledge_roster_change" in p)) || hasRoster !== ("expected_required_student_ids" in p)) return fail("Required roster and expected required roster are required together");
+  for (const key of ["required_student_ids", "expected_required_student_ids"]) {
+    if (key in p && (!Array.isArray(p[key]) || p[key].some((id: unknown) => typeof id !== "string") || new Set(p[key]).size !== p[key].length)) return fail("Required participant IDs must be an array of unique IDs");
+  }
+  const target: string[] = hasRoster ? [...p.required_student_ids].sort() : current;
+  const rosterChanged = !equal(target, current);
+  const starts = Date.parse(p.starts_at), ends = Date.parse(p.ends_at);
+  if (!p.title.trim() || p.title.trim().length > 150) return fail("Enter a title of 1–150 characters");
+  if (!["offseason", "preseason", "other"].includes(p.meeting_type)) return fail("Choose a meeting type");
+  if (!Number.isFinite(starts) || !Number.isFinite(ends) || ends <= starts) return fail("End time must be after a valid start time");
+  const scheduleChanged = starts !== Date.parse(m.starts_at) || ends !== Date.parse(m.ends_at);
+  if (p.title.trim() === m.title && p.meeting_type === m.meeting_type && !scheduleChanged && !rosterChanged) return { id: m.id, version: m.version, changed: false };
+  if (p.version !== m.version) return fail("Meeting changed. Refresh and reload the latest meeting before saving.");
+  if (hasRoster && !equal([...p.expected_required_student_ids].sort(), current)) return fail("Required roster changed. Refresh and reload the latest meeting before saving.");
+  if (m.status === "finalized" || now >= Date.parse(m.starts_at)) return fail("This meeting has started or attendance is complete. Meeting details can only be edited before it starts");
+  const recorded = (id: string) => data.attendance.some(a => a.meeting_id === m.id && a.student_id === id && (a.checked_in_at || a.left_at || a.physical_status !== "pending" || a.reviewed_at || a.reviewed_by || a.review_reason.trim() || ["excused", "denied"].includes(a.review_status))) || data.strikes.some(s => s.meeting_id === m.id && s.student_id === id);
+  if (scheduleChanged) {
+    if (starts <= now) return fail("A rescheduled meeting must start in the future");
+    if (data.attendance.some(a => a.meeting_id === m.id && recorded(a.student_id)) || data.strikes.some(s => s.meeting_id === m.id)) return fail("Recorded attendance or reviewed decisions lock this schedule; title and type can still be edited");
+    if (p.acknowledge_schedule_change !== true) return fail("Review and acknowledge the schedule change");
+  }
+  if (rosterChanged) {
+    if (p.acknowledge_roster_change !== true) return fail("Review and acknowledge the required roster change");
+    for (const id of new Set([...current, ...target])) {
+      if (current.includes(id) === target.includes(id)) continue;
+      if (!data.members.some(member => member.student_id === id && member.member_status !== "inactive")) return fail("Active Attendance participant required");
+      if (data.snapshots.some(row => row.meeting_id === m.id && row.student_id === id) && !data.attendance.some(row => row.meeting_id === m.id && row.student_id === id)) return fail("Attendance record is missing. Refresh before editing the required roster");
+      if (recorded(id) || data.attendance.some(a => a.meeting_id === m.id && a.student_id === id && (a.notice_at || a.notice_type || a.notice_reason.trim() || a.expected_at || a.review_status === "pending"))) return fail("Attendance requests, recorded attendance, reviewed decisions, or strikes lock this participant");
+    }
+  }
+  // Validate every affected row before any writes, including combined edits.
+  if (rosterChanged) {
+    for (const snapshot of data.snapshots.filter(row => row.meeting_id === m.id)) {
+      const required = target.includes(snapshot.student_id);
+      if (snapshot.required === required) continue;
+      snapshot.required = required;
+      const attendance = data.attendance.find(row => row.meeting_id === m.id && row.student_id === snapshot.student_id)!;
+      const status = required ? "none" : "not_required";
+      if (!attendance.notice_at && ["none", "not_required"].includes(attendance.review_status) && attendance.review_status !== status) {
+        attendance.review_status = status; attendance.version++;
+      }
+    }
+    for (const id of target) if (!data.snapshots.some(row => row.meeting_id === m.id && row.student_id === id)) {
+      const member = data.members.find(row => row.student_id === id)!;
+      data.snapshots.push({ meeting_id: m.id, student_id: id, required: true, member_status: member.member_status, team_area: member.team_area });
+      data.attendance.push({ id: `added-${id}`, meeting_id: m.id, student_id: id, physical_status: "pending", review_status: "none", checked_in_at: null, left_at: null, notice_at: null, notice_reason: "", review_reason: "", reviewed_at: null, reviewed_by: null, version: 1 });
+    }
+    m.requirement = target.length ? "selected" : "optional";
+  }
+  Object.assign(m, { title: p.title.trim(), meeting_type: p.meeting_type, starts_at: p.starts_at, ends_at: p.ends_at, version: m.version + 1 });
+  if (scheduleChanged) { m.check_in_open = false; m.code_expires_at = null; }
+  return { id: m.id, version: m.version, changed: true };
+}
 // Default mentor fixture represents an assigned lead coach; denial tests provide
 // an explicit can_review_requests:false policy for ordinary mentors.
 async function mock(page: Page, role = "student", options: { active?: boolean; configure?: (data: Data, userId: string) => void } = {}) {
@@ -152,11 +218,7 @@ async function mock(page: Page, role = "student", options: { active?: boolean; c
         }));
       } else if (path.endsWith("/team_attendance_edit_meeting")) {
         calls.push(body);
-        const m=data.meetings.find(m=>m.id===body.p.meeting_id)!;
-        const changedTime=m.starts_at!==body.p.starts_at||m.ends_at!==body.p.ends_at;
-        Object.assign(m,{title:body.p.title,meeting_type:body.p.meeting_type,starts_at:body.p.starts_at,ends_at:body.p.ends_at,version:m.version+1});
-        if(changedTime){m.check_in_open=false;m.code_expires_at=null;}
-        result={id:m.id,version:m.version,changed:true};
+        result = editMeetingFixture(data, body.p, (options.active ?? true) && ["lead", "mentor", "admin"].includes(role), await page.evaluate(() => Date.now()));
       } else if (path.endsWith("/team_attendance_manage")) {
         calls.push(body);
         result = {};
@@ -969,7 +1031,7 @@ for(const width of [390,1440]) {
   await form.getByLabel('Meeting end',{exact:true}).fill('2026-09-12T02:00');
   await expect(form.getByText('This meeting only.',{exact:false})).toBeVisible();
   await expect(form.getByRole('button',{name:'Save meeting',exact:true})).toBeDisabled();
-  await form.getByRole('checkbox').check();
+  await form.getByRole('checkbox',{name:'I reviewed the new schedule and will tell attendees about the change.',exact:true}).check();
   await form.getByLabel('Meeting title').scrollIntoViewIfNeeded();
   await page.screenshot({path:`test-results/attendance-edit-fields-${width}.png`});
   await form.getByRole('button',{name:'Save meeting',exact:true}).scrollIntoViewIfNeeded();
@@ -981,6 +1043,10 @@ for(const width of [390,1440]) {
   expect(calls.at(-1).p).toMatchObject({meeting_id:'m1',version:1,meeting_type:'other',acknowledge_schedule_change:true});
   expect(data.meetings[0].check_in_open).toBe(false);
   expect(data.attendance[0].physical_status).toBe('pending');
+  expect(data.meetings[0].requirement).toBe('registered');
+  expect(calls.at(-1).p).not.toHaveProperty('required_student_ids');
+  expect(calls.at(-1).p).not.toHaveProperty('expected_required_student_ids');
+  expect(calls.at(-1).p).not.toHaveProperty('acknowledge_roster_change');
   await dialog.getByRole('link',{name:'How to use Attendance →'}).click();
   await expect(dialog).toHaveCount(0);
   await expect(page.getByRole('heading',{name:'How to use Attendance',exact:true})).toBeVisible();
@@ -1024,6 +1090,8 @@ test('meeting edits stop when the meeting starts, including an editor already op
  const {calls}=await mock(page,'lead');await page.clock.setFixedTime(new Date('2026-09-10T16:59:59Z'));await page.goto('/#attendance/calendar');await page.getByRole('button',{name:/Preseason build/}).click();await page.getByRole('button',{name:'Edit meeting',exact:true}).click();
  await page.getByLabel('Meeting title').fill('Too late');await page.clock.setFixedTime(new Date('2026-09-10T17:00:00Z'));
  await expect(page.getByLabel('Meeting title')).toBeDisabled();await expect(page.getByRole('button',{name:'Save meeting',exact:true})).toBeDisabled();
+ await expect(page.getByRole('group',{name:'Required participants',exact:true}).getByRole('checkbox',{name:'Alex Student',exact:true})).toBeDisabled();
+ await expect(page.getByRole('button',{name:'All active',exact:true})).toBeDisabled();
  await page.getByRole('button',{name:'Cancel',exact:true}).click();await expect(page.getByRole('button',{name:'Edit meeting',exact:true})).toHaveCount(0);expect(calls).toEqual([]);
 });
 test('successful meeting edit with failed refresh keeps draft and identifies saved result',async({page})=>{
@@ -1635,4 +1703,256 @@ test('automatic absence stale recipient change is rejected even when the count i
  page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'Complete attendance',exact:true}).click();
  await expect(dialog.locator('.att-badge.finalized')).toHaveText('Attendance complete');
  expect(calls.at(-1).p.automatic_absence_strike_attendance_ids).toEqual(['attendance-replacement']);
+});
+
+const rosterBlair = "00000000-0000-0000-0000-000000000021";
+const rosterCasey = "00000000-0000-0000-0000-000000000022";
+const rosterAcknowledgment = "I reviewed who is required and will tell affected participants about the change.";
+const scheduleAcknowledgment = "I reviewed the new schedule and will tell attendees about the change.";
+function requiredRosterFixture(data: Data) {
+  data.members.push(
+    { student_id: rosterBlair, display_name: "Blair Participant", member_status: "registered", team_area: "Build" },
+    { student_id: rosterCasey, display_name: "Casey New Participant", member_status: "prospective", team_area: "Business" },
+  );
+  data.snapshots.push({ ...data.snapshots[0], student_id: rosterBlair, required: false });
+  data.attendance.push({ ...data.attendance[0], id: "a-blair", student_id: rosterBlair, review_status: "not_required", version: 4 });
+}
+async function openRequiredRosterEditor(page: Page) {
+  await page.clock.setFixedTime(new Date("2026-09-10T16:00:00Z"));
+  await page.goto("/#attendance/calendar");
+  await page.getByRole("button", { name: /Preseason build/ }).click();
+  await page.getByRole("button", { name: "Edit meeting", exact: true }).click();
+  return page.getByRole("form", { name: "Edit meeting" });
+}
+for (const width of [390, 1440]) {
+  test(`required-roster combined date save preserves requests and other occurrences ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const { data, calls } = await mock(page, "lead", { configure: data => {
+      requiredRosterFixture(data);
+      const requester = "00000000-0000-0000-0000-000000000023";
+      data.members.push({ student_id: requester, display_name: "Dana Pending Request", member_status: "registered", team_area: "Build" });
+      data.snapshots.push({ ...data.snapshots[0], student_id: requester, required: false });
+      data.attendance.push({ ...data.attendance[0], id: "a-request", student_id: requester, review_status: "pending", notice_at: "2026-09-09T15:00:00Z", notice_type: "late", expected_at: "2026-09-10T17:30:00Z", notice_reason: "School appointment", version: 4 });
+      data.meetings.push({ ...data.meetings[0], id: "other-occurrence", title: "Other build occurrence", starts_at: "2026-09-11T17:00:00Z", ends_at: "2026-09-11T19:00:00Z" });
+      data.snapshots.push({ ...data.snapshots[0], meeting_id: "other-occurrence" });
+      data.attendance.push({ ...data.attendance[0], id: "other-attendance", meeting_id: "other-occurrence" });
+    } });
+    const preserved = structuredClone(data.attendance), other = structuredClone(data.meetings[1]);
+    const form = await openRequiredRosterEditor(page);
+    const participants = form.getByRole("group", { name: "Required participants", exact: true });
+    await expect(participants.getByRole("checkbox", { name: "Alex Student", exact: true })).toBeChecked();
+    await expect(participants.getByRole("checkbox", { name: "Blair Participant", exact: true })).not.toBeChecked();
+    await participants.getByRole("checkbox", { name: "Alex Student", exact: true }).uncheck();
+    await participants.getByRole("checkbox", { name: "Blair Participant", exact: true }).check();
+    await participants.getByRole("checkbox", { name: "Casey New Participant", exact: true }).check();
+    await form.getByLabel("Meeting title").fill("Rescheduled required build");
+    await form.getByLabel("Meeting start", { exact: true }).fill("2026-09-11T23:00");
+    await form.getByLabel("Meeting end", { exact: true }).fill("2026-09-12T02:00");
+    const review = form.getByRole("region", { name: "Review meeting changes" });
+    await expect(review).toContainText("Required participants: 1 → 2");
+    await expect(review).toContainText("Added: 2. Removed: 1.");
+    await expect(form.getByRole("button", { name: "Save meeting", exact: true })).toBeDisabled();
+    await form.getByRole("checkbox", { name: scheduleAcknowledgment, exact: true }).check();
+    await expect(form.getByRole("button", { name: "Save meeting", exact: true })).toBeDisabled();
+    await form.getByRole("checkbox", { name: rosterAcknowledgment, exact: true }).check();
+    await page.screenshot({ path: `test-results/attendance-required-roster-review-${width}.png`, fullPage: true });
+    await form.getByRole("button", { name: "Save meeting", exact: true }).click();
+    await expect(page.getByRole("dialog").getByText("Meeting saved. Only this meeting was changed.")).toBeVisible();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({ p: {
+      meeting_id: "m1", version: 1, title: "Rescheduled required build", meeting_type: "preseason",
+      starts_at: "2026-09-11T23:00:00.000Z", ends_at: "2026-09-12T02:00:00.000Z",
+      acknowledge_schedule_change: true, required_student_ids: [rosterBlair, rosterCasey],
+      expected_required_student_ids: [student], acknowledge_roster_change: true,
+    } });
+    expect(data.meetings[0]).toMatchObject({ requirement: "selected", check_in_open: false, code_expires_at: null, version: 2 });
+    expect(data.meetings[1]).toEqual(other);
+    for (const attendance of preserved) expect(data.attendance.find(row => row.id === attendance.id)).toEqual(
+      attendance.id === "a1" ? { ...attendance, review_status: "not_required", version: 2 } : attendance.id === "a-blair" ? { ...attendance, review_status: "none", version: 5 } : attendance);
+    expect(data.attendance.find(row => row.id === "a-request")).toEqual(preserved.find(row => row.id === "a-request"));
+    expect(data.snapshots.filter(row => row.meeting_id === "m1" && row.required).map(row => row.student_id).sort()).toEqual([rosterBlair, rosterCasey]);
+    expect(data.snapshots.find(row => row.meeting_id === "other-occurrence")?.required).toBe(true);
+    await page.getByRole("button", { name: "Edit meeting", exact: true }).click();
+    await expect(page.getByRole("checkbox", { name: "Alex Student", exact: true })).not.toBeChecked();
+    await expect(page.getByRole("checkbox", { name: "Blair Participant", exact: true })).toBeChecked();
+    await expect(page.getByRole("checkbox", { name: "Casey New Participant", exact: true })).toBeChecked();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
+
+  test(`required-roster Clear all saves optional and All active restores selected ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const { data, calls } = await mock(page, "lead", { configure: requiredRosterFixture });
+    const attendance = structuredClone(data.attendance);
+    let form = await openRequiredRosterEditor(page);
+    await form.getByRole("button", { name: "Clear all", exact: true }).click();
+    await expect(form.getByRole("region", { name: "Review meeting changes" })).toContainText("Required participants: 1 → 0");
+    await form.getByRole("checkbox", { name: rosterAcknowledgment, exact: true }).check();
+    await form.getByRole("button", { name: "Save meeting", exact: true }).click();
+    await expect(page.getByRole("form", { name: "Edit meeting" })).toHaveCount(0);
+    expect(data.meetings[0].requirement).toBe("optional");
+    expect(calls[0].p).toMatchObject({ required_student_ids: [], expected_required_student_ids: [student], acknowledge_roster_change: true });
+    expect(data.attendance).toEqual(attendance.map(row => row.id === "a1" ? { ...row, review_status: "not_required", version: 2 } : row));
+    await page.getByRole("button", { name: "Edit meeting", exact: true }).click();
+    form = page.getByRole("form", { name: "Edit meeting" });
+    await expect(form.getByRole("group", { name: "Required participants" }).getByRole("checkbox", { checked: true })).toHaveCount(0);
+    await form.getByRole("button", { name: "All active", exact: true }).click();
+    await expect(form.getByRole("region", { name: "Review meeting changes" })).toContainText("Required participants: 0 → 3");
+    await form.getByRole("checkbox", { name: rosterAcknowledgment, exact: true }).check();
+    // Changing the reviewed set invalidates acknowledgment; restoring it still
+    // needs a new review instead of silently carrying approval across edits.
+    await form.getByRole("checkbox", { name: "Casey New Participant", exact: true }).uncheck();
+    await expect(form.getByRole("checkbox", { name: rosterAcknowledgment, exact: true })).not.toBeChecked();
+    await form.getByRole("checkbox", { name: "Casey New Participant", exact: true }).check();
+    await form.getByRole("checkbox", { name: rosterAcknowledgment, exact: true }).check();
+    await form.getByRole("button", { name: "Save meeting", exact: true }).click();
+    await expect(page.getByRole("form", { name: "Edit meeting" })).toHaveCount(0);
+    expect(data.meetings[0].requirement).toBe("selected");
+    expect(calls[1].p).toMatchObject({ required_student_ids: [student, rosterBlair, rosterCasey], expected_required_student_ids: [], acknowledge_roster_change: true });
+  });
+
+  test(`required-roster cancellation and Escape discard selection without sending ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const { calls } = await mock(page, "lead", { configure: requiredRosterFixture });
+    const form = await openRequiredRosterEditor(page);
+    await form.getByRole("button", { name: "All active", exact: true }).click();
+    await form.getByRole("checkbox", { name: rosterAcknowledgment, exact: true }).check();
+    await form.getByRole("button", { name: "Cancel", exact: true }).click();
+    await page.getByRole("button", { name: "Edit meeting", exact: true }).click();
+    await expect(form.getByRole("checkbox", { name: "Alex Student", exact: true })).toBeChecked();
+    await expect(form.getByRole("checkbox", { name: "Blair Participant", exact: true })).not.toBeChecked();
+    await form.getByRole("button", { name: "Clear all", exact: true }).click();
+    await page.getByRole("dialog").press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await page.getByRole("button", { name: /Preseason build/ }).click();
+    await page.getByRole("button", { name: "Edit meeting", exact: true }).click();
+    await expect(form.getByRole("checkbox", { name: "Alex Student", exact: true })).toBeChecked();
+    await expect(form.getByRole("button", { name: "Save meeting", exact: true })).toBeDisabled();
+    await form.getByRole("button", { name: "All active", exact: true }).click();
+    await page.goto("/#attendance/history");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await openRequiredRosterEditor(page);
+    await expect(form.getByRole("checkbox", { name: "Alex Student", exact: true })).toBeChecked();
+    await expect(form.getByRole("checkbox", { name: "Blair Participant", exact: true })).not.toBeChecked();
+    expect(calls).toEqual([]);
+  });
+
+  test(`required-roster stale set at unchanged meeting version preserves draft until refresh and reload ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const { data, calls } = await mock(page, "lead", { configure: requiredRosterFixture });
+    const form = await openRequiredRosterEditor(page);
+    await form.getByRole("checkbox", { name: "Alex Student", exact: true }).uncheck();
+    await form.getByRole("checkbox", { name: "Blair Participant", exact: true }).check();
+    await form.getByRole("checkbox", { name: rosterAcknowledgment, exact: true }).check();
+    data.snapshots.push({ ...data.snapshots[0], student_id: rosterCasey, required: true });
+    const staleState = structuredClone(data);
+    await form.getByRole("button", { name: "Save meeting", exact: true }).click();
+    await expect(page.getByRole("dialog").getByRole("alert")).toContainText("Required roster changed");
+    expect(data).toEqual(staleState);
+    await expect(form.getByRole("checkbox", { name: "Alex Student", exact: true })).not.toBeChecked();
+    await expect(form.getByRole("checkbox", { name: "Blair Participant", exact: true })).toBeChecked();
+    await form.getByRole("button", { name: "Refresh meeting", exact: true }).click();
+    await expect(form.getByText("The meeting or required roster changed since this draft was opened. Reload the latest meeting before making more changes.", { exact: true })).toBeVisible();
+    await expect(form.getByRole("button", { name: "Save meeting", exact: true })).toBeDisabled();
+    await expect(form.getByRole("checkbox", { name: "Blair Participant", exact: true })).toBeChecked();
+    await form.getByRole("button", { name: "Reload latest meeting", exact: true }).click();
+    await expect(form.getByRole("checkbox", { name: "Alex Student", exact: true })).toBeChecked();
+    await expect(form.getByRole("checkbox", { name: "Blair Participant", exact: true })).not.toBeChecked();
+    await expect(form.getByRole("checkbox", { name: "Casey New Participant", exact: true })).toBeChecked();
+    await form.getByRole("checkbox", { name: "Blair Participant", exact: true }).check();
+    await expect(form.getByRole("checkbox", { name: rosterAcknowledgment, exact: true })).not.toBeChecked();
+    await form.getByRole("checkbox", { name: rosterAcknowledgment, exact: true }).check();
+    await form.getByRole("button", { name: "Save meeting", exact: true }).click();
+    await expect(page.getByRole("form", { name: "Edit meeting" })).toHaveCount(0);
+    expect(calls).toHaveLength(2);
+    expect(calls[1].p).toMatchObject({ version: 1, expected_required_student_ids: [student, rosterCasey], required_student_ids: [student, rosterBlair, rosterCasey] });
+  });
+}
+
+test("required-roster reviewed, physical, strike, inactive and unlisted rows stay visible and locked", async ({ page }) => {
+  const locked = [
+    { id: "00000000-0000-0000-0000-000000000031", name: "Reviewed Participant", required: true, change: { review_status: "excused", reviewed_at: "2026-09-09T12:00:00Z", reviewed_by: lead } },
+    { id: "00000000-0000-0000-0000-000000000032", name: "Checked In Participant", required: false, change: { physical_status: "present", checked_in_at: "2026-09-10T15:55:00Z" } },
+    { id: "00000000-0000-0000-0000-000000000033", name: "Strike Participant", required: false, change: {} },
+    { id: "00000000-0000-0000-0000-000000000034", name: "Inactive Participant", required: true, change: {} },
+    { id: "00000000-0000-0000-0000-000000000035", name: "Unlisted Participant", required: true, change: {} },
+    { id: "00000000-0000-0000-0000-000000000036", name: "Review Actor Participant", required: true, change: { reviewed_by: lead } },
+    { id: "00000000-0000-0000-0000-000000000037", name: "Pending Request Participant", required: true, change: { review_status: "pending", notice_at: "2026-09-09T15:00:00Z", notice_type: "late" as const, expected_at: "2026-09-10T17:30:00Z", notice_reason: "Synthetic request" } },
+  ];
+  const { data, calls } = await mock(page, "lead", { configure: data => {
+    requiredRosterFixture(data);
+    for (const row of locked) {
+      if (row.name !== "Unlisted Participant") data.members.push({ student_id: row.id, display_name: row.name, member_status: row.name === "Inactive Participant" ? "inactive" : "registered", team_area: "Build" });
+      data.snapshots.push({ ...data.snapshots[0], student_id: row.id, required: row.required });
+      data.attendance.push({ ...data.attendance[0], id: `a-${row.id}`, student_id: row.id, ...row.change });
+    }
+    data.policy = { user_id: lead, can_review: false, can_read_team: true, can_manage_meetings: true, strike_year_start: null, warnings: [], people: [{ id: locked[4].id, name: locked[4].name, role: "student", positions: [] }] };
+    data.strikes.push({ id: "historical-strike", meeting_id: "m1", student_id: locked[2].id, attendance_id: `a-${locked[2].id}`, category: "Other", quantity: 1, explanation: "Synthetic rescinded strike", assigned_by: lead, assigned_at: "2026-09-09T10:00:00Z", rescinded_at: "2026-09-09T11:00:00Z", rescind_reason: "Corrected" });
+  } });
+  const protectedRows = structuredClone({ attendance: data.attendance, strikes: data.strikes, snapshots: data.snapshots.filter(row => locked.some(person => person.id === row.student_id)) });
+  const form = await openRequiredRosterEditor(page);
+  for (const row of locked) {
+    const check = form.getByRole("checkbox", { name: row.name, exact: true });
+    await expect(check).toBeVisible(); await expect(check).toBeDisabled();
+    if (row.required) await expect(check).toBeChecked(); else await expect(check).not.toBeChecked();
+  }
+  await expect(form.getByRole("checkbox", { name: "Blair Participant", exact: true })).toBeEnabled();
+  await expect(form.getByLabel("Meeting start", { exact: true })).toBeDisabled();
+  await form.getByRole("button", { name: "All active", exact: true }).click();
+  for (const row of locked) {
+    if (row.required) await expect(form.getByRole("checkbox", { name: row.name, exact: true })).toBeChecked();
+    else await expect(form.getByRole("checkbox", { name: row.name, exact: true })).not.toBeChecked();
+  }
+  await form.getByRole("button", { name: "Clear all", exact: true }).click();
+  const remaining = locked.filter(row => row.required).map(row => row.id).sort();
+  await form.getByRole("checkbox", { name: rosterAcknowledgment, exact: true }).check();
+  await form.getByRole("button", { name: "Save meeting", exact: true }).click();
+  await expect(page.getByRole("form", { name: "Edit meeting" })).toHaveCount(0);
+  expect(calls[0].p.required_student_ids).toEqual(remaining);
+  expect(data.meetings[0].requirement).toBe("selected");
+  expect(data.attendance).toEqual(protectedRows.attendance.map(row => row.id === "a1" ? { ...row, review_status: "not_required", version: 2 } : row)); expect(data.strikes).toEqual(protectedRows.strikes);
+  expect(data.snapshots.filter(row => locked.some(person => person.id === row.student_id))).toEqual(protectedRows.snapshots);
+});
+
+test("strict meeting-edit fixture rejects unsafe roster writes atomically and accepts an exact retry", () => {
+  const data = fixture(); requiredRosterFixture(data);
+  const m = data.meetings[0], now = Date.parse("2026-09-10T16:00:00Z");
+  const draft = { meeting_id: m.id, version: m.version, title: m.title, meeting_type: m.meeting_type, starts_at: m.starts_at, ends_at: m.ends_at, required_student_ids: [rosterBlair], expected_required_student_ids: [student], acknowledge_roster_change: true };
+  const before = structuredClone(data);
+  for (const patch of [
+    { requirement: "active" }, { selected_students: [rosterBlair] }, { acknowledge_roster_change: false },
+    { expected_required_student_ids: [] }, { required_student_ids: [rosterBlair, rosterBlair] }, { required_student_ids: ["unlisted"] },
+  ]) {
+    expect(editMeetingFixture(data, { ...draft, ...patch }, true, now)).toHaveProperty("error");
+    expect(data).toEqual(before);
+  }
+  expect(editMeetingFixture(data, draft, false, now)).toHaveProperty("error");
+  expect(editMeetingFixture(data, draft, true, Date.parse(m.starts_at))).toHaveProperty("error");
+  expect(data).toEqual(before);
+  expect(editMeetingFixture(data, draft, true, now)).toEqual({ id: "m1", version: 2, changed: true });
+  const saved = structuredClone(data);
+  expect(editMeetingFixture(data, draft, true, now)).toEqual({ id: "m1", version: 2, changed: false });
+  expect(data).toEqual(saved);
+});
+
+for (const evidence of ["request", "check-in", "strike"] as const) test(`required-roster refresh locks a changed ${evidence} participant without version or roster changes`, async ({ page }) => {
+  const { data, calls } = await mock(page, "lead", { configure: requiredRosterFixture });
+  const form = await openRequiredRosterEditor(page);
+  await form.getByRole("checkbox", { name: "Alex Student", exact: true }).uncheck();
+  await form.getByRole("checkbox", { name: rosterAcknowledgment, exact: true }).check();
+  if (evidence === "request") Object.assign(data.attendance[0], { review_status: "pending", notice_at: "2026-09-10T15:59:00Z", notice_reason: "New request" });
+  if (evidence === "check-in") Object.assign(data.attendance[0], { physical_status: "present", checked_in_at: "2026-09-10T15:59:00Z" });
+  if (evidence === "strike") data.strikes.push({ id: "new-strike", meeting_id: "m1", student_id: student, attendance_id: "a1", category: "Other", quantity: 1, explanation: "Synthetic lock", assigned_by: lead, assigned_at: "2026-09-10T15:59:00Z", rescinded_at: null, rescind_reason: null });
+  await form.getByRole("button", { name: "Refresh meeting", exact: true }).click();
+  await expect(form.getByRole("alert")).toContainText("A participant in this draft is now locked");
+  await expect(form.getByRole("checkbox", { name: "Alex Student", exact: true })).not.toBeChecked();
+  await expect(form.getByRole("checkbox", { name: "Alex Student", exact: true })).toBeDisabled();
+  await expect(form.getByRole("button", { name: "Save meeting", exact: true })).toBeDisabled();
+  await form.getByRole("button", { name: "Reload latest meeting", exact: true }).click();
+  await expect(form.getByRole("checkbox", { name: "Alex Student", exact: true })).toBeChecked();
+  await form.getByRole("checkbox", { name: "Blair Participant", exact: true }).check();
+  await form.getByRole("checkbox", { name: rosterAcknowledgment, exact: true }).check();
+  await form.getByRole("button", { name: "Save meeting", exact: true }).click();
+  await expect(page.getByRole("form", { name: "Edit meeting" })).toHaveCount(0);
+  expect(calls).toHaveLength(1);
+  expect(calls[0].p).toMatchObject({ version: 1, required_student_ids: [student, rosterBlair], expected_required_student_ids: [student] });
 });

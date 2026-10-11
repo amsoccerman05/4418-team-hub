@@ -45,6 +45,7 @@ jobs:
           name: attendance-editing-review
           path: |
             test-results/attendance-edit-*.png
+            test-results/attendance-required-roster-review-*.png
             test-results/attendance-how-to-*.png
             test-results/attendance-preview.html
           if-no-files-found: error
