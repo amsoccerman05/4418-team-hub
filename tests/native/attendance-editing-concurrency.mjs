@@ -99,6 +99,13 @@ try {
     insert into public.team_positions values('program_manager','Program Manager',true);
     insert into public.team_member_positions values('${id(4)}','program_manager',null);`);
   await installAttendanceEditingFixture(sql);
+  for (const file of [
+    '20261008063138_attendance_coach_request_review.sql',
+    '20261008234849_attendance_active_meeting_roster_sync.sql',
+    '20261009155227_attendance_automatic_absence_strikes.sql',
+    '20261010144754_attendance_operations_lead_participation.sql',
+    '20261011025742_attendance_required_roster_editing.sql',
+  ]) sql(readFileSync(new URL(`../../supabase/migrations/${file}`, import.meta.url), 'utf8'));
 
   const mid = createMeeting('Synthetic edit race'), records = snapshot(mid);
   const original = draft(mid), before = auditCount(mid);
@@ -170,6 +177,72 @@ try {
   for (const who of [1, 3, 4]) await assert.rejects(asyncSQL(`${actor(who)}update public.team_meetings set title='Direct write' where id=${literal(mid)};`, `direct-${who}`), /permission denied/);
   assert.deepEqual(meeting(mid), unchanged); assert.equal(auditCount(mid), unchangedAudit); assert.equal(snapshot(mid), records);
   pass('student, student Program Manager, readonly, inactive, missing actor, anonymous, and direct table writes fail closed');
+  const required = meetingID => value(sql(`select coalesce(jsonb_agg(student_id order by student_id),'[]') from public.team_meeting_members where meeting_id=${literal(meetingID)} and required`));
+  const rosterDraft = (meetingID, wanted) => draft(meetingID, {
+    required_student_ids: wanted, expected_required_student_ids: required(meetingID), acknowledge_roster_change: true,
+  });
+  const rosterMid = createMeeting('Synthetic required roster race');
+  const rosterBase = required(rosterMid), rosterBefore = auditCount(rosterMid);
+  const rosterA = rosterDraft(rosterMid, rosterBase.filter(x => x !== id(3)));
+  const rosterB = rosterDraft(rosterMid, rosterBase.filter(x => x !== id(4)));
+  const rosterGate = await transactionGate('select pg_advisory_xact_lock(4418,10);', 'roster-pair-gate');
+  const rosterPair = Promise.allSettled([
+    asyncSQL(edit(rosterA), 'roster-pair-one'), asyncSQL(edit(rosterB, 2), 'roster-pair-two'),
+  ]);
+  await blocked('roster-pair-one', 'roster-pair-two'); await rosterGate.release();
+  const rosterResults = await rosterPair;
+  assert.equal(rosterResults.filter(r => r.status === 'fulfilled').length, 1);
+  assert.match(rosterResults.find(r => r.status === 'rejected').reason.message, /Meeting changed/);
+  assert.equal(auditCount(rosterMid), rosterBefore + 1); assert.equal(meeting(rosterMid).requirement, 'selected');
+  assert.equal(Number(sql(`select count(*) from public.team_meeting_members where meeting_id=${literal(rosterMid)}`)), rosterBase.length);
+  const winner = rosterResults[0].status === 'fulfilled' ? rosterA : rosterB;
+  const rosterState = snapshot(rosterMid);
+  const rosterReplays = await Promise.all([asyncSQL(edit(winner), 'roster-retry-one'), asyncSQL(edit(winner), 'roster-retry-two')]);
+  assert(rosterReplays.every(r => value(r).changed === false)); assert.equal(snapshot(rosterMid), rosterState);
+  assert.equal(auditCount(rosterMid), rosterBefore + 1);
+  pass('two required-roster edits serialize, retain every snapshot, and exact retries add no audit or version');
+
+  const rosterCheckMid = createMeeting('Synthetic roster after check-in', 20), rosterCode = openMeeting(rosterCheckMid);
+  const removeChecked = rosterDraft(rosterCheckMid, required(rosterCheckMid).filter(x => x !== id(3)));
+  const rosterCheckGate = await transactionGate(checkIn(rosterCheckMid, rosterCode), 'roster-check-in-first');
+  const rosterCheckEdit = asyncSQL(edit(removeChecked), 'roster-after-check-in');
+  await blocked('roster-after-check-in'); await rosterCheckGate.release();
+  const rosterChecked = snapshot(rosterCheckMid);
+  await assert.rejects(rosterCheckEdit, /Recorded attendance, reviewed decisions, or strikes lock/);
+  assert.equal(snapshot(rosterCheckMid), rosterChecked); assert(required(rosterCheckMid).includes(id(3)));
+  pass('check-in wins the row-lock race and prevents a queued requirement change without losing evidence');
+
+  const syncMid = createMeeting('Synthetic edit after roster sync');
+  const syncDraft = rosterDraft(syncMid, required(syncMid).filter(x => x !== id(3)));
+  sql(`insert into public.profiles values('${id(8)}','Synthetic late addition','student',true)`);
+  const syncGate = await transactionGate(`${actor(1)}select public.team_attendance_sync_future_rosters();`, 'roster-sync-first');
+  const syncEdit = asyncSQL(edit(syncDraft), 'edit-after-roster-sync');
+  await blocked('edit-after-roster-sync'); await syncGate.release();
+  const afterSync = snapshot(syncMid), syncMeeting = meeting(syncMid);
+  await assert.rejects(syncEdit, /Required roster changed/);
+  assert.equal(snapshot(syncMid), afterSync); assert.equal(syncMeeting.version, syncDraft.version);
+  assert(required(syncMid).includes(id(8)));
+  pass('roster sync without a meeting-version bump invalidates a stale required-list draft');
+
+  const eligibilityMid = createMeeting('Synthetic eligibility recheck');
+  const eligibilityDraft = rosterDraft(eligibilityMid, required(eligibilityMid).filter(x => x !== id(8)));
+  const eligibilityGate = await transactionGate(`update public.profiles set active=false where id='${id(8)}';`, 'eligibility-change-first');
+  const eligibilityEdit = asyncSQL(edit(eligibilityDraft), 'edit-after-eligibility');
+  await blocked('edit-after-eligibility'); await eligibilityGate.release();
+  const eligibilityState = snapshot(eligibilityMid);
+  await assert.rejects(eligibilityEdit, /participant is unavailable/);
+  assert.equal(snapshot(eligibilityMid), eligibilityState); assert(required(eligibilityMid).includes(id(8)));
+  pass('participant eligibility is rechecked after its profile-lock wait and unavailable rows remain unchanged');
+
+  const boundaryMid = createMeeting('Synthetic start-boundary recheck', 0.02);
+  const boundaryDraft = rosterDraft(boundaryMid, required(boundaryMid).filter(x => x !== id(3)));
+  const boundaryGate = await transactionGate('select pg_advisory_xact_lock(4418,10);', 'start-boundary-gate');
+  const boundaryEdit = asyncSQL(edit(boundaryDraft), 'edit-after-start');
+  await blocked('edit-after-start'); sql('select pg_sleep(1.3)'); await boundaryGate.release();
+  await assert.rejects(boundaryEdit, /started/);
+  assert.equal(meeting(boundaryMid).version, boundaryDraft.version);
+  assert.deepEqual(required(boundaryMid), boundaryDraft.expected_required_student_ids);
+  pass('queued required-roster edit rechecks the start boundary after waiting and writes nothing');
   console.log(`${checks} Attendance native multi-session/authorization checks passed; isolated PostgreSQL ${sql('show server_version')}.`);
 } catch (error) {
   if (!started) { try { console.error(readFileSync(join(root, 'server.log'), 'utf8')); } catch {} }

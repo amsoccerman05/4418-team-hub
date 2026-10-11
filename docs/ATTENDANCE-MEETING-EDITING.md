@@ -1,58 +1,53 @@
-# Upcoming meeting editing and Attendance help
+# Upcoming meeting and required-roster editing
 
 ## Scope
 
-Attendance → Calendar → open a meeting → **Edit meeting** edits one upcoming meeting's title, type, start, and end. All edits stop at the server-authoritative start time, or once attendance is finalized. Recurring creation already makes independent meetings; this action changes only the selected occurrence.
+Attendance → Calendar → open a meeting → **Edit meeting** edits one upcoming meeting’s title, type, start/end, and required participants. All edits stop at the server-authoritative start time or once attendance is finalized. A repeating schedule consists of independent meetings; only the selected occurrence changes.
 
-The existing active **lead / mentor / admin** roles retain meeting-management authority. A student Program Manager may review requests under the existing policy but cannot edit meetings. Students can read the **How to use Attendance** tab and its contextual link from meeting details.
+Existing active **lead / mentor / admin** roles retain meeting-management authority. A student Program Manager’s request-review capability does not grant meeting editing. Participant eligibility uses the current Attendance predicate, including active Program Managers and Operations Leads with eligible shared roles. No shared role or request-approval capability changes.
 
-The required roster, requirement mode, five-minute grace policy, attendance records, request submissions, excuse decisions, strike rows, creator, and original creation time are preserved. There are no new location, notes, requirement-selection, series-edit, or notification features.
+## Required participants
+
+- The editor starts from the saved meeting snapshots, including people no longer returned by the eligible roster. Unavailable or inactive snapshot members remain visible and keep their saved required status.
+- Checkboxes and **All active / Clear all** change only unlocked people. A person with any submitted request, recorded physical attendance, reviewed decision, or strike (including a rescinded strike) is locked. Use the normal request-review workflow for existing requests; changing a roster cannot substitute for excuse approval.
+- The review shows the original and new required counts plus additions/removals. A separate acknowledgment is required, explaining that only this date changes and participants are not automatically notified.
+- Changing the required set changes this occurrence to **selected** (or **optional** when empty). This prevents broad active/registered roster sync from restoring a removed person. The existing requirement mode, areas, and selected IDs stay unchanged when the required set is untouched, including title/schedule-only edits.
+- Existing snapshot and attendance rows are never deleted. A clean pending row’s default `none` / `not_required` flag follows its requirement; a newly selected eligible participant receives one pending attendance row. Other records, creation metadata, check-in attempts, request/decision content, and strikes remain intact.
+- Required-flag changes and additions have attributed old/new audit entries in the existing public history table. Meeting updates and default attendance-flag changes use the existing audit triggers. Any failure rolls back the whole edit.
 
 ## Schedule safety
 
-- Even before start, a schedule cannot change once physical attendance, an excuse decision, or any strike has been recorded. Title/type may still be corrected before start.
-- A schedule change requires acknowledgment. Pending requests keep their original reasons, submission timestamps, and expected arrival/departure timestamps. The editor asks leadership to review whether they fit the new schedule. The existing notice-timing display compares the saved submission time with the new start.
-- Schedule changes close check-in and clear its temporary code. Leadership must reopen check-in during the new window. Title/type changes preserve any current code.
-- Saving does not email or message attendees. The acknowledgment reminds leadership to communicate the new schedule through its normal team channel.
-- Local-time inputs identify the device's IANA time zone. Nonexistent DST times are rejected; repeated DST times require an explicit offset. Unchanged inputs preserve stored seconds and the exact repeated-hour offset. Overnight meetings use separate start and end dates.
+- Before start, recorded attendance, an excuse decision, or any strike locks the schedule. Title/type and other unlocked participants can still be edited.
+- A schedule change requires its existing separate acknowledgment. Pending requests retain their original reasons, submission times, and expected arrival/departure times. Leadership is reminded to review whether they still fit the new schedule; notice timing uses the new start.
+- Schedule changes close check-in and clear its temporary code. Leadership must reopen check-in during the new window. Roster-only and title/type-only changes preserve the existing check-in state and code.
+- Local-time inputs identify the device’s IANA time zone. Nonexistent DST times are rejected; repeated DST times require an explicit offset. Unchanged inputs preserve stored seconds and offset. Overnight meetings have separate start/end dates.
 
 ## Backend contract
 
-Migration: `20261007033053_attendance_meeting_editing.sql`.
+The original editor is introduced by `20261007033053_attendance_meeting_editing.sql`. The additive `20261011025742_attendance_required_roster_editing.sql` replaces only its guarded private implementation. Applying it does not modify existing meeting, roster, attendance, strike, or history data, permissions, or the public invoker wrapper.
 
-The only new public endpoint is `team_attendance_edit_meeting(p jsonb)`, an invoker wrapper around the guarded private implementation. `p` accepts exactly `meeting_id`, `version`, `title`, `meeting_type`, `starts_at`, `ends_at`, and `acknowledge_schedule_change`. Unsupported keys fail rather than changing other meeting properties.
+`team_attendance_edit_meeting(p jsonb)` retains `meeting_id`, `version`, `title`, `meeting_type`, `starts_at`, `ends_at`, and `acknowledge_schedule_change`. Roster edits additionally supply all three fields:
 
-The private implementation uses the existing Attendance management advisory lock and the selected meeting row lock. It rechecks the authenticated actor's active leadership profile under a share lock. Existing check-in, request, checkout, review, strike, and roster operations use compatible meeting locking. The meeting version rejects a stale different draft; an exact replay is a read-only acknowledgment with no extra audit or mutation.
+- `required_student_ids`: the complete desired distinct UUID list, including preserved locked participants
+- `expected_required_student_ids`: the original distinct required UUID list
+- `acknowledge_roster_change`: `true`
 
-Existing `team_audit` records old/new values and the actor in the same transaction, excluding code material. An audit failure rolls back the edit. No existing table, history, policy, notification, or roster is rewritten by applying the migration.
+Other fields are rejected. Lists are bounded and validated; unavailable newly selected or changed participants are rejected. The implementation serializes with existing Attendance management, locks the meeting and live eligibility rows, checks active leadership, and rechecks the start boundary after waiting. The meeting version protects all edits; the expected required set additionally detects roster sync, which does not bump meeting versions. An exact replay of an already-saved complete target is a read-only receipt with no extra audit or mutation.
 
-The editor preserves a draft on failure. **Refresh meeting** reads the current state without replacing the draft; **Reload latest meeting** explicitly replaces it. If saving succeeds but the subsequent read fails, the message explicitly says the meeting was saved and keeps the form for recovery. Cancel/Escape/navigation perform no write.
+The UI preserves drafts on failure. **Refresh meeting** fetches state without discarding the draft; **Reload latest meeting** explicitly replaces it. A changed required set or newly locked edited person blocks saving. If the mutation succeeds but the refresh fails, the existing recovery message says the meeting was saved. Cancel/Escape/navigation write nothing.
 
-## Release status and verification
+## Verification and rollout
 
-This is a **draft PR for review and CI**, not deployed. The additive migration has not been applied to the shared project.
-
-Verified on the final local branch:
-- TypeScript / production build (the existing large-bundle warning remains).
-- 528 browser-free regression tests across 40 isolated files, including seven new PostgreSQL-engine (PGlite) tests and three new date/locking model tests.
-- Independent code review of roles, scope, locking, record preservation, retry behavior, guide text, and save/refresh recovery.
-
-The first draft-PR CI run [37570238804](https://github.com/amsoccerman05/4418-team-hub/actions/runs/37570238804), at `bfec05c`, passed all **863 tests**, including the complete browser suite and the new editing/help cases. Its build and existing disposable Supabase integration job also passed; deployment was skipped. The generated mobile/desktop review screenshots were inspected. Additional native concurrency and Attendance-specific real Auth/PostgREST checks are wired into subsequent CI; check the current PR head’s results before release.
-
-Local browser execution remained blocked: the official Chromium download returned an invalid archive; installed Chromium’s required local sockets were denied, including the supported escalation attempt; the supported cloud browser rejected localhost with `ERR_BLOCKED_BY_CLIENT`. Those local launcher failures were resolved for verification by the approved GitHub CI environment, not reported as product failures or local passes.
-
-To rerun locally in an environment supporting Chromium:
+All fixtures use synthetic data. Coverage includes PostgreSQL authorization/data-preservation tests, model tests, mobile/desktop browser flows, disposable real Auth/PostgREST, and native multi-session races. Run the exact commit’s CI before release; test wiring alone is not a pass.
 
 ```sh
 npm ci
 npm run build
 npx playwright install --with-deps chromium
-npx playwright test tests/attendance-ui.spec.ts tests/attendance-editing-model.spec.ts --workers=1
+npx playwright test tests/attendance-*.spec.ts --workers=2
 npm test
+ATTENDANCE_EDITING_PG_BIN=/path/to/postgresql/bin node tests/native/attendance-editing-concurrency.mjs
+ATTENDANCE_REQUESTS_INTEGRATION=1 node tests/integration/fabrication-local.mjs --run
 ```
 
-The new UI cases cover mobile/desktop save and help, cancel/Escape/navigation, stale writes and explicit reload, student/Program Manager authority, an open editor crossing the start time, and successful write followed by refresh failure. Existing Attendance browser tests remain in the same suite.
-
-A strictly synthetic interactive preview can be generated with `node scripts/preview-attendance-editing.mjs`. Its output stays under ignored `test-results/`, uses actual Attendance components, intercepts every mock service request, and has a no-network CSP. It is not part of the production bundle and is separate from the actual browser-test evidence.
-
-Publication to a draft PR is approved. Merging/deployment and applying this exact additive migration still require separate rollout approval. Apply the reviewed migration to the existing shared project before deploying the client. Then verify with authorized accounts that an upcoming meeting can be edited, a student cannot edit it, and the help page opens. Do not create real student records, send messages, or apply production schema changes as part of synthetic QA.
+Apply the reviewed additive migration before deploying the client. Verify the deployed bundle matches the tested commit. Do not edit real meetings, invent an authenticated actor, create student data, or send notifications for QA. Publication, merge/deployment, and production migration application require the user’s release authorization.

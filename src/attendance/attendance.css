@@ -658,3 +658,10 @@
 @media(max-width: 760px) { .att-help-grid { grid-template-columns: 1fr; } }
 
 .att-how-to h2 { scroll-margin-top: calc(var(--suite-header-height, 76px) + 20px); }
+
+.att-edit-roster { min-width: 0; }
+.att-edit-roster-list { max-height: 340px; overflow-y: auto; }
+.attendance-section .att-edit-roster-list .att-check { align-items: flex-start; min-height: 44px; }
+.att-edit-roster-list .att-check input { flex-shrink: 0; margin-top: 3px; }
+.att-edit-roster-list .att-check span { min-width: 0; overflow-wrap: anywhere; }
+.att-edit-roster-list .att-check small { display: block; font-weight: 400; color: var(--color-muted); line-height: 1.5; }
