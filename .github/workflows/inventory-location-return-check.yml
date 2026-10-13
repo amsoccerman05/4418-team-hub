@@ -1,0 +1,51 @@
+name: Check scanned Inventory location return
+on:
+  pull_request:
+    paths:
+      - 'src/HubAuth.tsx'
+      - 'src/main.tsx'
+      - 'src/inventory-return.tsx'
+      - 'src/suite-auth.ts'
+      - 'src/suite-broker.ts'
+      - 'tests/inventory-return.spec.ts'
+      - 'tests/suite/inventory-return*'
+      - '.github/workflows/inventory-location-return-check.yml'
+      - 'package*.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  location-return:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Build against synthetic authentication only
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: https://inventory-return.supabase.invalid
+          VITE_SUPABASE_ANON_KEY: test-public-key
+      - name: Check UUID validation, sign-in/reload, and existing Hub navigation
+        run: npx playwright test tests/inventory-return.spec.ts tests/events-ui.spec.ts tests/hub.spec.ts --workers=1 --reporter=line,html --output=test-results/inventory-return-ui
+        env:
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/inventory-return-ui
+      - name: Check first-party opener brokerage at real application origins
+        run: npx playwright test --config tests/suite/inventory-return.config.ts --reporter=line,html --output=test-results/inventory-return-opener
+        env:
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/inventory-return-opener
+      - name: Upload focused Inventory return results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: inventory-location-return-checks
+          path: |
+            test-results/inventory-return-*
+            playwright-report/inventory-return-*
+          if-no-files-found: warn
+          retention-days: 7

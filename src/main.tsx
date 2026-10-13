@@ -1,3 +1,4 @@
+import {InventoryLocationReturn} from './inventory-return';
 import {NotificationProvider,NotificationBell,Notifications} from './notifications/Notifications';
 import { HubNav } from './HubNav';
 import { SuiteHeader } from './SuiteHeader';
@@ -41,6 +42,7 @@ function App() {
 
       <div className={`hub-shell${planning?' planning-shell':''}`}>{planning?<PlanningNav route={route}/>:<HubNav route={route}/>}<main id="main" tabIndex={-1}>
         {auth.error&&<p role="alert">{auth.error}</p>}
+        <InventoryLocationReturn/>
         {auth.signed && !workspace && !management && !outreach && !fabrication && !planning && !notifications && !events && <My4418 management={announcements} />}
         {events&&<EventOverview route={route}/>}
         {notifications&&<Notifications/>}
