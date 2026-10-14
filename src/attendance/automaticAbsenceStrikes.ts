@@ -19,7 +19,7 @@ function unexcusedAbsence(a: Attendance, finalizing: boolean) {
 
 // Presentation only. The server locks and rechecks the records and this count.
 export function automaticAbsenceStrikePreview(data: Data, meeting: Meeting) {
-  if (meeting.status === "finalized") return { additions: [], pendingRequests: [] };
+  if (meeting.meeting_type === "stem_outreach" || meeting.status === "finalized") return { additions: [], pendingRequests: [] };
   const missing = data.attendance.filter(a => a.meeting_id === meeting.id && required(data, a)
     && ["absent", "pending"].includes(a.physical_status));
   return {
@@ -35,7 +35,7 @@ export function automaticAbsenceFinalizationConfirmation(count: number, pending:
 }
 
 export function automaticAbsenceCorrection(data: Data, meeting: Meeting, next: Attendance) {
-  if (meeting.status !== "finalized" || !meeting.auto_absence_strikes_enabled) return { additions: 0, rescissions: 0 };
+  if (meeting.meeting_type === "stem_outreach" || meeting.status !== "finalized" || !meeting.auto_absence_strikes_enabled) return { additions: 0, rescissions: 0 };
   const eligible = required(data, next) && unexcusedAbsence(next, false);
   return {
     additions: eligible && !previouslyAssigned(data, next) ? 1 : 0,

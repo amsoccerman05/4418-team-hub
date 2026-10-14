@@ -263,6 +263,6 @@ export function attendanceDuration(a: Attendance, meeting?: Meeting, now = Date.
 export function rosterSyncMeetings(data:Data,member:Member,now=Date.now()):Meeting[] {
  if(member.member_status==="inactive")return [];
  return data.meetings.filter(m=>["draft","open"].includes(m.status) && Date.parse(m.ends_at)>now
-  && (m.requirement==="active" || (m.requirement==="registered" && member.member_status==="registered")))
+  && (m.meeting_type==="stem_outreach" || m.requirement==="active" || (m.requirement==="registered" && member.member_status==="registered")))
   .sort((a,b)=>Date.parse(a.starts_at)-Date.parse(b.starts_at)||a.id.localeCompare(b.id));
 }

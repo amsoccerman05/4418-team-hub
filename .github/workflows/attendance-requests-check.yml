@@ -49,6 +49,7 @@ jobs:
           test -n "$PG_BIN" || { echo 'No installed PostgreSQL server binary found'; exit 1; }
           ATTENDANCE_ABUSE_PG_BIN="$PG_BIN" node tests/native/attendance-abuse-concurrency.mjs
           ATTENDANCE_ABUSE_PG_BIN="$PG_BIN" node tests/native/attendance-checkout-concurrency.mjs
+          ATTENDANCE_ABUSE_PG_BIN="$PG_BIN" node tests/native/attendance-outreach-concurrency.mjs
       - run: npx playwright install --with-deps chromium
       - run: npm run build
       - name: Verify Attendance browser, model, and database regressions

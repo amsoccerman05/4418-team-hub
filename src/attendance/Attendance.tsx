@@ -32,6 +32,7 @@ import "./attendance.css";
 import { occurrences, type Repeat } from "./recurrence";
 import { MeetingCalendar } from "./Calendar";
 import { AttendanceHowTo } from "./HowTo";
+import { OutreachHours, OutreachTimeCorrection } from "./OutreachHours";
 import { VolunteerHours } from "./volunteer/VolunteerHours";
 import { MeetingEditor } from "./MeetingEditor";
 import { ParticipantRosterSync } from "./ParticipantRosterSync";
@@ -328,7 +329,7 @@ function Student({ data, id, run, presenceOnly=false, selfCheckIn=false, meeting
  return <>
  {!data.meetings.length&&<p className="att-panel">No meetings yet. Your scheduled meetings will appear here.</p>}
  {data.meetings.map(m=>{
-  const a=data.attendance.find(a=>a.meeting_id===m.id&&a.student_id===id);if(!a)return null;
+  const a=data.attendance.find(a=>a.meeting_id===m.id&&a.student_id===id);if(!a)return m.meeting_type==='stem_outreach'?<article className="att-panel" key={m.id}><MeetingHeader meeting={m} now={now}/><p>Ask leadership to sync your event roster before checking in. STEM outreach is optional and has no attendance strikes.</p></article>:null;
   const required=data.snapshots.find(s=>s.meeting_id===m.id&&s.student_id===id)?.required;
   const ended=now>=Date.parse(m.ends_at)||m.status==='finalized';
   const checkedIn=!!a.checked_in_at&&!a.left_at&&['present','late'].includes(a.physical_status);
@@ -349,8 +350,8 @@ function Student({ data, id, run, presenceOnly=false, selfCheckIn=false, meeting
    </section>
    {!presenceOnly&&<>
    {a.notice_at&&<section className="att-request-summary"><h4>{a.notice_type==='late'?'Late arrival':a.notice_type==='early'?'Early departure':'Absence'} requested · {a.review_status==='pending'?'Pending':label(a.review_status)}</h4><p>{noticeTiming(a,m)} · Submitted {Math.abs((Date.parse(m.starts_at)-Date.parse(a.notice_at))/3600000).toFixed(1)} hours {Date.parse(a.notice_at)<=Date.parse(m.starts_at)?'before the meeting':'after start'}</p>{a.expected_at&&<p>Expected {a.notice_type==='early'?'departure':'arrival'}: {time(a.expected_at)}</p>}<p className="att-request-reason">{a.notice_reason}</p>{a.review_reason&&<p>Leadership review: {a.review_reason}</p>}</section>}
-   <NoticeForm key={`${a.id}-${a.version}`} a={a} meeting={m} run={run}/>
-   <details className="att-meeting-tools"><summary>History &amp; strikes</summary><StrikeList data={data} attendance={a}/><button className="att-secondary" onClick={()=>void run(async()=>setHistory((await loadHistory(m.id,id)).filter(h=>h.student_id===id)),'History loaded')}>View my history · {m.title}</button></details></>}
+   {m.meeting_type!=='stem_outreach'&&<NoticeForm key={`${a.id}-${a.version}`} a={a} meeting={m} run={run}/>}
+   <details className="att-meeting-tools"><summary>{m.meeting_type==='stem_outreach'?'History':'History & strikes'}</summary>{m.meeting_type!=='stem_outreach'&&<StrikeList data={data} attendance={a}/>}<button className="att-secondary" onClick={()=>void run(async()=>setHistory((await loadHistory(m.id,id)).filter(h=>h.student_id===id)),'History loaded')}>View my history · {m.title}</button></details></>}
   </article>;
  })}{history&&<HistoryList members={data.members} history={history}/>}</>;
 }
@@ -392,7 +393,7 @@ function Management({data,run,selected,selfId,busy}:{data:Data;run:Run;selected:
  const {ended,complete,canOpen,open,canClose}=checkInControls(m,now);
  const absencePreview=automaticAbsenceStrikePreview(data,m);
  const finalize=()=>{
-  if(busy||finalizing.current||!window.confirm(automaticAbsenceFinalizationConfirmation(absencePreview.additions.length,absencePreview.pendingRequests.length)+checkoutCompletionWarning(records)))return;
+  if(busy||finalizing.current||!window.confirm((m.meeting_type==='stem_outreach'?'Complete STEM outreach attendance? No attendance strikes will be assigned.':automaticAbsenceFinalizationConfirmation(absencePreview.additions.length,absencePreview.pendingRequests.length))+checkoutCompletionWarning(records)))return;
   finalizing.current=true;
   void run(()=>manage('finalize',{meeting_id:m.id,version:m.version,
    automatic_absence_strike_count:absencePreview.additions.length,
@@ -501,7 +502,7 @@ function MeetingForm({
             starts_at: new Date(text(f, "start")).toISOString(),
             ends_at: new Date(text(f, "end")).toISOString(),
             late_minutes: 5,
-            requirement,
+            requirement: type==='stem_outreach'?'optional':requirement,
             areas: f.getAll("areas"),
             selected_students: f.getAll("students"),
           };
@@ -530,6 +531,7 @@ function MeetingForm({
           "Build Meeting",
           "Competition",
           "Optional",
+          "STEM Outreach",
         ].map((name) => (
           <button
             type="button"
@@ -548,9 +550,9 @@ function MeetingForm({
                   ? "offseason"
                   : name === "Preseason"
                     ? "preseason"
-                    : "other",
+                    : name === "STEM Outreach" ? "stem_outreach" : "other",
               );
-              setRequirement(name === "Optional" ? "optional" : "active");
+              setRequirement(["Optional","STEM Outreach"].includes(name) ? "optional" : "active");
             }}
           >
             {name}
@@ -681,6 +683,7 @@ function MeetingForm({
         Required attendance
         <select
           value={requirement}
+          disabled={type==='stem_outreach'}
           onChange={(e) => setRequirement(e.target.value)}
         >
           <option value="active">All active students</option>
@@ -730,11 +733,12 @@ function MeetingForm({
             <select
               name="type"
               value={type}
-              onChange={(e) => setType(e.target.value)}
+              onChange={(e) => {setType(e.target.value);if(e.target.value==='stem_outreach')setRequirement('optional');}}
             >
               <option value="offseason">Offseason</option>
               <option value="preseason">Preseason</option>
               <option value="other">Other</option>
+              <option value="stem_outreach">STEM outreach · optional, no strikes</option>
             </select>
           </label>
 
@@ -743,6 +747,7 @@ function MeetingForm({
       <p className="att-muted">
         Times use your local time zone. The student list is saved when you create the meeting.
       </p>
+      {type==='stem_outreach'&&<p>Visible on everyone’s Attendance calendar. Check-in and checkout track outreach hours. No required-attendance penalty or strikes.</p>}
       <button>Create meeting</button>
     </form>
   );
@@ -797,14 +802,15 @@ function AttendanceEditor({
         Check-in: {time(a.checked_in_at)} · {noticeTiming(a, m)}
       </p>
       <NoticeDetails a={a} meeting={m} />
-      {data.policy?.can_manage_meetings&&<DepartureForm a={a} meeting={m} run={run} mayReview={canReview(data,a)} />}
+      {data.policy?.can_manage_meetings&&m.meeting_type==='stem_outreach'&&<OutreachTimeCorrection key={`${a.id}-${a.version}`} a={a} meeting={m} run={run}/>}
+      {data.policy?.can_manage_meetings&&m.meeting_type!=='stem_outreach'&&<DepartureForm a={a} meeting={m} run={run} mayReview={canReview(data,a)} />}
       {a.review_reason && (
         <p>
           Latest review: {a.review_reason} · {time(a.reviewed_at)}
         </p>
       )}
       <div className="att-toolbar">
-        {(data.policy?.can_manage_meetings||canReview(data,a))&&<button
+        {m.meeting_type!=='stem_outreach'&&(data.policy?.can_manage_meetings||canReview(data,a))&&<button
           type="button"
           className="att-secondary"
           onClick={(e) => {
@@ -819,7 +825,7 @@ function AttendanceEditor({
         >
           Review excuse / correct attendance
         </button>}
-        {canReview(data)&&<button
+        {m.meeting_type!=='stem_outreach'&&canReview(data)&&<button
           type="button"
           className="att-secondary"
           onClick={(e) => {
@@ -835,7 +841,7 @@ function AttendanceEditor({
           Add / review strikes
         </button>}
       </div>
-      {(data.policy?.can_manage_meetings||canReview(data,a))&&<details data-review>
+      {m.meeting_type!=='stem_outreach'&&(data.policy?.can_manage_meetings||canReview(data,a))&&<details data-review>
         <summary>Review / correct attendance</summary>
         <form
           className="att-form"
@@ -906,7 +912,7 @@ function AttendanceEditor({
         </form>
       </details>}
       <StrikeList data={data} attendance={a} run={run} />
-      {canReview(data)&&<details data-strike>
+      {m.meeting_type!=='stem_outreach'&&canReview(data)&&<details data-strike>
         <summary>Assign strike</summary>
         <form
           className="att-form"
@@ -1147,6 +1153,7 @@ function Workspace({
   const tabs = manager
     ? ["dashboard", "calendar", "roster", "notices", "strikes", "history", "how-to"]
     : ["calendar", "notices", "strikes", "history", "how-to"];
+  tabs.splice(tabs.length-1,0,"stem-outreach");
   if (manager && canRequestForSelf) tabs.splice(tabs.indexOf("notices"), 0, "my-requests");
   if (profile.active && ['mentor','admin'].includes(profile.role)) tabs.splice(tabs.length-1,0,'volunteer-hours');
   const current = tabs.includes(tab) ? tab : manager ? "dashboard" : "calendar";
@@ -1175,7 +1182,7 @@ function Workspace({
   const personalRequests = current === "my-requests" || !manager;
   const noticeFilter = personalRequests ? personalNoticeFilter : teamNoticeFilter;
   const setNoticeFilter = personalRequests ? setPersonalNoticeFilter : setTeamNoticeFilter;
-  const requestMeetings = data.meetings.filter(m => m.status !== "finalized"
+  const requestMeetings = data.meetings.filter(m => m.meeting_type!=="stem_outreach" && m.status !== "finalized"
     && Date.parse(m.ends_at) > Date.now()
     && personalData.attendance.some(a => a.meeting_id === m.id))
     .sort((a,b) => Date.parse(a.starts_at) - Date.parse(b.starts_at));
@@ -1208,7 +1215,7 @@ function Workspace({
             href={`#attendance/${name}`}
             aria-current={current === name ? "page" : undefined}
           >
-            {name === "my-requests" ? "My Requests" : name === "volunteer-hours" ? "Volunteer hours" : name === "how-to" ? "How to use Attendance" : name === "notices" ? (manager ? "Absence & Schedule Requests" : "My Requests") : label(name)}
+            {name === "stem-outreach" ? "STEM outreach hours" : name === "my-requests" ? "My Requests" : name === "volunteer-hours" ? "Volunteer hours" : name === "how-to" ? "How to use Attendance" : name === "notices" ? (manager ? "Absence & Schedule Requests" : "My Requests") : label(name)}
             {["notices", "my-requests"].includes(name) && (
               <span>
                 {
@@ -1221,7 +1228,8 @@ function Workspace({
           </a>
         ))}
       </nav>
-      {current !== "volunteer-hours" && <PolicyHelp/>}
+      {!["volunteer-hours","stem-outreach"].includes(current) && <PolicyHelp/>}
+      {current === "stem-outreach" && <OutreachHours key={profile.id}/>}
       {current === "volunteer-hours" && <VolunteerHours key={profile.id} profile={profile} meetings={data.meetings}/>}
       {current === "how-to" && <AttendanceHowTo canManage={!!data.policy?.can_manage_meetings} canReadTeam={manager} canRequest={canRequestForSelf}/>}
       {current === "dashboard" && manager && <LeadershipDashboard data={data} run={run} openMeeting={setSelected}/>}
