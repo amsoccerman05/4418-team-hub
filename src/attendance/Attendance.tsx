@@ -20,6 +20,7 @@ import {
   label,
   meetingState,
   attendanceDuration,
+  canCheckOut as checkoutAllowed, checkoutCompletionWarning,
   type Profile,
   type Data,
   type Meeting,
@@ -332,7 +333,7 @@ function Student({ data, id, run, presenceOnly=false, selfCheckIn=false, meeting
   const ended=now>=Date.parse(m.ends_at)||m.status==='finalized';
   const checkedIn=!!a.checked_in_at&&!a.left_at&&['present','late'].includes(a.physical_status);
   const checkInOpen=m.status==='open'&&m.check_in_open&&!!m.code_expires_at&&now<Date.parse(m.code_expires_at)&&now>=Date.parse(m.starts_at)-1800000&&!ended;
-  const canCheckOut=checkedIn&&!ended&&now>=Date.parse(m.starts_at);
+  const canCheckOut=checkoutAllowed(a,m,now);
   return <article className="att-panel att-student-meeting" key={m.id}>
    {selfCheckIn?<h3>My attendance</h3>:<MeetingHeader meeting={m} now={now}/>}
    <p className="att-expectation">{a.review_status==='not_required'?"You are not required at this meeting":a.review_status==='excused'?"Your attendance request is excused":required?"You're expected at this meeting":"Attendance is optional"}</p>
@@ -343,6 +344,7 @@ function Student({ data, id, run, presenceOnly=false, selfCheckIn=false, meeting
      <label hidden={!!meetingCode}>6-digit meeting code<input name="code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} minLength={6} autoComplete="off" required={!meetingCode}/></label><button>{selfCheckIn?"Check myself in":"Check in"}</button>
     </form>}
     {!ended&&!checkedIn&&!a.left_at&&!checkInOpen&&<p className="att-muted">{now<Date.parse(m.starts_at)-1800000?`Leadership can open check-in from ${time(new Date(Date.parse(m.starts_at)-1800000).toISOString())}.`:'Check-in is not open. Ask leadership for a current code.'}</p>}
+    {canCheckOut&&ended&&<p className="att-muted">Check out when you leave. Check-out remains available until {time(new Date(Date.parse(m.ends_at)+30*60_000).toISOString())}, including after attendance is completed.</p>}
     {canCheckOut&&<button className="att-checkout" onClick={()=>{if(window.confirm('Check out now? Leaving before the scheduled end records Left Early. It does not submit an excuse request.'))void run(()=>rpc('team_attendance_check_out',{meeting_id:m.id}),'Check-out recorded');}}>Check out</button>}
    </section>
    {!presenceOnly&&<>
@@ -390,7 +392,7 @@ function Management({data,run,selected,selfId,busy}:{data:Data;run:Run;selected:
  const {ended,complete,canOpen,open,canClose}=checkInControls(m,now);
  const absencePreview=automaticAbsenceStrikePreview(data,m);
  const finalize=()=>{
-  if(busy||finalizing.current||!window.confirm(automaticAbsenceFinalizationConfirmation(absencePreview.additions.length,absencePreview.pendingRequests.length)))return;
+  if(busy||finalizing.current||!window.confirm(automaticAbsenceFinalizationConfirmation(absencePreview.additions.length,absencePreview.pendingRequests.length)+checkoutCompletionWarning(records)))return;
   finalizing.current=true;
   void run(()=>manage('finalize',{meeting_id:m.id,version:m.version,
    automatic_absence_strike_count:absencePreview.additions.length,
@@ -1184,7 +1186,7 @@ function Workspace({
         attendance: data.attendance.filter((a) => a.student_id === profile.id),
         strikes: data.strikes.filter((s) => s.student_id === profile.id),
       };
-  const currentAttendanceMeetings = data.meetings.filter(m => m.status !== 'finalized' && Date.parse(m.ends_at)>Date.now() && data.attendance.some(a=>a.meeting_id===m.id&&a.student_id===profile.id&&a.checked_in_at));
+  const currentAttendanceMeetings = data.meetings.filter(m => Date.now()<Date.parse(m.ends_at)+30*60_000 && data.attendance.some(a=>a.meeting_id===m.id&&a.student_id===profile.id&&a.checked_in_at));
   const selectedMeeting = data.meetings.find((m) => m.id === selected);
   const notices = (personalRequests ? personalData : ownData).attendance.filter(
     (a) =>

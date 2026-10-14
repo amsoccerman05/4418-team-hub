@@ -225,6 +225,15 @@ export function checkInControls(m:Meeting,now=Date.now()){
  const open=inWindow&&m.status==='open'&&m.check_in_open&&!!m.code_expires_at&&now<Date.parse(m.code_expires_at);
  return {ended,complete,canOpen:inWindow,open,canClose:!complete&&['draft','open'].includes(m.status)&&(open||ended)};
 }
+// Mirrors the server boundary for presentation; the RPC remains authoritative.
+export function canCheckOut(a:Attendance,m:Meeting,now=Date.now()):boolean {
+ return !!a.checked_in_at && !a.left_at && ["present","late"].includes(a.physical_status)
+  && now>=Date.parse(m.starts_at) && now<Date.parse(m.ends_at)+30*60_000;
+}
+export function checkoutCompletionWarning(records:Attendance[]):string {
+ const count=records.filter(a=>a.checked_in_at&&!a.left_at&&["present","late"].includes(a.physical_status)).length;
+ return count ? ` ${count} checked-in ${count===1?"member has":"members have"} no recorded departure. They can still check out until 30 minutes after the scheduled end. Missing departures are not credited as completed hours.` : "";
+}
 export function noticeTiming(a:Attendance,m:Meeting){
  return !a.notice_at ? 'No request submitted' : Date.parse(m.starts_at)-Date.parse(a.notice_at)>=86400000 ? 'At least 24 hours’ notice' : 'Emergency / late notice · excused reason requires review';
 }
