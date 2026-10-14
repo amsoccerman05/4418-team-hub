@@ -61,7 +61,7 @@ function App() {
             4418 IMPULSE <span className="footer-divider">/</span> One team.
             Connected.
           </span>
-          <span>Your team, in one place.</span>
+          <span>Your team, in one place. <a href={`${import.meta.env.BASE_URL}privacy.html`} target="_blank" rel="noopener noreferrer">Privacy Notice</a></span>
         </footer>
       </main></div>
     </NotificationProvider>
@@ -74,3 +74,4 @@ createRoot(document.getElementById("root")!).render(
 );
 
 import "./design-system.css";
+

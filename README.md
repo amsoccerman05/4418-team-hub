@@ -114,3 +114,7 @@ Attendance includes a student-facing **How to use Attendance** tab and contextua
 ## Mentor volunteer hours — local review draft
 
 Attendance has a separate mentor/admin **Volunteer hours** view for actual volunteer clock-in/out, past entries, own corrections with history, and CSV exports. Active admins can see team aggregates. Running or voided entries never count as completed hours, and student attendance and strikes remain independent. The additive migration and UI are not deployed by this draft. See [mentor instructions, backend contract, verification, and release checklist](docs/VOLUNTEER-HOURS.md).
+
+## Privacy notice and release review
+
+The public [Privacy Notice](https://team.frc4418.org/privacy.html) covers the suite. Follow [privacy maintenance](docs/PRIVACY-MAINTENANCE.md) whenever a feature changes collected data, purposes, audiences, providers, device storage or retention. Keep the canonical notice accurate as development continues; notice wording never substitutes for authorization or required consent. Run `npx playwright test tests/privacy.spec.ts` for public access, approved wording, mobile layout and sign-in links.
