@@ -916,7 +916,7 @@ test('expected lead explicitly checks self in without changing another attendee'
  await page.goto('/#attendance/calendar');
  await page.getByRole('button',{name:/Preseason build/}).click();const dialog=page.getByRole('dialog');await dialog.getByRole('button',{name:'Open check-in',exact:true}).click();
  expect(data.attendance[0].checked_in_at).toBeNull();expect(calls).toHaveLength(1);
- await dialog.getByRole('button',{name:'Check myself in',exact:true}).click();expect(calls.at(-1)).toEqual({meeting_id:'m1',code:'123456'});expect(data.attendance[1].checked_in_at).toBeNull();await expect(dialog.getByRole('button',{name:'Close check-in',exact:true})).toBeVisible();
+ await dialog.getByRole('button',{name:'Check myself in',exact:true}).click();await expect.poll(()=>calls.at(-1)).toEqual({meeting_id:'m1',code:'123456'});expect(data.attendance[1].checked_in_at).toBeNull();await expect(dialog.getByRole('button',{name:'Close check-in',exact:true})).toBeVisible();
  page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'Check out',exact:true}).click();await expect(dialog.locator('.att-roster-counts')).toContainText('1 checked out');await dialog.getByRole('group',{name:'Live roster filter'}).getByRole('button',{name:'Checked out',exact:true}).click();await expect(dialog.locator('.att-record')).toHaveCount(1);await expect(dialog.locator('.att-record')).toContainText('Alex Lead');await expect(dialog.locator('.att-record')).toContainText('Duration: 7 min');await expect(dialog.locator('.att-record')).toContainText('Left early');
 });
 
@@ -927,7 +927,7 @@ for(const width of [390,1440])test(`admin-role Operations Lead explicitly checks
  await page.goto('/#attendance/calendar');
  await page.getByRole('button',{name:/Preseason build/}).click();const dialog=page.getByRole('dialog');await dialog.getByRole('button',{name:'Open check-in',exact:true}).click();
  expect(data.attendance[0].checked_in_at).toBeNull();expect(calls).toHaveLength(1);
- await dialog.getByRole('button',{name:'Check myself in',exact:true}).click();expect(calls.at(-1)).toEqual({meeting_id:'m1',code:'123456'});expect(data.attendance[1].checked_in_at).toBeNull();await expect(dialog.getByRole('button',{name:'Close check-in',exact:true})).toBeVisible();
+ await dialog.getByRole('button',{name:'Check myself in',exact:true}).click();await expect.poll(()=>calls.at(-1)).toEqual({meeting_id:'m1',code:'123456'});expect(data.attendance[1].checked_in_at).toBeNull();await expect(dialog.getByRole('button',{name:'Close check-in',exact:true})).toBeVisible();
  page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'Check out',exact:true}).click();await expect(dialog.locator('.att-roster-counts')).toContainText('1 checked out');await dialog.getByRole('group',{name:'Live roster filter'}).getByRole('button',{name:'Checked out',exact:true}).click();await expect(dialog.locator('.att-record')).toHaveCount(1);await expect(dialog.locator('.att-record')).toContainText('Synthetic Operations Lead');await expect(dialog.locator('.att-record')).toContainText('Duration: 7 min');await expect(dialog.locator('.att-record')).toContainText('Left early');
 });
 
