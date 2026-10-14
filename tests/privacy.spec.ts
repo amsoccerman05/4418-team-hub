@@ -45,3 +45,11 @@ test('Team Hub sign-in exposes a safe public privacy link', async ({ page }) => 
  await popup.close();
  await expect(page.getByRole('heading', { name: 'Team sign in' })).toBeVisible();
 });
+
+test('public event shell links to the notice without exposing retired guides', async ({ page }) => {
+ await page.goto('/event.html#retired-event');
+ await expect(page.getByRole('heading', {name: 'Event information is unavailable'})).toBeVisible();
+ const link = page.getByRole('link', {name: 'Privacy Notice', exact: true});
+ await expect(link).toHaveAttribute('href', /^(?:\.\/|\/)privacy\.html$/);
+ await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+});
