@@ -19,6 +19,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Reject high and critical dependency advisories (including build tools)
+        run: npm audit --audit-level=high
       - name: Verify design-decision concurrent transactions
         run: |
           PG_BIN="$(find /usr/lib/postgresql -path '*/bin/postgres' -type f -printf '%h\n' | sort -V | tail -1)"
