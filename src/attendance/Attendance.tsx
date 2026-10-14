@@ -682,6 +682,7 @@ function MeetingForm({
       <label>
         Required attendance
         <select
+          aria-label="Required attendance"
           value={requirement}
           disabled={type==='stem_outreach'}
           onChange={(e) => setRequirement(e.target.value)}

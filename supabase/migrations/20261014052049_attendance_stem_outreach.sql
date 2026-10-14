@@ -1,4 +1,4 @@
--- LOCAL PROPOSAL ONLY. Separate from the approved checkout release.
+-- STEM outreach attendance and annual lettering-hours reporting.
 -- Confirmed policy: 10 hours per May 1–April 30 Denver-local year; preserve history.
 begin;
 alter table public.team_meetings drop constraint team_meetings_meeting_type_check;
