@@ -40,6 +40,14 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
       - run: npx playwright install --with-deps chromium
       - run: npm test
+      - name: Retain privacy notice browser previews
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: privacy-notice-review
+          path: test-results/privacy-*.png
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Generate synthetic Attendance preview
         if: ${{ always() && github.event_name == 'pull_request' }}
         run: node scripts/preview-attendance-editing.mjs
