@@ -8,7 +8,8 @@ import { localFetch, localURL, ORIGIN, API_PORT } from './fabrication-safety.mjs
 
 export const attendanceAbuseMigration = 'supabase/migrations/20261014034212_attendance_check_in_hardening.sql';
 const checkoutMigration = 'supabase/migrations/20261014051116_attendance_checkout_grace.sql';
-export const attendanceAbuseSources = [attendanceAbuseMigration, checkoutMigration, 'tests/integration/attendance-abuse-stack.spec.mjs', 'tests/native/attendance-abuse-concurrency.mjs'];
+const outreachMigration='supabase/migrations/20261014052049_attendance_stem_outreach.sql';
+export const attendanceAbuseSources = [attendanceAbuseMigration, checkoutMigration, outreachMigration, 'tests/integration/attendance-abuse-stack.spec.mjs', 'tests/native/attendance-abuse-concurrency.mjs'];
 const lit = value => `'${String(value).replaceAll("'", "''")}'`;
 const future = minutes => new Date(Date.now() + minutes * 60_000).toISOString();
 const wrong = code => code === '000000' ? '999999' : '000000';
@@ -180,5 +181,30 @@ export async function runAttendanceAbuseIntegration({ base, anonKey, sql, regist
   pass('deactivation immediately rejects the SAME previously successful session, including recorded-attendance retries');
   assert.equal(sql("select pg_get_functiondef('auth.uid()'::regprocedure)"), authFunction);
   pass('expired or missing code expiry fails closed without consuming guesses; genuine Auth remains unchanged');
+  const beforeOutreach=businessState();
+  sql(readFileSync(new URL(`../../${outreachMigration}`,import.meta.url),'utf8'));assert.equal(businessState(),beforeOutreach);
+  sql("notify pgrst, 'reload schema';");
+  sql(`update profiles set active=true where id=${lit(student.id)}`);
+  const outreach=await json(await rpc('team_attendance_manage',{action:'create',p:{title:'Synthetic annual STEM outreach',meeting_type:'stem_outreach',requirement:'active',starts_at:future(-10),ends_at:future(60)}},manager));
+  const outreachCode=await open(outreach.id);
+  assert.equal((await json(await checkIn(outreach.id,outreachCode.code,student))).status,'checked_in');
+  assert.equal(sql(`select requirement from team_meetings where id=${lit(outreach.id)}`),'optional');
+  assert.equal(sql(`select count(*) from team_meeting_members where meeting_id=${lit(outreach.id)} and required`),'0');
+  assert.equal((await json(await rpc('team_attendance_check_out',{meeting_id:outreach.id},student))).message,'Check-out recorded');
+  const recorded=JSON.parse(stored(outreach.id,student));
+  await rejected(await rpc('team_attendance_manage',{action:'strike',p:{meeting_id:outreach.id,attendance_id:recorded.id,category:'Other',quantity:1,explanation:'Synthetic denied outreach strike'}},manager),/never receives/,'P0001',400);
+  const summary=await json(await rpc('team_attendance_outreach_summary',{period_start_year:null},student));
+  assert.equal(summary.goal.target_hours,10);assert.equal(summary.period.time_zone,'America/Denver');assert(summary.period.start_date.endsWith('-05-01'));assert(summary.period.end_date.endsWith('-04-30'));
+  assert.equal(summary.members.length,1);assert.equal(summary.members[0].student_id,student.id);
+  await rejected(await rpc('team_attendance_outreach_goal',{p:{version:1,target_hours:1}},student),/Mentor or admin/);
+  await rejected(await rpc('team_attendance_outreach_correct',{p:{meeting_id:outreach.id,attendance_id:recorded.id,version:recorded.version,checked_in_at:future(-8),left_at:future(-3),reason:'Synthetic verification'}},student),/leadership/);
+  assert.equal((await json(await rpc('team_attendance_outreach_correct',{p:{meeting_id:outreach.id,attendance_id:recorded.id,version:recorded.version,checked_in_at:future(-8),left_at:future(-3),reason:'Synthetic verification'}},manager))).message,'Verified outreach times saved');
+  const verifiedRow=JSON.parse(stored(outreach.id,student));
+  await rejected(await rpc('team_attendance_manage',{action:'attendance',p:{meeting_id:outreach.id,attendance_id:verifiedRow.id,version:verifiedRow.version,physical_status:'present',review_status:'excused',explanation:'Synthetic denied legacy correction'}},manager),/verified outreach time correction/,'P0001',400);
+  assert.deepEqual(JSON.parse(stored(outreach.id,student)),verifiedRow);
+  const correctedSummary=await json(await rpc('team_attendance_outreach_summary',{period_start_year:null},student));assert(correctedSummary.members[0].hours>0);
+  await rejected(await rpc('team_attendance_outreach_summary',{period_start_year:null},null),/permission denied/,'42501',401);
+  assert.equal((await read('team_attendance','id',`meeting_id=eq.${outreach.id}&student_id=eq.${student.id}`,peer)).length,0);
+  pass('STEM outreach uses real code/check-out flow, blocks every strike path, scopes annual totals, and audits only authorized corrections');
   return checks;
 }

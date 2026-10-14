@@ -85,14 +85,14 @@ export function MeetingEditor({ meeting, data, busy, run, onCancel, onSaved }: {
       ? "The meeting or required roster changed since this draft was opened. Reload the latest meeting before making more changes."
       : "A participant in this draft is now locked. Reload the latest meeting before changing who is required."}</p><button type="button" className="att-secondary" disabled={busy} onClick={reset}>Reload latest meeting</button><p className="att-muted">Reloading discards the unsaved fields below.</p></div>}
     <label>Meeting title<input autoFocus disabled={!!lockedMeeting} value={title} onChange={e => setTitle(e.target.value)} required maxLength={150}/></label>
-    <label>Meeting type<select disabled={!!lockedMeeting} value={type} onChange={e => setType(e.target.value)}><option value="offseason">Offseason</option><option value="preseason">Preseason</option><option value="other">Other / build / competition</option></select></label>
+    <label>Meeting type<select disabled={!!lockedMeeting||base.meeting_type==='stem_outreach'} value={type} onChange={e => setType(e.target.value)}><option value="offseason">Offseason</option><option value="preseason">Preseason</option><option value="other">Other / build / competition</option>{base.meeting_type==='stem_outreach'&&<option value="stem_outreach">STEM outreach · optional, no strikes</option>}</select></label>
     <p className="att-muted">Time zone: <strong>{Intl.DateTimeFormat().resolvedOptions().timeZone}</strong> (your device). Choose both dates for an overnight meeting.</p>
     {lockReason && <p className="att-attention">{lockReason}{!lockedMeeting && " You can still edit its title, type, and unlocked participants before the meeting starts."}</p>}
     <div className="att-grid"><label>Meeting start<input type="datetime-local" value={start} disabled={!!lockReason} required onChange={e => {setStart(e.target.value);setStartChoice("");setAcknowledged(false);}}/></label>
       <label>Meeting end<input type="datetime-local" value={end} disabled={!!lockReason} required onChange={e => {setEnd(e.target.value);setEndChoice("");setAcknowledged(false);}}/></label></div>
     {!lockReason && <>{offsetPicker(start, base.starts_at, startChoice, setStartChoice, "Start")}{offsetPicker(end, base.ends_at, endChoice, setEndChoice, "End")}</>}
     {timeError && <p className="att-error" role="alert">{timeError}</p>}
-    <fieldset className="att-edit-roster" disabled={busy || !!lockedMeeting}>
+    <fieldset className="att-edit-roster" disabled={busy || !!lockedMeeting || base.meeting_type==='stem_outreach'}>
       <legend>Required participants</legend>
       <p className="att-muted">Changing this list saves a custom required roster for this date. Broad roster sync will no longer update who is required for this date. Leave it unchanged to keep the current requirement mode.</p>
       <div className="att-toolbar"><button type="button" className="att-secondary" onClick={() => {setRequiredIds(bulkRequiredSelection(rosterOptions, requiredIds, true));setRosterAcknowledged(false);}}>All active</button>
