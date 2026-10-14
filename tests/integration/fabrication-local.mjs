@@ -16,9 +16,16 @@ import { attendanceActiveRosterSources } from './attendance-active-roster-stack.
 import { attendanceAutoStrikeSources } from './attendance-auto-strikes-stack.spec.mjs';
 import { attendanceOperationsLeadSources } from './attendance-operations-lead-stack.spec.mjs';
 import { attendanceRequiredRosterSources } from './attendance-required-roster-stack.spec.mjs';
+import { attendanceAbuseSources } from './attendance-abuse-stack.spec.mjs';
+import { sharedSecuritySources } from './shared-security-fixture.mjs';
+import { attendanceSecuritySources, installAttendanceSecurityFixture } from './attendance-security-fixture.mjs';
 
 const withVolunteerHours = process.env.VOLUNTEER_HOURS_INTEGRATION === '1';
 const withAttendanceRequests = process.env.ATTENDANCE_REQUESTS_INTEGRATION === '1';
+const withSharedSecurity = process.env.SHARED_SECURITY_INTEGRATION === '1';
+const withAttendanceSecurity = process.env.ATTENDANCE_SECURITY_INTEGRATION === '1';
+assert(!(withSharedSecurity || withAttendanceSecurity) || (!withAttendanceRequests && !withVolunteerHours), 'Security modes require their own empty disposable stack');
+assert(!(withSharedSecurity && withAttendanceSecurity), 'Choose one isolated security mode per stack');
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const mode = process.argv[2] || '--run';
@@ -111,7 +118,14 @@ const sourcePaths = [
   ...['types.ts', 'model.ts', 'decision-types.ts', 'decision-model.ts', 'trade-study.ts'].map(f => `src/planning/reviews/${f}`),
   ...['fabrication-local.mjs', 'fabrication-safety.mjs', 'fabrication-stack.spec.mjs', 'assembly-stack.spec.mjs', 'design-decision-stack.spec.mjs', 'attendance-editing-fixture.mjs', 'attendance-editing-stack.spec.mjs'].map(f => `tests/integration/${f}`),
 ];
-const hashes = Object.fromEntries([...sourcePaths, ...attendanceEditingSources, ...(withVolunteerHours ? volunteerHoursSources : []), ...(withAttendanceRequests ? [...attendanceRequestSources, ...attendanceActiveRosterSources, ...attendanceAutoStrikeSources, ...attendanceOperationsLeadSources, ...attendanceRequiredRosterSources] : [])].map(path => [path, createHash('sha256').update(readFileSync(join(repo, path))).digest('hex')]));
+const hashPaths = withSharedSecurity
+  ? ['tests/integration/fabrication-local.mjs', 'tests/integration/fabrication-safety.mjs', ...sharedSecuritySources]
+  : withAttendanceSecurity
+    ? ['tests/integration/fabrication-local.mjs', 'tests/integration/fabrication-safety.mjs', ...attendanceSecuritySources]
+    : [...sourcePaths, ...attendanceEditingSources, ...(withVolunteerHours ? volunteerHoursSources : []),
+    ...(withAttendanceRequests ? [...attendanceRequestSources, ...attendanceActiveRosterSources, ...attendanceAutoStrikeSources,
+      ...attendanceOperationsLeadSources, ...attendanceRequiredRosterSources, ...attendanceAbuseSources] : [])];
+const hashes = Object.fromEntries(hashPaths.map(path => [path, createHash('sha256').update(readFileSync(join(repo, path))).digest('hex')]));
 try {
   const version = execFileSync(executable, ['--version'], common).trim();
   assert.equal(version, CLI_VERSION, `Install the pinned official Supabase CLI ${CLI_VERSION}`);
@@ -192,74 +206,87 @@ verify_jwt = false
       assert.equal(sql('select count(*) from storage.objects'), '0', 'Refusing nonempty Storage');
       const authFunction = sql("select pg_get_functiondef('auth.uid()'::regprocedure)");
       assert(!authFunction.includes('test.uid'), 'Mock auth.uid is forbidden');
-      sql(readFileSync(join(repo, 'tests/integration/fabrication-prerequisites.sql'), 'utf8'));
-      for (const path of sourcePaths.filter(p => p.endsWith('.sql'))) sql(readFileSync(join(repo, path), 'utf8'));
-      sql("notify pgrst, 'reload schema';");
-      edge = spawn(executable, ['functions', 'serve', 'fabrication-files', '--env-file', edgeEnv, '--workdir', root, '--network-id', network], common);
-      children.add(edge); edge.once('close', () => children.delete(edge));
-      edge.stdout.on('data', captureEdge);
-      edge.stderr.on('data', captureEdge);
-      edge.on('error', error => { edgeOutput += error.message; });
-      const route = '/functions/v1/fabrication-files';
-      const probeHeaders = { Origin: ORIGIN, apikey: status.anonKey, 'Content-Type': 'application/json' };
-      let lastProbe = null, previousSummary = '', lastLoggedAt = 0, attempts = 0;
-      const deadline = Date.now() + 120_000;
-      while (Date.now() < deadline) {
-        attempts++;
-        if (edge.exitCode !== null) throw Error(`Local function server exited ${edge.exitCode}`);
-        try {
-          lastProbe = await edgeObservation(await localFetch(status.base, route, {
-            method: 'POST', headers: probeHeaders, body: '{}', signal: AbortSignal.timeout(8000),
-          }));
-        } catch (error) { lastProbe = { transport_error: String(error.message).slice(0, 300) }; }
-        const summary = JSON.stringify(lastProbe);
-        if (summary !== previousSummary || Date.now() - lastLoggedAt >= 15_000) {
-          console.log(`Edge readiness attempt ${attempts}: ${clean(summary)}`);
-          previousSummary = summary; lastLoggedAt = Date.now();
+      let checks;
+      if (withSharedSecurity) {
+        const { runSharedSecurityIntegration } = await import('./shared-security-stack.spec.mjs');
+        checks = await runSharedSecurityIntegration({ ...status, sql, registerSecret: s => secrets.push(s) });
+      } else if (withAttendanceSecurity) {
+        await installAttendanceSecurityFixture(sql);
+        const { runAttendanceAbuseIntegration } = await import('./attendance-abuse-stack.spec.mjs');
+        checks = await runAttendanceAbuseIntegration({ ...status, sql, registerSecret: s => secrets.push(s) });
+      } else {
+        sql(readFileSync(join(repo, 'tests/integration/fabrication-prerequisites.sql'), 'utf8'));
+        for (const path of sourcePaths.filter(p => p.endsWith('.sql'))) sql(readFileSync(join(repo, path), 'utf8'));
+        sql("notify pgrst, 'reload schema';");
+        edge = spawn(executable, ['functions', 'serve', 'fabrication-files', '--env-file', edgeEnv, '--workdir', root, '--network-id', network], common);
+        children.add(edge); edge.once('close', () => children.delete(edge));
+        edge.stdout.on('data', captureEdge);
+        edge.stderr.on('data', captureEdge);
+        edge.on('error', error => { edgeOutput += error.message; });
+        const route = '/functions/v1/fabrication-files';
+        const probeHeaders = { Origin: ORIGIN, apikey: status.anonKey, 'Content-Type': 'application/json' };
+        let lastProbe = null, previousSummary = '', lastLoggedAt = 0, attempts = 0;
+        const deadline = Date.now() + 120_000;
+        while (Date.now() < deadline) {
+          attempts++;
+          if (edge.exitCode !== null) throw Error(`Local function server exited ${edge.exitCode}`);
+          try {
+            lastProbe = await edgeObservation(await localFetch(status.base, route, {
+              method: 'POST', headers: probeHeaders, body: '{}', signal: AbortSignal.timeout(8000),
+            }));
+          } catch (error) { lastProbe = { transport_error: String(error.message).slice(0, 300) }; }
+          const summary = JSON.stringify(lastProbe);
+          if (summary !== previousSummary || Date.now() - lastLoggedAt >= 15_000) {
+            console.log(`Edge readiness attempt ${attempts}: ${clean(summary)}`);
+            previousSummary = summary; lastLoggedAt = Date.now();
+          }
+          if (edgeHandlerReady(lastProbe)) break;
+          await new Promise(resolve => setTimeout(resolve, 500));
         }
-        if (edgeHandlerReady(lastProbe)) break;
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
-      assert(edgeHandlerReady(lastProbe), `Real Edge handler did not become ready: ${JSON.stringify(lastProbe)}`);
-      const preflight = await edgeObservation(await localFetch(status.base, route, {
-        method: 'OPTIONS', headers: { Origin: ORIGIN, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'authorization,apikey,content-type' },
-      }));
-      console.log(`Local gateway preflight: ${clean(JSON.stringify(preflight))}`);
-      assertLocalPreflight(preflight);
-      const deniedOrigin = await edgeObservation(await localFetch(status.base, route, {
-        method: 'POST', headers: { ...probeHeaders, Origin: 'http://127.0.0.1:54340' }, body: '{}',
-      }));
-      assert.equal(deniedOrigin.status, 403, `Unapproved origin was not denied: ${JSON.stringify(deniedOrigin)}`);
-      assert.equal(deniedOrigin.code, 'origin_denied', `Expected application origin enforcement: ${JSON.stringify(deniedOrigin)}`);
-      console.log('PASS real handler readiness, allowed local preflight, and rejected-origin enforcement');
-      const { runFabricationIntegration } = await import('./fabrication-stack.spec.mjs');
-      const checks = await runFabricationIntegration({ ...status, sql, gate, waitFor, registerSecret: s => secrets.push(s) });
-      const { runDesignDecisionIntegration } = await import('./design-decision-stack.spec.mjs');
-      checks.push(...await runDesignDecisionIntegration({ ...status, sql, registerSecret: s => secrets.push(s) }));
-      const { runAttendanceEditingIntegration } = await import('./attendance-editing-stack.spec.mjs');
-      checks.push(...await runAttendanceEditingIntegration({ ...status, sql, registerSecret: s => secrets.push(s) }));
-      if (withAttendanceRequests) {
-        const { runAttendanceRequestsIntegration } = await import('./attendance-requests-stack.spec.mjs');
-        checks.push(...await runAttendanceRequestsIntegration({ ...status, sql, registerSecret: s => secrets.push(s) }));
-      }
-      if (withVolunteerHours) {
-        const { runVolunteerHoursIntegration } = await import('./volunteer-hours-stack.spec.mjs');
-        checks.push(...await runVolunteerHoursIntegration({ ...status, sql, registerSecret: s => secrets.push(s) }));
-      }
-      if (withAttendanceRequests) {
-        // Prior suites retain their historical fixture and RPC contracts.
-        // Active-roster checks establish the production audit-table shape.
-        const { runAttendanceActiveRosterIntegration } = await import('./attendance-active-roster-stack.spec.mjs');
-        checks.push(...await runAttendanceActiveRosterIntegration({ ...status, sql, registerSecret: s => secrets.push(s) }));
-        // Finalization now requires an explicit automatic-strike count.
-        const { runAttendanceAutoStrikesIntegration } = await import('./attendance-auto-strikes-stack.spec.mjs');
-        checks.push(...await runAttendanceAutoStrikesIntegration({ ...status, sql, registerSecret: s => secrets.push(s) }));
-        // Verify Operations Lead eligibility against the current contract.
-        const { runAttendanceOperationsLeadIntegration } = await import('./attendance-operations-lead-stack.spec.mjs');
-        checks.push(...await runAttendanceOperationsLeadIntegration({ ...status, sql, registerSecret: s => secrets.push(s) }));
-        // Last: extend the existing edit RPC with guarded per-occurrence rosters.
-        const { runAttendanceRequiredRosterIntegration } = await import('./attendance-required-roster-stack.spec.mjs');
-        checks.push(...await runAttendanceRequiredRosterIntegration({ ...status, sql, registerSecret: s => secrets.push(s) }));
+        assert(edgeHandlerReady(lastProbe), `Real Edge handler did not become ready: ${JSON.stringify(lastProbe)}`);
+        const preflight = await edgeObservation(await localFetch(status.base, route, {
+          method: 'OPTIONS', headers: { Origin: ORIGIN, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'authorization,apikey,content-type' },
+        }));
+        console.log(`Local gateway preflight: ${clean(JSON.stringify(preflight))}`);
+        assertLocalPreflight(preflight);
+        const deniedOrigin = await edgeObservation(await localFetch(status.base, route, {
+          method: 'POST', headers: { ...probeHeaders, Origin: 'http://127.0.0.1:54340' }, body: '{}',
+        }));
+        assert.equal(deniedOrigin.status, 403, `Unapproved origin was not denied: ${JSON.stringify(deniedOrigin)}`);
+        assert.equal(deniedOrigin.code, 'origin_denied', `Expected application origin enforcement: ${JSON.stringify(deniedOrigin)}`);
+        console.log('PASS real handler readiness, allowed local preflight, and rejected-origin enforcement');
+        const { runFabricationIntegration } = await import('./fabrication-stack.spec.mjs');
+        checks = await runFabricationIntegration({ ...status, sql, gate, waitFor, registerSecret: s => secrets.push(s) });
+        const { runDesignDecisionIntegration } = await import('./design-decision-stack.spec.mjs');
+        checks.push(...await runDesignDecisionIntegration({ ...status, sql, registerSecret: s => secrets.push(s) }));
+        const { runAttendanceEditingIntegration } = await import('./attendance-editing-stack.spec.mjs');
+        checks.push(...await runAttendanceEditingIntegration({ ...status, sql, registerSecret: s => secrets.push(s) }));
+        if (withAttendanceRequests) {
+          const { runAttendanceRequestsIntegration } = await import('./attendance-requests-stack.spec.mjs');
+          checks.push(...await runAttendanceRequestsIntegration({ ...status, sql, registerSecret: s => secrets.push(s) }));
+        }
+        if (withVolunteerHours) {
+          const { runVolunteerHoursIntegration } = await import('./volunteer-hours-stack.spec.mjs');
+          checks.push(...await runVolunteerHoursIntegration({ ...status, sql, registerSecret: s => secrets.push(s) }));
+        }
+        if (withAttendanceRequests) {
+          // Prior suites retain their historical fixture and RPC contracts.
+          // Active-roster checks establish the production audit-table shape.
+          const { runAttendanceActiveRosterIntegration } = await import('./attendance-active-roster-stack.spec.mjs');
+          checks.push(...await runAttendanceActiveRosterIntegration({ ...status, sql, registerSecret: s => secrets.push(s) }));
+          // Finalization now requires an explicit automatic-strike count.
+          const { runAttendanceAutoStrikesIntegration } = await import('./attendance-auto-strikes-stack.spec.mjs');
+          checks.push(...await runAttendanceAutoStrikesIntegration({ ...status, sql, registerSecret: s => secrets.push(s) }));
+          // Verify Operations Lead eligibility against the current contract.
+          const { runAttendanceOperationsLeadIntegration } = await import('./attendance-operations-lead-stack.spec.mjs');
+          checks.push(...await runAttendanceOperationsLeadIntegration({ ...status, sql, registerSecret: s => secrets.push(s) }));
+          // Last: extend the existing edit RPC with guarded per-occurrence rosters.
+          const { runAttendanceRequiredRosterIntegration } = await import('./attendance-required-roster-stack.spec.mjs');
+          checks.push(...await runAttendanceRequiredRosterIntegration({ ...status, sql, registerSecret: s => secrets.push(s) }));
+          // Apply the new result/abuse contract only after historical suites finish.
+          const { runAttendanceAbuseIntegration } = await import('./attendance-abuse-stack.spec.mjs');
+          checks.push(...await runAttendanceAbuseIntegration({ ...status, sql, registerSecret: s => secrets.push(s) }));
+        }
       }
       assert.equal(sql("select pg_get_functiondef('auth.uid()'::regprocedure)"), authFunction, 'Auth function changed');
       const images = JSON.parse(docker(['inspect', `supabase_db_${project}`]))[0].Config.Image;

@@ -35,6 +35,7 @@ import { VolunteerHours } from "./volunteer/VolunteerHours";
 import { MeetingEditor } from "./MeetingEditor";
 import { ParticipantRosterSync } from "./ParticipantRosterSync";
 import { AutomaticAbsencePreview } from "./AutomaticAbsencePreview";
+import { checkInSuccessMessage } from "./checkInResult";
 import { automaticAbsenceStrikePreview, automaticAbsenceFinalizationConfirmation, automaticAbsenceCorrection } from "./automaticAbsenceStrikes";
 const time = (s: string | null) =>
   s
@@ -151,20 +152,21 @@ export function AttendanceHub({
       subscription.subscription.unsubscribe();
     };
   }, []);
-  async function run(work: () => Promise<unknown>, success = "Saved", afterRefresh?: () => void) {
+  async function run(work: () => Promise<unknown>, success: string | ((result: unknown) => string) = "Saved", afterRefresh?: () => void) {
     let workCompleted = false;
     setBusy(true);
     setError("");
     setMessage("");
     const gen = generation.current;
     try {
-      await work();
+      const result = await work();
+      const successMessage = typeof success === "function" ? success(result) : success;
       workCompleted = true;
       if (profile) {
         const d = await loadData(isManager(profile));
         if (gen === generation.current) setData(d);
       }
-      if (gen === generation.current) { setMessage(success); afterRefresh?.(); }
+      if (gen === generation.current) { setMessage(successMessage); afterRefresh?.(); }
     } catch (e) {
       if (gen === generation.current) setError(workCompleted && afterRefresh ? "Meeting saved, but the refreshed view could not be loaded. Your draft is kept. Choose Refresh meeting to verify the saved details." : errorText(e));
     } finally {
@@ -308,7 +310,7 @@ export function AttendanceHub({
     </section>
   );
 }
-type Run = (work: () => Promise<unknown>, success?: string, afterRefresh?: () => void) => Promise<void>;
+type Run = (work: () => Promise<unknown>, success?: string | ((result: unknown) => string), afterRefresh?: () => void) => Promise<void>;
 function AttendanceTimes({a,m,now}:{a:Attendance;m:Meeting;now:number}) {
  const duration=attendanceDuration(a,m,now);
  return <span className="att-times">
@@ -337,7 +339,7 @@ function Student({ data, id, run, presenceOnly=false, selfCheckIn=false, meeting
    <section className="att-presence" aria-label="Your attendance">
     <h4>{a.left_at?'Checked out':checkedIn&&!ended?"You're checked in":ended?'Your attendance':'Check in when you arrive'}</h4>
     <Status attendance={a}/><AttendanceTimes a={a} m={m} now={now}/>
-    {checkInOpen&&!a.checked_in_at&&a.physical_status==='pending'&&<form className="att-inline" onSubmit={e=>{const f=fields(e);void run(()=>rpc('team_attendance_check_in',{meeting_id:m.id,code:meetingCode || text(f,'code')}),'Check-in recorded');}}>
+    {checkInOpen&&!a.checked_in_at&&a.physical_status==='pending'&&<form className="att-inline" onSubmit={e=>{const f=fields(e);void run(()=>rpc('team_attendance_check_in',{meeting_id:m.id,code:meetingCode || text(f,'code')}),checkInSuccessMessage);}}>
      <label hidden={!!meetingCode}>6-digit meeting code<input name="code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} minLength={6} autoComplete="off" required={!meetingCode}/></label><button>{selfCheckIn?"Check myself in":"Check in"}</button>
     </form>}
     {!ended&&!checkedIn&&!a.left_at&&!checkInOpen&&<p className="att-muted">{now<Date.parse(m.starts_at)-1800000?`Leadership can open check-in from ${time(new Date(Date.parse(m.starts_at)-1800000).toISOString())}.`:'Check-in is not open. Ask leadership for a current code.'}</p>}

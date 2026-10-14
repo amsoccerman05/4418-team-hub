@@ -1,0 +1,44 @@
+[
+  {
+    "file": "tests/fixtures/shared-security/inventory-001_initial_schema.sql",
+    "repository": "https://github.com/amsoccerman05/4418-inventory.git",
+    "commit": "677c92f76fd9c84ea330447fdb4d1f8e55147ae1",
+    "source_path": "supabase/migrations/001_initial_schema.sql",
+    "sha256": "eded89d2b9b595c0735e3d41338d9f3fdbc742dd4c66c96684821dc7be4af420"
+  },
+  {
+    "file": "tests/fixtures/shared-security/inventory-002_rls_policies.sql",
+    "repository": "https://github.com/amsoccerman05/4418-inventory.git",
+    "commit": "677c92f76fd9c84ea330447fdb4d1f8e55147ae1",
+    "source_path": "supabase/migrations/002_rls_policies.sql",
+    "sha256": "7ec4685f599eac39478b6bda3c8163bd225bb9140852d49b6ddb26415299eed1"
+  },
+  {
+    "file": "tests/fixtures/shared-security/inventory-003_operations_and_seed.sql",
+    "repository": "https://github.com/amsoccerman05/4418-inventory.git",
+    "commit": "677c92f76fd9c84ea330447fdb4d1f8e55147ae1",
+    "source_path": "supabase/migrations/003_operations_and_seed.sql",
+    "sha256": "a3eba8cb72601b0a810f223de4935f0bc7bc54569e4c10fdee4fd5b4fde0f840"
+  },
+  {
+    "file": "tests/fixtures/shared-security/inventory-004_balances_travel_media.sql",
+    "repository": "https://github.com/amsoccerman05/4418-inventory.git",
+    "commit": "677c92f76fd9c84ea330447fdb4d1f8e55147ae1",
+    "source_path": "supabase/migrations/004_balances_travel_media.sql",
+    "sha256": "6322e268f6b8541498b0e136a05ba683941efd5d8153dbdd334ad407ee86079d"
+  },
+  {
+    "file": "tests/fixtures/shared-security/inventory-005_private_inventory_media.sql",
+    "repository": "https://github.com/amsoccerman05/4418-inventory.git",
+    "commit": "677c92f76fd9c84ea330447fdb4d1f8e55147ae1",
+    "source_path": "supabase/migrations/005_private_inventory_media.sql",
+    "sha256": "59712705b213941151220e92aeaff001ccc5bf4fedf6f14a5b227a6f7d5d4ead"
+  },
+  {
+    "file": "tests/fixtures/shared-security/pit-202609090001_pit_operations.sql",
+    "repository": "https://github.com/amsoccerman05/4418-pit-app.git",
+    "commit": "74f8d2ef46b2cc1cdc09eca72955bbb806351ab6",
+    "source_path": "supabase/migrations/202609090001_pit_operations.sql",
+    "sha256": "8529d5f24b7ed59399878854481665140f95866782066e9b2f7253753fefd92b"
+  }
+]

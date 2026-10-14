@@ -1,4 +1,4 @@
-name: Check own attendance requests
+name: Check attendance requests and API security
 on:
   pull_request:
     paths:
@@ -7,6 +7,9 @@ on:
       - "tests/attendance-*.spec.ts"
       - "tests/fixtures/attendance-production-functions.sql"
       - "tests/integration/**"
+      - "tests/native/attendance-abuse-concurrency.mjs"
+      - "tests/fixtures/shared-security/**"
+      - "tests/fixtures/finance_v1.sql"
       - ".github/workflows/attendance-requests-check.yml"
       - "package*.json"
   workflow_dispatch:
@@ -40,6 +43,11 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Verify Attendance abuse and lock contention in native PostgreSQL
+        run: |
+          PG_BIN="$(find /usr/lib/postgresql -path '*/bin/postgres' -type f -printf '%h\n' | sort -V | tail -1)"
+          test -n "$PG_BIN" || { echo 'No installed PostgreSQL server binary found'; exit 1; }
+          ATTENDANCE_ABUSE_PG_BIN="$PG_BIN" node tests/native/attendance-abuse-concurrency.mjs
       - run: npx playwright install --with-deps chromium
       - run: npm run build
       - name: Verify Attendance browser, model, and database regressions
