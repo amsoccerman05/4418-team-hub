@@ -294,7 +294,7 @@ export function VolunteerHours({
       </div>
       <p className="att-muted">
         This volunteer clock runs independently of meeting times and student
-        check-in codes. It does not change attendance or strikes.
+        check-in codes. It does not change attendance or attendance notices.
       </p>
       {error && (
         <p className="att-error" role="alert">

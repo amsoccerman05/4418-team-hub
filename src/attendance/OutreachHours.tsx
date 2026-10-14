@@ -10,7 +10,7 @@ export function OutreachHours(){
  useEffect(()=>{void load();return()=>{generation.current++;};},[]);
  async function save(e:FormEvent<HTMLFormElement>){e.preventDefault();if(!report||busy)return;const f=new FormData(e.currentTarget);setBusy(true);setError('');try{await rpc('team_attendance_outreach_goal',{p:{version:report.goal.version,target_hours:f.get('target')}});await load();}catch(e){setError(e instanceof Error?e.message:'Goal could not be saved');setBusy(false);}}
  return <section><div className="att-toolbar"><h2>STEM outreach hours</h2><button className="att-secondary" disabled={busy} onClick={()=>void load()}>Refresh hours</button></div>
- <p>Check in with the event code and check out when you leave. STEM outreach is optional and never receives attendance strikes.</p>
+ <p>Check in with the event code and check out when you leave. STEM outreach is optional and never receives attendance notices.</p>
  <p className="att-muted">The requirement is {report?.goal.target_hours??10} hours each May 1–April 30 year, using America/Denver time. Previous years’ records are kept. Only recorded arrival and departure times count; overlapping events count once. Other lettering requirements and mentor approval still apply.</p>
  {error&&<p className="att-error" role="alert">{error}</p>}
  {!report&&!error&&<p>Loading outreach hours…</p>}

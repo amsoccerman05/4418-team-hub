@@ -78,7 +78,7 @@ function Stats({ data, id }: { data: Data; id: string }) {
         <strong>{s.late}</strong> Late · {s.early} left early
       </span>
       <span>
-        <strong>{s.strikes}</strong> Active strikes{" "}
+        <strong>{s.strikes}</strong> Active attendance notices{" "}
         <small>{strikeAction(s.strikes)}</small>
       </span>
     </div>
@@ -272,7 +272,7 @@ export function AttendanceHub({
                               ).length
                             }
                           </strong>{" "}
-                          Students requiring strike action
+                          Students requiring attendance notice action
                         </span>
                       </div>
                     ) : (
@@ -285,7 +285,7 @@ export function AttendanceHub({
                           Review attendance requests →
                         </a>
                         <a href="#attendance/strikes">
-                          Review strike actions →
+                          Review attendance notice actions →
                         </a>
                       </div>
                     )}
@@ -329,7 +329,7 @@ function Student({ data, id, run, presenceOnly=false, selfCheckIn=false, meeting
  return <>
  {!data.meetings.length&&<p className="att-panel">No meetings yet. Your scheduled meetings will appear here.</p>}
  {data.meetings.map(m=>{
-  const a=data.attendance.find(a=>a.meeting_id===m.id&&a.student_id===id);if(!a)return m.meeting_type==='stem_outreach'?<article className="att-panel" key={m.id}><MeetingHeader meeting={m} now={now}/><p>Ask leadership to sync your event roster before checking in. STEM outreach is optional and has no attendance strikes.</p></article>:null;
+  const a=data.attendance.find(a=>a.meeting_id===m.id&&a.student_id===id);if(!a)return m.meeting_type==='stem_outreach'?<article className="att-panel" key={m.id}><MeetingHeader meeting={m} now={now}/><p>Ask leadership to sync your event roster before checking in. STEM outreach is optional and has no attendance notices.</p></article>:null;
   const required=data.snapshots.find(s=>s.meeting_id===m.id&&s.student_id===id)?.required;
   const ended=now>=Date.parse(m.ends_at)||m.status==='finalized';
   const checkedIn=!!a.checked_in_at&&!a.left_at&&['present','late'].includes(a.physical_status);
@@ -351,7 +351,7 @@ function Student({ data, id, run, presenceOnly=false, selfCheckIn=false, meeting
    {!presenceOnly&&<>
    {a.notice_at&&<section className="att-request-summary"><h4>{a.notice_type==='late'?'Late arrival':a.notice_type==='early'?'Early departure':'Absence'} requested · {a.review_status==='pending'?'Pending':label(a.review_status)}</h4><p>{noticeTiming(a,m)} · Submitted {Math.abs((Date.parse(m.starts_at)-Date.parse(a.notice_at))/3600000).toFixed(1)} hours {Date.parse(a.notice_at)<=Date.parse(m.starts_at)?'before the meeting':'after start'}</p>{a.expected_at&&<p>Expected {a.notice_type==='early'?'departure':'arrival'}: {time(a.expected_at)}</p>}<p className="att-request-reason">{a.notice_reason}</p>{a.review_reason&&<p>Leadership review: {a.review_reason}</p>}</section>}
    {m.meeting_type!=='stem_outreach'&&<NoticeForm key={`${a.id}-${a.version}`} a={a} meeting={m} run={run}/>}
-   <details className="att-meeting-tools"><summary>{m.meeting_type==='stem_outreach'?'History':'History & strikes'}</summary>{m.meeting_type!=='stem_outreach'&&<StrikeList data={data} attendance={a}/>}<button className="att-secondary" onClick={()=>void run(async()=>setHistory((await loadHistory(m.id,id)).filter(h=>h.student_id===id)),'History loaded')}>View my history · {m.title}</button></details></>}
+   <details className="att-meeting-tools"><summary>{m.meeting_type==='stem_outreach'?'History':'History & attendance notices'}</summary>{m.meeting_type!=='stem_outreach'&&<StrikeList data={data} attendance={a}/>}<button className="att-secondary" onClick={()=>void run(async()=>setHistory((await loadHistory(m.id,id)).filter(h=>h.student_id===id)),'History loaded')}>View my history · {m.title}</button></details></>}
   </article>;
  })}{history&&<HistoryList members={data.members} history={history}/>}</>;
 }
@@ -393,7 +393,7 @@ function Management({data,run,selected,selfId,busy}:{data:Data;run:Run;selected:
  const {ended,complete,canOpen,open,canClose}=checkInControls(m,now);
  const absencePreview=automaticAbsenceStrikePreview(data,m);
  const finalize=()=>{
-  if(busy||finalizing.current||!window.confirm((m.meeting_type==='stem_outreach'?'Complete STEM outreach attendance? No attendance strikes will be assigned.':automaticAbsenceFinalizationConfirmation(absencePreview.additions.length,absencePreview.pendingRequests.length))+checkoutCompletionWarning(records)))return;
+  if(busy||finalizing.current||!window.confirm((m.meeting_type==='stem_outreach'?'Complete STEM outreach attendance? No attendance notices will be assigned.':automaticAbsenceFinalizationConfirmation(absencePreview.additions.length,absencePreview.pendingRequests.length))+checkoutCompletionWarning(records)))return;
   finalizing.current=true;
   void run(()=>manage('finalize',{meeting_id:m.id,version:m.version,
    automatic_absence_strike_count:absencePreview.additions.length,
@@ -739,7 +739,7 @@ function MeetingForm({
               <option value="offseason">Offseason</option>
               <option value="preseason">Preseason</option>
               <option value="other">Other</option>
-              <option value="stem_outreach">STEM outreach · optional, no strikes</option>
+              <option value="stem_outreach">STEM outreach · optional, no attendance notices</option>
             </select>
           </label>
 
@@ -748,7 +748,7 @@ function MeetingForm({
       <p className="att-muted">
         Times use your local time zone. The student list is saved when you create the meeting.
       </p>
-      {type==='stem_outreach'&&<p>Visible on everyone’s Attendance calendar. Check-in and checkout track outreach hours. No required-attendance penalty or strikes.</p>}
+      {type==='stem_outreach'&&<p>Visible on everyone’s Attendance calendar. Check-in and checkout track outreach hours. No required-attendance penalty or attendance notices.</p>}
       <button>Create meeting</button>
     </form>
   );
@@ -761,9 +761,9 @@ function RequestReview({a,meeting,data,run}:{a:Attendance;meeting:Meeting;data:D
   if(!decision || !["excused","denied"].includes(decision.value))return;
   const explanation=String(new FormData(form).get("explanation")||"").trim();
   void run(()=>manage("attendance",{meeting_id:meeting.id,attendance_id:a.id,version:a.version,review_status:decision.value,left_at:a.left_at,explanation}),"Request reviewed");
- }}><p>Check the excused reasons in Attendance Policy. Family events need parent confirmation; extracurricular activities need school confirmation. Educational needs require Mentor discretion. Mental health days follow the policy’s honor system.</p>
- {denial.additions>0&&<p className="att-attention">Denying this request will assign 1 automatic Unexcused Absence strike for this completed meeting.</p>}
- {excuse.rescissions>0&&<p className="att-attention">Excusing this request will rescind {excuse.rescissions} automatic absence {excuse.rescissions===1?'strike':'strikes'}.</p>}
+ }}><p>Check the excused reasons in Attendance Policy. Family events and school-sponsored activities may require confirmation when appropriate. Educational needs require mentor review and communication. Mental health days follow the policy’s honor system; private medical information and detailed explanations are not required for consideration.</p>
+ {denial.additions>0&&<p className="att-attention">Denying this request will assign 1 automatic Unexcused Absence attendance notice for this completed meeting.</p>}
+ {excuse.rescissions>0&&<p className="att-attention">Excusing this request will rescind {excuse.rescissions} automatic absence {excuse.rescissions===1?'attendance notice':'attendance notices'}.</p>}
  <label>Review reason<textarea name="explanation" required maxLength={2000} rows={2} placeholder="Briefly explain the decision"/></label><div className="att-toolbar"><button value="excused">Excuse</button><button className="att-secondary" value="denied">Deny</button></div></form>;
 }
 function AttendanceEditor({
@@ -839,7 +839,7 @@ function AttendanceEditor({
             }
           }}
         >
-          Add / review strikes
+          Add / review attendance notices
         </button>}
       </div>
       {m.meeting_type!=='stem_outreach'&&(data.policy?.can_manage_meetings||canReview(data,a))&&<details data-review>
@@ -907,14 +907,14 @@ function AttendanceEditor({
             Review / correction explanation
             <textarea name="explanation" maxLength={2000} required />
           </label>
-          {automaticChange.additions>0&&<p className="att-attention">Saving this correction will assign 1 automatic Unexcused Absence strike.</p>}
-          {automaticChange.rescissions>0&&<p className="att-attention">Saving this correction will rescind {automaticChange.rescissions} automatic absence {automaticChange.rescissions===1?'strike':'strikes'}.</p>}
+          {automaticChange.additions>0&&<p className="att-attention">Saving this correction will assign 1 automatic Unexcused Absence attendance notice.</p>}
+          {automaticChange.rescissions>0&&<p className="att-attention">Saving this correction will rescind {automaticChange.rescissions} automatic absence {automaticChange.rescissions===1?'attendance notice':'attendance notices'}.</p>}
           <button>Save attendance review</button>
         </form>
       </details>}
       <StrikeList data={data} attendance={a} run={run} />
       {m.meeting_type!=='stem_outreach'&&canReview(data)&&<details data-strike>
-        <summary>Assign strike</summary>
+        <summary>Assign attendance notice</summary>
         <form
           className="att-form"
           onSubmit={(e) => {
@@ -929,7 +929,7 @@ function AttendanceEditor({
                 explanation: text(f, "explanation"),
               });
               form.reset();
-            }, "Strike assigned");
+            }, "Attendance notice assigned");
           }}
         >
           <div className="att-grid">
@@ -963,7 +963,7 @@ function AttendanceEditor({
             Explanation
             <textarea name="explanation" maxLength={2000} required />
           </label>
-          <button>Assign strike</button>
+          <button>Assign attendance notice</button>
         </form>
       </details>}
     </article>
@@ -1015,7 +1015,7 @@ function StrikeList({
                         strike_id: s.id,
                         explanation: text(f, "reason"),
                       }),
-                    "Strike rescinded",
+                    "Attendance notice rescinded",
                   );
                 }}
               >
@@ -1023,7 +1023,7 @@ function StrikeList({
                   Rescind / correction reason
                   <input name="reason" maxLength={2000} required />
                 </label>
-                <button className="att-secondary">Rescind strike</button>
+                <button className="att-secondary">Rescind attendance notice</button>
               </form>
             )}
           </div>
@@ -1036,15 +1036,15 @@ function HistoryList({ history, members }: { history: History[]; members: Data["
     <section className="att-panel">
       <h3>Audit history</h3>
       <p>
-        Latest 100 entries. Corrections preserve earlier values. To correct a
-        strike, rescind it with a reason and assign a replacement.
+        Latest 100 entries. Corrections preserve earlier values. To correct an
+        attendance notice, rescind it with a reason and assign a replacement.
       </p>
       {!history.length && <p>No history yet.</p>}
       {history.map((h) => (
         <details key={h.id}>
           <summary>
             {time(h.performed_at)} ·{" "}
-            {h.entity.replace("team_", "").replaceAll("_", " ")} · {h.action}
+            {h.entity === "team_attendance_strikes" ? "Attendance notices" : h.entity.replace("team_", "").replaceAll("_", " ")} · {h.action === "WARNING_PARENT_CONTACT" ? "Member discussion / parent contact" : h.action}
           </summary>
           <p>Changed by {members.find(m=>m.student_id===h.performed_by)?.display_name || "Name unavailable"}</p>
           <pre>
@@ -1216,7 +1216,7 @@ function Workspace({
             href={`#attendance/${name}`}
             aria-current={current === name ? "page" : undefined}
           >
-            {name === "stem-outreach" ? "STEM outreach hours" : name === "my-requests" ? "My Requests" : name === "volunteer-hours" ? "Volunteer hours" : name === "how-to" ? "How to use Attendance" : name === "notices" ? (manager ? "Absence & Schedule Requests" : "My Requests") : label(name)}
+            {name === "stem-outreach" ? "STEM outreach hours" : name === "my-requests" ? "My Requests" : name === "volunteer-hours" ? "Volunteer hours" : name === "how-to" ? "How to use Attendance" : name === "strikes" ? "Attendance Notices" : name === "notices" ? (manager ? "Absence & Schedule Requests" : "My Requests") : label(name)}
             {["notices", "my-requests"].includes(name) && (
               <span>
                 {
@@ -1382,7 +1382,7 @@ function Workspace({
                       {a.review_reason && <p>{a.review_reason}</p>}
                       {!personalRequests && manager && (
                         <details>
-                          <summary>Advanced attendance &amp; strikes</summary>
+                          <summary>Attendance corrections &amp; notices</summary>
                           <AttendanceEditor
                             key={`${a.id}-${a.version}`}
                             a={a}
@@ -1408,7 +1408,7 @@ function Workspace({
         <>
           <h2>Attendance history</h2>
           <p className="att-muted">
-            Select a meeting to see its attendance and strike changes.
+            Select a meeting to see its attendance and attendance notice changes.
           </p>
           <label className="att-select">
             History meeting
@@ -1626,7 +1626,7 @@ function NoticeForm({
           />
         </label>
         <p className="att-muted">
-          A lead coach or Program Manager reviews excuses; you cannot approve your own. Give 24 hours’ notice when possible. Shorter notice requires review against an excused reason and is not automatically denied. This does not check you in or out. Updates record a new submission time.
+          A lead coach or Program Manager reviews excuses; you cannot approve your own. Report planned absences at least 24 hours ahead. For late arrivals or early departures, give at least 24 hours’ notice whenever possible. Shorter notice requires an approved exception to avoid an attendance notice and is not automatically denied. This does not check you in or out. Updates record a new submission time.
         </p>
         <button>Report an attendance issue</button>
       </form>
