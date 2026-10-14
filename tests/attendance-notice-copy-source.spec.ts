@@ -46,6 +46,9 @@ function definition(sql:string,name:string){
 }
 const normalizedHeader=(s:string)=>s.toLowerCase()
  .replace(/create\s+(?:or\s+replace\s+)?function/,'create or replace function')
+ // pg_get_functiondef omits SECURITY INVOKER because it is the default.
+ // SECURITY DEFINER is never removed and must still match exactly.
+ .replace(/\bsecurity\s+invoker\b/,'')
  .replace(/set\s+search_path\s+(?:to\s+)?/,'set search_path=')
  .replace(/\s+/g,'').replace(/search_path==/,'search_path=');
 
