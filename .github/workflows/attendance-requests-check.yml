@@ -48,6 +48,7 @@ jobs:
           PG_BIN="$(find /usr/lib/postgresql -path '*/bin/postgres' -type f -printf '%h\n' | sort -V | tail -1)"
           test -n "$PG_BIN" || { echo 'No installed PostgreSQL server binary found'; exit 1; }
           ATTENDANCE_ABUSE_PG_BIN="$PG_BIN" node tests/native/attendance-abuse-concurrency.mjs
+          ATTENDANCE_ABUSE_PG_BIN="$PG_BIN" node tests/native/attendance-checkout-concurrency.mjs
       - run: npx playwright install --with-deps chromium
       - run: npm run build
       - name: Verify Attendance browser, model, and database regressions

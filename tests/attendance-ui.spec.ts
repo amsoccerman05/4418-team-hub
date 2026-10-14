@@ -191,8 +191,13 @@ async function mock(page: Page, role = "student", options: { active?: boolean; c
       } else if (path.endsWith("/team_attendance_check_out")) {
         calls.push(body);
         const attendance = ownAttendance(body.meeting_id);
-        attendance.left_at = "2026-09-10T17:10:00Z";
-        attendance.physical_status = "left_early";
+        const stamp = await page.evaluate(()=>Date.now());
+        const meeting = data.meetings.find(m=>m.id===body.meeting_id)!;
+        if (!attendance.left_at) {
+          if (stamp>=Date.parse(meeting.ends_at)+30*60_000 || !attendance.checked_in_at) throw new Error("Check-out unavailable");
+          attendance.left_at = new Date(stamp).toISOString();
+          if (stamp<Date.parse(meeting.ends_at)) attendance.physical_status = "left_early";
+        }
         attendance.version++;
         result = { message: "Check-out recorded" };
       } else if (path.endsWith("/team_attendance_request")) {
@@ -863,7 +868,7 @@ for(const width of [390,1440])test(`V3 arrival, live time and missing departure 
  await expect(dialog.getByText("You're checked in",{exact:true})).toBeVisible();await expect(dialog.getByText('Here for 7 min',{exact:true})).toBeVisible();await expect(dialog.getByRole('button',{name:'Check out',exact:true})).toBeVisible();
  await page.clock.setFixedTime(new Date('2026-09-10T18:03:00Z'));await expect(dialog.getByText('Here for 1h 0m',{exact:true})).toBeVisible();
  await dialog.screenshot({path:`test-results/v3-checked-in-${width}.png`});
- await page.clock.setFixedTime(new Date('2026-09-10T19:01:00Z'));await expect(dialog.getByText('Meeting ended',{exact:true})).toBeVisible();await expect(dialog.getByRole('button',{name:'Check out',exact:true})).toHaveCount(0);await expect(dialog.getByText('Departure not recorded · duration unavailable')).toBeVisible();expect(data.attendance[0].left_at).toBeNull();await expect(dialog.getByText(/Here for/)).toHaveCount(0);
+ await page.clock.setFixedTime(new Date('2026-09-10T19:01:00Z'));await expect(dialog.getByText('Meeting ended',{exact:true})).toBeVisible();await expect(dialog.getByRole('button',{name:'Check out',exact:true})).toBeVisible();await expect(dialog.getByText('Departure not recorded · duration unavailable')).toBeVisible();expect(data.attendance[0].left_at).toBeNull();await expect(dialog.getByText(/Here for/)).toHaveCount(0);
  await expect(dialog.getByRole('button',{name:'Complete attendance',exact:true})).toHaveCount(0);expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);expect(errors).toEqual([]);
 });
 for(const width of [390,1440])test(`V3 compact roster attention and completion ${width}`,async({page})=>{
@@ -1995,4 +2000,28 @@ for (const evidence of ["request", "check-in", "strike"] as const) test(`require
   await expect(page.getByRole("form", { name: "Edit meeting" })).toHaveCount(0);
   expect(calls).toHaveLength(1);
   expect(calls[0].p).toMatchObject({ version: 1, required_student_ids: [student, rosterBlair], expected_required_student_ids: [student] });
+});
+
+for(const width of [390,1440])test(`checkout grace after attendance completion ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});const {data,calls}=await mock(page);
+ data.attendance[0].checked_in_at='2026-09-10T17:00:00Z';data.attendance[0].physical_status='late';
+ data.meetings[0].status='finalized';data.meetings[0].check_in_open=false;
+ await page.clock.setFixedTime(new Date('2026-09-10T19:05:00Z'));await page.goto('/#attendance/calendar');
+ const current=page.getByRole('region',{name:'Your current attendance'});
+ await expect(current.getByRole('button',{name:'Check out',exact:true})).toBeVisible();
+ await expect(current).toContainText('including after attendance is completed');
+ page.once('dialog',d=>d.dismiss());await current.getByRole('button',{name:'Check out',exact:true}).click();expect(calls).toHaveLength(0);
+ page.once('dialog',d=>d.accept());await current.getByRole('button',{name:'Check out',exact:true}).click();
+ await expect(current).toContainText('Duration: 2h 5m');await expect(current).toContainText('Checked out');
+ expect(data.attendance[0].physical_status).toBe('late');expect(data.strikes).toHaveLength(0);
+ await expect(current.getByRole('button',{name:'Check out',exact:true})).toHaveCount(0);
+ await page.reload();await expect(page.getByRole('button',{name:'Check out',exact:true})).toHaveCount(0);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.screenshot({path:`test-results/checkout-grace-${width}.png`});
+});
+test('completion warning identifies outstanding departures and cancel makes no change',async({page})=>{
+ const {data,calls}=await mock(page,'mentor');data.attendance[0].checked_in_at='2026-09-10T17:00:00Z';data.attendance[0].physical_status='present';data.meetings[0].status='closed';
+ await page.clock.setFixedTime(new Date('2026-09-10T19:05:00Z'));await page.goto('/#attendance/calendar');await page.getByRole('button',{name:/Preseason build/}).click();
+ page.once('dialog',async d=>{expect(d.message()).toContain('1 checked-in member has no recorded departure');expect(d.message()).toContain('30 minutes');await d.dismiss();});
+ await page.getByRole('button',{name:'Complete attendance',exact:true}).click();expect(calls).toHaveLength(0);expect(data.meetings[0].status).toBe('closed');
 });
