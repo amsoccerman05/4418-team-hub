@@ -40,4 +40,16 @@ export function InviteForm({areas,invite,studentOnly=false,existingEmails=[],nee
  </form>
  </Frame>;
 }
-export function StateForm({member,...p}:Props&{member:{id:string;display_name:string;active:boolean;updated_at:string}}){const title=member.active?'Deactivate member':'Reactivate member';return <Frame {...p} title={title}><p>{member.display_name}: {member.active?'Access will be disabled.':'Access will be restored.'} Existing records and attribution are preserved.</p><form onSubmit={async e=>{e.preventDefault();if(await p.save('member_state',{...fields(e.currentTarget),user_id:member.id,expected_updated_at:member.updated_at,active:!member.active}))p.close();}}><fieldset disabled={p.busy}><label>Reason for access change<input name="reason" required maxLength={2000}/></label><button className="primary">Confirm {member.active?'deactivation':'reactivation'}</button></fieldset></form></Frame>;}
+export function StateForm({member,...p}:Props&{member:{id:string;display_name:string;email?:string;active:boolean;updated_at:string}}){
+ const title=member.active?'Deactivate member':'Reactivate member';
+ const [acknowledged,setAcknowledged]=useState(false),[reason,setReason]=useState('');
+ const submitting=useRef(false);
+ return <Frame {...p} title={title}>
+ <div className="team-access-identity"><strong>{member.display_name||'Unnamed member'}</strong>{member.email&&<span>{member.email}</span>}<small>Account ID: {member.id}</small></div>
+ <p>{member.active?'Access will be disabled. This account can be reactivated later.':'Access will be restored, including access from retained roles and positions.'} Existing records and attribution are preserved.</p>
+ {member.active&&<p>This does not delete the sign-in account, revoke invitation links, or erase personal information.</p>}
+ <form onSubmit={async e=>{e.preventDefault();if(p.busy||submitting.current||!acknowledged||!reason.trim())return;submitting.current=true;try{if(await p.save('member_state',{reason:reason.trim(),user_id:member.id,expected_updated_at:member.updated_at,active:!member.active}))p.close();}finally{submitting.current=false;}}}>
+ <fieldset disabled={p.busy}><label>Reason for access change<input name="reason" value={reason} onChange={e=>setReason(e.target.value)} required maxLength={2000}/></label>
+ <label className="team-access-confirm"><input type="checkbox" checked={acknowledged} onChange={e=>setAcknowledged(e.target.checked)}/><span>{member.active?'I understand that access will stop and existing records will be kept.':'I understand that access from retained roles and positions will be restored.'}</span></label>
+ <div className="team-access-actions"><button className="primary" disabled={!acknowledged||!reason.trim()}>{p.busy?'Saving…':`Confirm ${member.active?'deactivation':'reactivation'}`}</button><button type="button" onClick={p.close}>Cancel</button></div></fieldset></form></Frame>;
+}
