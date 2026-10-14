@@ -170,3 +170,17 @@ test('worker can read only its required profile columns',async()=>{
  await expect(db.query('select display_name from profiles')).rejects.toThrow(/permission denied/);
  await db.exec('reset role;');
 });
+
+test('dedicated account state action rechecks authority and stale versions without changing roles or history',async()=>{
+ await db.exec(`reset role;insert into profiles(id,display_name,role,active) values('${id(90)}','Lifecycle manager','mentor',true),('${id(91)}','Lifecycle target','student',true);`);
+ await as(90);const before=await member(91);const historyBefore=(await db.query<any>('select team_management_context_v2() c')).rows[0].c.history.length;
+ const p={user_id:id(91),expected_updated_at:before.updated_at,active:false,reason:'Departed member'};
+ await expect(v2('member_state',{...p,expected_updated_at:'2000-01-01T00:00:00Z'})).rejects.toThrow(/Member changed/);
+ await expect(v2('member_state',{...p,reason:'   '})).rejects.toThrow(/Explain the change/);
+ expect(await member(91)).toEqual(before);expect((await db.query<any>('select team_management_context_v2() c')).rows[0].c.history.length).toBe(historyBefore);
+ await db.exec(`reset role;update profiles set active=false where id='${id(90)}';`);await as(90);await expect(v2('member_state',p)).rejects.toThrow(/mentor or admin/);
+ await db.exec(`reset role;update profiles set active=true,role='lead' where id='${id(90)}';`);await as(90);await expect(v2('member_state',p)).rejects.toThrow(/mentor or admin/);
+ await db.exec(`reset role;update profiles set role='mentor' where id='${id(90)}';`);await as(90);await v2('member_state',p);const after=await member(91);expect(after.active).toBe(false);expect(after.role).toBe(before.role);expect(after.id).toBe(before.id);expect(after.display_name).toBe(before.display_name);
+ await expect(v2('member_state',p)).rejects.toThrow(/Member changed/);
+ const history=(await db.query<any>('select team_management_context_v2() c')).rows[0].c.history;expect(history.filter((h:any)=>h.user_id===id(91))).toHaveLength(1);expect(history.find((h:any)=>h.user_id===id(91))).toMatchObject({actor_id:id(90),action:'member_deactivated',reason:'Departed member'});
+});

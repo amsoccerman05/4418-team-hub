@@ -96,3 +96,10 @@
 @media(max-width:640px){
  .team-management .team-tabs{grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}
 }
+
+.team-account-access { margin-block: 1.25rem; padding: 1rem; border: 1px solid var(--border, #cad7cc); border-radius: .75rem; background: var(--surface-alt, #f6f8f6); }
+.team-account-access h3 { margin-top: 0; }
+.team-access-identity { display: grid; gap: .3rem; overflow-wrap: anywhere; }
+.team-access-confirm { display: flex !important; align-items: flex-start; gap: .6rem; margin-block: 1rem; }
+.team-access-confirm input { width: auto !important; flex: 0 0 auto; margin-top: .2rem; }
+.team-access-actions { display: flex; flex-wrap: wrap; gap: .6rem; }
