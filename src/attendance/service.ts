@@ -1,4 +1,5 @@
 import { createSuiteClient } from "../suite-auth";
+import { checkInResult } from "./checkInResult";
 const url = import.meta.env?.VITE_SUPABASE_URL;
 const key = import.meta.env?.VITE_SUPABASE_ANON_KEY;
 export const supabase =
@@ -111,6 +112,7 @@ export async function rpc(action: string, args: Record<string, unknown>) {
   if (!supabase) throw new Error("Attendance is not configured.");
   const { data, error } = await supabase.rpc(action, args);
   if (error) throw error;
+  if (action === "team_attendance_check_in") return checkInResult(data);
   if (data?.error) throw new Error(data.error);
   return data;
 }

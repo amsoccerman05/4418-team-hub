@@ -1015,6 +1015,46 @@ for(const width of [390,1440])test(`Attendance pending check-in feedback and rec
  expect(calls).toEqual([{meeting_id:'m1',code:'000000'},{meeting_id:'m1',code:'123456'}]);await dialog.getByRole('button',{name:'Close',exact:true}).click();await expect(dialog).toHaveCount(0);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
 
+for (const width of [390, 1440]) {
+  test(`Attendance duplicate check-in reports no new check-in ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const { data } = await mock(page);
+    await page.route('**/rest/v1/rpc/team_attendance_check_in', async route => {
+      // Another tab already checked in while this tab still showed the form.
+      data.attendance[0].physical_status = 'present';
+      data.attendance[0].checked_in_at = '2026-09-10T17:03:00Z';
+      await route.fulfill({ json: { status: 'already_recorded', message: 'Attendance already recorded' } });
+    });
+    await page.goto('/#attendance/calendar');
+    await page.getByRole('button', { name: /Preseason build/ }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('6-digit meeting code').fill('000000');
+    await dialog.getByRole('button', { name: 'Check in', exact: true }).click();
+    await expect(dialog.getByText('Attendance already recorded. No new check-in was made.', { exact: true })).toBeVisible();
+    await expect(dialog.getByText('Check-in recorded', { exact: true })).toHaveCount(0);
+    await expect(dialog.getByRole('button', { name: 'Check in', exact: true })).toHaveCount(0);
+  });
+
+  test(`Attendance lockout explains retry and preserves the six-digit form ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await mock(page);
+    await page.route('**/rest/v1/rpc/team_attendance_check_in', route => route.fulfill({ json: {
+      status: 'rate_limited', error: 'Too many attempts. Try again in 15 minutes or contact leadership.', retry_at: '2026-09-10T17:25:00Z',
+    } }));
+    await page.goto('/#attendance/calendar');
+    await page.getByRole('button', { name: /Preseason build/ }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('6-digit meeting code').fill('000000');
+    await dialog.getByRole('button', { name: 'Check in', exact: true }).click();
+    await expect(dialog.getByRole('alert')).toContainText('Too many attempts. Try again at');
+    await expect(dialog.getByRole('alert')).toContainText('or contact leadership.');
+    await expect(dialog.getByLabel('6-digit meeting code')).toHaveValue('000000');
+    await expect(dialog.getByRole('button', { name: 'Check in', exact: true })).toBeEnabled();
+    await expect(dialog.getByText('Check-in recorded', { exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
+}
+
 for(const width of [390,1440]) {
  test(`upcoming meeting editing and student how-to ${width}`,async({page})=>{
   await page.setViewportSize({width,height:900});
