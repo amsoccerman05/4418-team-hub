@@ -387,14 +387,14 @@ for (const width of [390, 1440]) {
     await expect(
       page.locator(".att-badge").filter({ hasText: /^Excused$/ }),
     ).toBeVisible();
-    await page.getByText("Assign strike", { exact: true }).first().click();
+    await page.getByText("Assign attendance notice", { exact: true }).first().click();
     await page.getByLabel("Category").selectOption("Insufficient Notice");
     await page.getByLabel("Quantity").fill("2");
     await page
       .getByLabel("Explanation", { exact: true })
       .fill("Notice reviewed separately");
     await page
-      .getByRole("button", { name: "Assign strike", exact: true })
+      .getByRole("button", { name: "Assign attendance notice", exact: true })
       .click();
     await expect(
       page.getByText("+2 · Insufficient Notice", { exact: true }),
@@ -454,8 +454,8 @@ test("percentages exclude excuses/not-required, count late/early, and derive act
     { id: "s3", student_id: student, quantity: 10, rescinded_at: "2026-01-01" },
   ] as Data["strikes"];
   expect(summary(d, student).strikes).toBe(5);
-  expect(strikeAction(3)).toContain("parent contact");
-  expect(strikeAction(5)).toContain("Removal threshold");
+  expect(strikeAction(3)).toContain("member / family communication");
+  expect(strikeAction(5)).toContain("Leadership participation review required");
   expect(summary(fixture(), student).percent).toBeNull();
   d.policy={user_id:student,can_review:false,can_review_requests:false,can_read_team:false,can_manage_meetings:false,strike_year_start:'2026-01-01T00:00:00Z',people:[],warnings:[]};
   d.strikes[0].assigned_at='2025-12-31T23:59:59Z';d.strikes[1].assigned_at='2026-01-01T00:00:00Z';
@@ -549,10 +549,10 @@ for (const width of [390, 1440]) {
     await page.locator('.att-tabs a[href="#attendance/notices"]').click();
     await expect(page.getByText("Appointment", { exact: true })).toBeVisible();
     await expect(
-      page.getByText("Advanced attendance & strikes", { exact: true }),
+      page.getByText("Attendance corrections & notices", { exact: true }),
     ).toBeVisible();
-    await page.getByRole("link", { name: "Strikes", exact: true }).click();
-    await expect(page.getByText("No strikes match this view.")).toBeVisible();
+    await page.getByRole("link", { name: "Attendance Notices", exact: true }).click();
+    await expect(page.getByText("No attendance notices match this view.")).toBeVisible();
     await page.getByRole("link", { name: "History", exact: true }).click();
     await page.getByLabel("History meeting").selectOption("m1");
     await page.getByRole("button", { name: "Load history" }).click();
@@ -638,7 +638,7 @@ test("student deep links never show team roster or leadership controls", async (
   await expect(
     page.getByText("You’re all caught up. No requests match this view."),
   ).toBeVisible();
-  await expect(page.getByText("Advanced attendance & strikes", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Attendance corrections & notices", { exact: true })).toHaveCount(0);
 });
 
 for (const width of [390, 1440])
@@ -827,11 +827,11 @@ for(const width of [390,1440])test(`student refresh reveals newly rostered in-pr
 for(const width of [390,1440])test(`compact request inbox decisions preserve physical attendance ${width}`,async({page})=>{
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));await page.setViewportSize({width,height:900});const {data,calls}=await mock(page,'mentor');
  Object.assign(data.attendance[0],{notice_at:'2026-09-09T15:00:00Z',notice_type:'early',notice_reason:'Appointment',review_status:'pending',physical_status:'left_early',left_at:'2026-09-10T17:05:00Z'});
- await page.goto('/#attendance/notices');await expect(page.getByRole('button',{name:'Excuse',exact:true})).toBeVisible();await expect(page.getByRole('combobox',{name:/^Attendance/})).not.toBeVisible();await expect(page.getByRole('button',{name:'Add / review strikes',exact:true})).not.toBeVisible();
+ await page.goto('/#attendance/notices');await expect(page.getByRole('button',{name:'Excuse',exact:true})).toBeVisible();await expect(page.getByRole('combobox',{name:/^Attendance/})).not.toBeVisible();await expect(page.getByRole('button',{name:'Add / review attendance notices',exact:true})).not.toBeVisible();
  await page.getByLabel('Review reason',{exact:true}).fill('Appointment confirmed');await page.screenshot({path:`test-results/request-inbox-${width}.png`,fullPage:true});await page.getByRole('button',{name:'Excuse',exact:true}).click();
  await expect.poll(()=>calls.at(-1)).toEqual({action:'attendance',p:{meeting_id:'m1',attendance_id:'a1',version:1,review_status:'excused',left_at:'2026-09-10T17:05:00Z',explanation:'Appointment confirmed'}});expect(data.attendance[0].physical_status).toBe('left_early');expect(data.strikes).toHaveLength(0);
  data.attendance[0].review_status='pending';await page.getByRole('button',{name:'Refresh',exact:true}).click();await page.getByLabel('Review reason',{exact:true}).fill('Not approved');await page.getByRole('button',{name:'Deny',exact:true}).click();await expect.poll(()=>calls.at(-1)?.p.review_status).toBe('denied');expect(calls.at(-1).p).not.toHaveProperty('physical_status');
- await page.getByLabel('Request status').selectOption('denied');await page.getByText('Advanced attendance & strikes',{exact:true}).click();await expect(page.getByRole('button',{name:'Review excuse / correct attendance',exact:true})).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);expect(errors).toEqual([]);
+ await page.getByLabel('Request status').selectOption('denied');await page.getByText('Attendance corrections & notices',{exact:true}).click();await expect(page.getByRole('button',{name:'Review excuse / correct attendance',exact:true})).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);expect(errors).toEqual([]);
 });
 
 for(const width of [390,1440]) test(`same-account auth preserves modal and checkout state ${width}`,async({page})=>{
@@ -939,10 +939,10 @@ test('policy check-in controls and notice thresholds share exact boundaries',()=
  const a=fixture().attendance[0];
  for(const notice_type of ['absent','late','early'] as const){
   expect(noticeTiming({...a,notice_type,notice_at:new Date(start-86400000).toISOString()},m)).toContain('At least 24');
-  expect(noticeTiming({...a,notice_type,notice_at:new Date(start-86400000+1).toISOString()},m)).toContain('Emergency');
+  expect(noticeTiming({...a,notice_type,notice_at:new Date(start-86400000+1).toISOString()},m)).toContain('approved exception requires review');
  }
- expect(strikeAction(2)).toContain('Warning / parent contact required');
- expect(strikeAction(5)).toContain('Removal threshold');
+ expect(strikeAction(2)).toContain('Mentor discussion and parent / guardian contact required');
+ expect(strikeAction(5)).toContain('Leadership participation review required');
 });
 for(const width of [390,1440])test(`policy lead personal requests and future controls ${width}`,async({page})=>{
  await page.setViewportSize({width,height:900});const {data,calls}=await mock(page,'lead');
@@ -968,12 +968,12 @@ for(const width of [390,1440])test(`policy dashboard search strike thresholds an
  data.members.push({student_id:'other',display_name:'Jordan Five',member_status:'registered',team_area:'Build'});
  data.strikes=[{id:'s1',attendance_id:'a1',meeting_id:'m1',student_id:student,category:'Other',quantity:2,explanation:'Reviewed',assigned_by:lead,assigned_at:'2026-09-10T17:00:00Z',rescinded_at:null,rescind_reason:null},{id:'s2',attendance_id:'a2',meeting_id:'m1',student_id:'other',category:'Other',quantity:5,explanation:'Reviewed',assigned_by:lead,assigned_at:'2026-09-10T17:00:00Z',rescinded_at:null,rescind_reason:null}];
  await page.goto('/#attendance');await expect(page.getByRole('heading',{name:'Attendance · needs attention'})).toBeVisible();
- await expect(page.getByText('Warning / parent contact required',{exact:true})).toBeVisible();await expect(page.getByText('Removal threshold reached',{exact:true})).toBeVisible();
+ await expect(page.getByText('Mentor discussion and parent / guardian contact required',{exact:true})).toBeVisible();await expect(page.getByText('Leadership participation review required',{exact:true})).toBeVisible();
  await page.getByLabel('Member name').fill('Alex');await page.locator('.att-record > summary').filter({hasText:'Alex Student'}).click();
  await expect(page.getByRole('region',{name:'Alex Student attendance summary'})).toContainText('Software Lead');await expect(page.getByRole('region',{name:'Alex Student attendance summary'})).not.toContainText('Jordan Five');
  await page.screenshot({path:`test-results/policy-dashboard-${width}.png`,fullPage:true});
- await page.locator('.att-tabs a[href="#attendance/strikes"]').click();await page.getByLabel('Find strike member').fill('Jordan');
- await expect(page.getByRole('heading',{name:'Jordan Five · 5 active strikes'})).toBeVisible();await expect(page.getByRole('heading',{name:'Alex Student · 2 active strikes'})).toHaveCount(0);
+ await page.locator('.att-tabs a[href="#attendance/strikes"]').click();await page.getByLabel('Find member with notices').fill('Jordan');
+ await expect(page.getByRole('heading',{name:'Jordan Five · 5 active attendance notices'})).toBeVisible();await expect(page.getByRole('heading',{name:'Alex Student · 2 active attendance notices'})).toHaveCount(0);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);expect(errors).toEqual([]);
 });
 
@@ -1190,11 +1190,11 @@ async function localInput(page: Page, iso: string) {
 }
 async function assertPersonalRequestControls(page: Page) {
   const workspace = page.locator(".attendance-section");
-  for (const name of ["Excuse", "Deny", "Save attendance review", "Assign strike", "Edit meeting", "Rotate check-in code", "Complete attendance"]) {
+  for (const name of ["Excuse", "Deny", "Save attendance review", "Assign attendance notice", "Edit meeting", "Rotate check-in code", "Complete attendance"]) {
     await expect(workspace.getByRole("button", { name, exact: true })).toHaveCount(0);
   }
   await expect(workspace.getByLabel("Review reason", { exact: true })).toHaveCount(0);
-  await expect(workspace.getByText("Advanced attendance & strikes", { exact: true })).toHaveCount(0);
+  await expect(workspace.getByText("Attendance corrections & notices", { exact: true })).toHaveCount(0);
   await expect(workspace.getByRole("group", { name: "Live roster filter" })).toHaveCount(0);
   await expect(workspace.getByText("Another member private request", { exact: true })).toHaveCount(0);
 }
@@ -1272,7 +1272,7 @@ for (const width of [390, 1440]) {
       await expect(page.getByRole("combobox", { name: "Meeting for my request", exact: true })).toHaveCount(0);
       const otherCard = page.locator(".att-request-card").filter({ hasText: "Another member private request" });
       await expect(otherCard).toBeVisible();
-      await expect(otherCard.getByText("Advanced attendance & strikes", { exact: true })).toBeVisible();
+      await expect(otherCard.getByText("Attendance corrections & notices", { exact: true })).toBeVisible();
       if (persona.reviewer) {
         await otherCard.getByLabel("Review reason", { exact: true }).fill("Synthetic confirmation checked");
         await otherCard.getByRole("button", { name: "Excuse", exact: true }).click();
@@ -1480,7 +1480,7 @@ for (const [index, persona] of leadershipRequestPersonas.entries()) {
     });
     await page.goto("/#attendance/my-requests");
     const dialog = await openPersonalRequest(page);
-    await dialog.getByText("History & strikes", { exact: true }).click();
+    await dialog.getByText("History & attendance notices", { exact: true }).click();
     await dialog.getByRole("button", { name: "View my history · Preseason build", exact: true }).click();
     await expect(dialog.locator("summary").filter({ hasText: "My own audit entry" })).toBeVisible();
     await expect(dialog).not.toContainText("Other member audit entry");
@@ -1510,7 +1510,7 @@ for (const reviewer of ['student','lead','mentor']) {
    expect(data.attendance[0]).toMatchObject({review_status:'excused',reviewed_by:lead});
   } else {
    for(const name of ['Excuse','Deny']) await expect(card.getByRole('button',{name,exact:true})).toHaveCount(0);
-   await card.getByText('Advanced attendance & strikes',{exact:true}).click();
+   await card.getByText('Attendance corrections & notices',{exact:true}).click();
    await expect(card.getByLabel('Excuse status',{exact:true})).toHaveCount(0);
    expect(calls).toEqual([]);
   }
@@ -1604,9 +1604,9 @@ for (const width of [390,1440]) test(`ordinary mentor cannot decide requests but
  await page.goto('/#attendance/notices');
  const card=page.locator('.att-request-card').filter({hasText:'Synthetic ordinary member request'});
  for(const name of ['Excuse','Deny'])await expect(card.getByRole('button',{name,exact:true})).toHaveCount(0);
- await card.getByText('Advanced attendance & strikes',{exact:true}).click();
+ await card.getByText('Attendance corrections & notices',{exact:true}).click();
  await expect(card.getByLabel('Excuse status',{exact:true})).toHaveCount(0);
- await expect(card.locator('summary').filter({hasText:/^Assign strike$/})).toBeVisible();
+ await expect(card.locator('summary').filter({hasText:/^Assign attendance notice$/})).toBeVisible();
  await card.getByText('Review / correct attendance',{exact:true}).click();
  await card.getByRole('combobox',{name:/^Attendance/}).selectOption('late');
  await card.getByLabel('Review / correction explanation',{exact:true}).fill('Synthetic physical correction only');
@@ -1636,20 +1636,20 @@ for(const width of [390,1440])test(`automatic absence preview confirms exact cou
  }});
  await page.clock.setFixedTime(new Date('2026-09-10T19:01:00Z'));await page.goto('/#attendance/calendar');
  await page.getByRole('button',{name:/Preseason build/}).click();const dialog=page.getByRole('dialog');
- const preview=dialog.getByRole('region',{name:'Automatic absence strike preview'});
- await expect(preview).toContainText('Completing attendance will assign 2 automatic strikes');
+ const preview=dialog.getByRole('region',{name:'Automatic attendance notice preview'});
+ await expect(preview).toContainText('Completing attendance will assign 2 automatic attendance notices');
  await expect(preview).toContainText('1 pending absence request skipped for now');
- await preview.getByText('Members receiving automatic strikes',{exact:true}).click();
+ await preview.getByText('Members receiving automatic attendance notices',{exact:true}).click();
  await expect(preview.getByRole('listitem')).toHaveText(['Alex Student','Synthetic denied']);
  const confirmations:string[]=[];
  page.once('dialog',async d=>{confirmations.push(d.message());await d.dismiss();});
  await dialog.getByRole('button',{name:'Complete attendance',exact:true}).click();
- expect(confirmations[0]).toContain('assign 2 automatic Unexcused Absence strikes');
+ expect(confirmations[0]).toContain('assign 2 automatic Unexcused Absence attendance notices');
  expect(confirmations[0]).toContain('1 pending absence request is skipped');
  expect(calls.filter(c=>c.action==='finalize')).toEqual([]);
  await dialog.getByRole('button',{name:'Close',exact:true}).click();await expect(dialog).toHaveCount(0);
  await page.getByRole('button',{name:/Preseason build/}).click();
- await expect(preview).toContainText('Completing attendance will assign 2 automatic strikes');
+ await expect(preview).toContainText('Completing attendance will assign 2 automatic attendance notices');
  await dialog.screenshot({path:`test-results/automatic-absence-preview-${width}.png`});
  expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
  page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'Complete attendance',exact:true}).click();
@@ -1665,16 +1665,16 @@ test('automatic absence stale preview is rejected and refresh requires a new con
  const {data,calls}=await mock(page,'mentor',{configure(data){data.meetings[0].status='closed';data.meetings[0].check_in_open=false;}});
  await page.clock.setFixedTime(new Date('2026-09-10T19:01:00Z'));await page.goto('/#attendance/calendar');
  await page.getByRole('button',{name:/Preseason build/}).click();const dialog=page.getByRole('dialog');
- const preview=dialog.getByRole('region',{name:'Automatic absence strike preview'});
- await expect(preview).toContainText('assign 1 automatic strike');
+ const preview=dialog.getByRole('region',{name:'Automatic attendance notice preview'});
+ await expect(preview).toContainText('assign 1 automatic attendance notice');
  addAutomaticStrikeFixture(data,'newly-unexcused');
  page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'Complete attendance',exact:true}).click();
  await expect(dialog.getByRole('alert')).toContainText('Automatic absence strike preview changed');
  expect(data.meetings[0].status).toBe('closed');expect(data.strikes).toEqual([]);
  await dialog.getByRole('button',{name:'Refresh attendance preview',exact:true}).click();
- await expect(preview).toContainText('assign 2 automatic strikes');
+ await expect(preview).toContainText('assign 2 automatic attendance notices');
  expect(calls.filter(c=>c.action==='finalize')).toHaveLength(1);
- page.once('dialog',async d=>{expect(d.message()).toContain('assign 2 automatic Unexcused Absence strikes');await d.accept();});
+ page.once('dialog',async d=>{expect(d.message()).toContain('assign 2 automatic Unexcused Absence attendance notices');await d.accept();});
  await dialog.getByRole('button',{name:'Complete attendance',exact:true}).click();
  await expect(dialog.locator('.att-badge.finalized')).toHaveText('Attendance complete');
  expect(calls.filter(c=>c.action==='finalize').map(c=>c.p.automatic_absence_strike_count)).toEqual([1,2]);
@@ -1701,8 +1701,8 @@ test('automatic absence warnings cover denial and correction but leave legacy me
   Object.assign(data.attendance[0],{physical_status:'absent',review_status:'pending',notice_at:'2026-09-09T15:00:00Z',notice_reason:'Synthetic request'});
  }});
  await page.goto('/#attendance/notices');const card=page.locator('.att-request-card').first();
- await expect(card).toContainText('Denying this request will assign 1 automatic Unexcused Absence strike');
- await card.getByText('Advanced attendance & strikes',{exact:true}).click();
+ await expect(card).toContainText('Denying this request will assign 1 automatic Unexcused Absence attendance notice');
+ await card.getByText('Attendance corrections & notices',{exact:true}).click();
  await card.getByRole('button',{name:'Review excuse / correct attendance',exact:true}).click();
  // These wrapping labels also contain the select's option text. Scope the
  // non-exact label match to this correction form, as in existing review tests.
@@ -1711,40 +1711,40 @@ test('automatic absence warnings cover denial and correction but leave legacy me
  const physicalStatus=reviewForm.getByRole('combobox',{name:/^Attendance/});
  await expect(excuseStatus).toHaveValue('pending');
  await excuseStatus.selectOption('denied');await expect(excuseStatus).toHaveValue('denied');
- await expect(card).toContainText('Saving this correction will assign 1 automatic Unexcused Absence strike');
+ await expect(card).toContainText('Saving this correction will assign 1 automatic Unexcused Absence attendance notice');
  await physicalStatus.selectOption('late');await expect(physicalStatus).toHaveValue('late');
- await expect(card.getByText('Saving this correction will assign 1 automatic Unexcused Absence strike.',{exact:true})).toHaveCount(0);
+ await expect(card.getByText('Saving this correction will assign 1 automatic Unexcused Absence attendance notice.',{exact:true})).toHaveCount(0);
  data.strikes.push({id:'automatic-a1',attendance_id:'a1',meeting_id:'m1',student_id:student,category:'Unexcused Absence',quantity:1,source:'automatic_absence',explanation:'Synthetic absence',assigned_by:lead,assigned_at:'2026-09-10T19:01:00Z',rescinded_at:null,rescind_reason:null});
- await page.reload();await card.getByText('Advanced attendance & strikes',{exact:true}).click();
+ await page.reload();await card.getByText('Attendance corrections & notices',{exact:true}).click();
  await card.getByRole('button',{name:'Review excuse / correct attendance',exact:true}).click();
  await excuseStatus.selectOption('excused');await expect(excuseStatus).toHaveValue('excused');
- await expect(card).toContainText('Saving this correction will rescind 1 automatic absence strike');
- await expect(card).toContainText('Excusing this request will rescind 1 automatic absence strike');
+ await expect(card).toContainText('Saving this correction will rescind 1 automatic absence attendance notice');
+ await expect(card).toContainText('Excusing this request will rescind 1 automatic absence attendance notice');
  data.meetings[0].auto_absence_strikes_enabled=false;await page.reload();
  await expect(card).toBeVisible();
- await card.getByText('Advanced attendance & strikes',{exact:true}).click();
+ await card.getByText('Attendance corrections & notices',{exact:true}).click();
  await card.getByRole('button',{name:'Review excuse / correct attendance',exact:true}).click();
  await excuseStatus.selectOption('excused');await expect(excuseStatus).toHaveValue('excused');
  await expect(card.getByText(/will (assign|rescind).*automatic/)).toHaveCount(0);
  expect(calls).toEqual([]);expect(data.strikes[0].rescinded_at).toBeNull();
  await card.getByRole('button',{name:'Open meeting',exact:true}).click();
- await expect(page.getByRole('dialog').getByRole('region',{name:'Automatic absence strike preview'})).toHaveCount(0);
+ await expect(page.getByRole('dialog').getByRole('region',{name:'Automatic attendance notice preview'})).toHaveCount(0);
 });
 
 test('automatic absence stale recipient change is rejected even when the count is unchanged',async({page})=>{
  const {data,calls}=await mock(page,'mentor',{configure(data){data.meetings[0].status='closed';data.meetings[0].check_in_open=false;}});
  await page.clock.setFixedTime(new Date('2026-09-10T19:01:00Z'));await page.goto('/#attendance/calendar');
  await page.getByRole('button',{name:/Preseason build/}).click();const dialog=page.getByRole('dialog');
- const preview=dialog.getByRole('region',{name:'Automatic absence strike preview'});
- await expect(preview).toContainText('assign 1 automatic strike');
+ const preview=dialog.getByRole('region',{name:'Automatic attendance notice preview'});
+ await expect(preview).toContainText('assign 1 automatic attendance notice');
  data.attendance[0].review_status='excused';addAutomaticStrikeFixture(data,'replacement');
  page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'Complete attendance',exact:true}).click();
  await expect(dialog.getByRole('alert')).toContainText('Automatic absence strike preview changed');
  expect(data.meetings[0].status).toBe('closed');expect(data.strikes).toEqual([]);
  expect(calls.at(-1).p.automatic_absence_strike_attendance_ids).toEqual(['a1']);
  await dialog.getByRole('button',{name:'Refresh attendance preview',exact:true}).click();
- await expect(preview).toContainText('assign 1 automatic strike');
- await preview.getByText('Members receiving automatic strikes',{exact:true}).click();
+ await expect(preview).toContainText('assign 1 automatic attendance notice');
+ await preview.getByText('Members receiving automatic attendance notices',{exact:true}).click();
  await expect(preview.getByRole('listitem')).toHaveText(['Synthetic replacement']);
  page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'Complete attendance',exact:true}).click();
  await expect(dialog.locator('.att-badge.finalized')).toHaveText('Attendance complete');
@@ -2038,10 +2038,27 @@ for(const width of [390,1440])test(`STEM outreach annual hours and optional cale
  await page.screenshot({path:`test-results/attendance-edit-stem-outreach-${width}.png`});
  await page.getByRole('link',{name:'Calendar',exact:true}).click();await page.getByRole('button',{name:/Preseason build/}).click();
  await expect(page.getByRole('dialog')).toContainText('You are not required at this meeting');
- await expect(page.getByText('Assign strike',{exact:true})).toHaveCount(0);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await expect(page.getByText('Assign attendance notice',{exact:true})).toHaveCount(0);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
 test('outreach event preset creates an optional event',async({page})=>{
  const {calls}=await mock(page,'mentor');await page.goto('/#attendance/calendar');await page.getByRole('button',{name:'New meeting',exact:true}).click();
  await page.getByRole('button',{name:'STEM Outreach',exact:true}).click();await expect(page.getByLabel('Required attendance',{exact:true})).toBeDisabled();
  await page.getByRole('button',{name:'Create meeting',exact:true}).click();await expect.poll(()=>calls.some(c=>c.action==='create')).toBe(true);const c=calls.find(c=>c.action==='create');expect(c.p.meeting_type).toBe('stem_outreach');expect(c.p.requirement).toBe('optional');
+});
+
+for (const width of [390, 1440]) test(`proposed attendance policy terminology and counting caveat ${width}`, async ({page}) => {
+ await page.setViewportSize({width,height:900});
+ const {calls}=await mock(page,'student');
+ await page.goto('/#attendance');
+ await page.getByText('Attendance Policy · v1.0 (Proposed)',{exact:true}).click();
+ const policy=page.locator('.att-policy-help');
+ await expect(policy).toContainText('Fifth notice: team leadership reviews continued participation.');
+ await expect(policy).toContainText('This review may result in removal from the program.');
+ await expect(policy).toContainText('the supplied policy says notices reset at kickoff');
+ await expect(policy).toContainText('January 1 (UTC)');
+ await expect(policy).toContainText('Slack does not replace a website request');
+ await expect(page.locator('.att-tabs').getByRole('link',{name:'Attendance Notices',exact:true})).toHaveAttribute('href','#attendance/strikes');
+ expect(calls).toEqual([]);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.screenshot({path:`test-results/attendance-policy-${width}.png`,fullPage:true});
 });

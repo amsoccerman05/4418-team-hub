@@ -218,7 +218,7 @@ export const canReview = (data:Data,a?:Attendance) => !!data.policy?.can_review 
  && (!requiresMentorReview(data,a.student_id) || data.policy.can_review_program_manager_requests===true)
 ));
 export const strikeAction = (n: number) =>
- n>=5 ? "Removal threshold reached" : n>=3 ? "Warning / parent contact previously required · monitor" : n>=2 ? "Warning / parent contact required" : "No strike threshold reached";
+ n>=5 ? "Leadership participation review required" : n>=3 ? "Continued member / family communication; consider an improvement plan" : n>=2 ? "Mentor discussion and parent / guardian contact required" : n>=1 ? "Remind member of attendance expectations" : "No active attendance notices";
 export function checkInControls(m:Meeting,now=Date.now()){
  const ended=now>=Date.parse(m.ends_at),complete=m.status==='finalized';
  const inWindow=!complete&&now>=Date.parse(m.starts_at)-1800000&&!ended;
@@ -235,7 +235,7 @@ export function checkoutCompletionWarning(records:Attendance[]):string {
  return count ? ` ${count} checked-in ${count===1?"member has":"members have"} no recorded departure. They can still check out until 30 minutes after the scheduled end. Missing departures are not credited as completed hours.` : "";
 }
 export function noticeTiming(a:Attendance,m:Meeting){
- return !a.notice_at ? 'No request submitted' : Date.parse(m.starts_at)-Date.parse(a.notice_at)>=86400000 ? 'At least 24 hours’ notice' : 'Emergency / late notice · excused reason requires review';
+ return !a.notice_at ? 'No request submitted' : Date.parse(m.starts_at)-Date.parse(a.notice_at)>=86400000 ? 'At least 24 hours’ notice' : 'Less than 24 hours’ notice · approved exception requires review';
 }
 export const label = (s: string) =>
   s.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());

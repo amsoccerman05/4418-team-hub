@@ -63,7 +63,7 @@ export function participantRequirementLockReason(record: Attendance | undefined,
   }
   if (hasStrikes || (record && (record.checked_in_at || record.left_at || record.physical_status !== "pending"
     || record.reviewed_at || record.reviewed_by || record.review_reason?.trim() || ["excused", "denied"].includes(record.review_status)))) {
-    return "Recorded attendance, a reviewed decision, or a strike locks this participant’s required status.";
+    return "Recorded attendance, a reviewed decision, or an attendance notice locks this participant’s required status.";
   }
   return "";
 }

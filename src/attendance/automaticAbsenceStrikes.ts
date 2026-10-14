@@ -29,7 +29,7 @@ export function automaticAbsenceStrikePreview(data: Data, meeting: Meeting) {
 }
 
 export function automaticAbsenceFinalizationConfirmation(count: number, pending: number) {
-  return `Complete attendance? Missing required members will be marked absent. This will assign ${count} automatic Unexcused Absence ${count === 1 ? "strike" : "strikes"}, one per eligible unexcused absence.`
+  return `Complete attendance? Missing required members will be marked absent. This will assign ${count} automatic Unexcused Absence ${count === 1 ? "attendance notice" : "attendance notices"}, one per eligible unexcused absence.`
     + (pending ? ` ${pending} pending absence ${pending === 1 ? "request is" : "requests are"} skipped until reviewed.` : "")
     + " Leadership can still make audited attendance corrections.";
 }

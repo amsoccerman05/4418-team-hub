@@ -79,7 +79,7 @@ test("finalized legacy meetings are never previewed or reconciled", () => {
   expect(automaticAbsenceCorrection(data, data.meetings[0], a)).toEqual({ additions: 1, rescissions: 0 });
 });
 
-test("later denial can assign a first strike and corrections only rescind active automatic strikes", () => {
+test("later denial can assign a first strike and corrections only rescind active automatic attendance notices", () => {
   const data = fixture(); const a = add(data, "member", "absent", "pending");
   const m = data.meetings[0]; m.status = "finalized"; m.auto_absence_strikes_enabled = true;
   expect(automaticAbsenceCorrection(data, m, a)).toEqual({ additions: 0, rescissions: 0 });
@@ -103,9 +103,9 @@ test("correction preview requires a matching required snapshot and never treats 
 });
 
 test("confirmation states exact strike consequence, skipped pending requests, and correction availability", () => {
-  expect(automaticAbsenceFinalizationConfirmation(1, 1)).toContain("assign 1 automatic Unexcused Absence strike,");
+  expect(automaticAbsenceFinalizationConfirmation(1, 1)).toContain("assign 1 automatic Unexcused Absence attendance notice,");
   expect(automaticAbsenceFinalizationConfirmation(1, 1)).toContain("1 pending absence request is skipped");
-  expect(automaticAbsenceFinalizationConfirmation(0, 2)).toContain("assign 0 automatic Unexcused Absence strikes,");
+  expect(automaticAbsenceFinalizationConfirmation(0, 2)).toContain("assign 0 automatic Unexcused Absence attendance notices,");
   expect(automaticAbsenceFinalizationConfirmation(0, 2)).toContain("2 pending absence requests are skipped");
   expect(automaticAbsenceFinalizationConfirmation(0, 0)).not.toContain("pending absence");
   expect(automaticAbsenceFinalizationConfirmation(0, 0)).toContain("audited attendance corrections");
@@ -130,12 +130,12 @@ test("preview presents exact affected members and pending count without leaking 
   const data = fixture(); add(data, "candidate"); add(data, "pending", "pending", "pending");
   data.members[0].display_name = "Synthetic <Member>";
   const html = renderToStaticMarkup(createElement(AutomaticAbsencePreview, { data, meeting: data.meetings[0] }));
-  expect(html).toContain('aria-label="Automatic absence strike preview"');
-  expect(html).toContain("Completing attendance will assign 1 automatic strike");
+  expect(html).toContain('aria-label="Automatic attendance notice preview"');
+  expect(html).toContain("Completing attendance will assign 1 automatic attendance notice");
   expect(html).toContain("1 pending absence request skipped for now");
   expect(html).toContain("Synthetic &lt;Member&gt;");
   expect(html).not.toContain("Synthetic pending");
-  expect(html).toContain("including rescinded strikes");
+  expect(html).toContain("including rescinded attendance notices");
 });
 
 test("strike presentation labels only automatic source while retaining the accountable human", () => {

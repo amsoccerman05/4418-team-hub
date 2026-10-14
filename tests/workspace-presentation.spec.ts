@@ -67,5 +67,5 @@ test('Attendance presentation separates empty review queue from member follow-up
  const render=()=>renderToStaticMarkup(createElement(LeadershipDashboard,{data,run:async()=>{},openMeeting:()=>{}}));
  expect(render()).toContain('No attendance actions need attention.');
  data.strikes.push({id:'strike',attendance_id:'record',meeting_id:'meeting',student_id:'student',category:'Other',quantity:2,explanation:'Fixture reason',assigned_by:'mentor',assigned_at:'2026-06-01T00:00:00Z',rescinded_at:null,rescind_reason:null});
- const html=render();expect(html).toContain('Meeting reviews are up to date');expect(html).toContain('Fixture member · 2 strikes');expect(html).toContain('Member follow-ups');expect(html).not.toContain('No attendance actions need attention.');
+ const html=render();expect(html).toContain('Meeting reviews are up to date');expect(html).toContain('Fixture member · 2 attendance notices');expect(html).toContain('Member follow-ups');expect(html).not.toContain('No attendance actions need attention.');
 });
