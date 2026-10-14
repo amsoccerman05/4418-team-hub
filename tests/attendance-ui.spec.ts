@@ -939,7 +939,7 @@ test('policy check-in controls and notice thresholds share exact boundaries',()=
  const a=fixture().attendance[0];
  for(const notice_type of ['absent','late','early'] as const){
   expect(noticeTiming({...a,notice_type,notice_at:new Date(start-86400000).toISOString()},m)).toContain('At least 24');
-  expect(noticeTiming({...a,notice_type,notice_at:new Date(start-86400000+1).toISOString()},m)).toContain('Emergency');
+  expect(noticeTiming({...a,notice_type,notice_at:new Date(start-86400000+1).toISOString()},m)).toContain('approved exception requires review');
  }
  expect(strikeAction(2)).toContain('Mentor discussion and parent / guardian contact required');
  expect(strikeAction(5)).toContain('Leadership participation review required');
