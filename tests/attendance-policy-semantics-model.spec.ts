@@ -14,7 +14,7 @@ test.beforeAll(()=>{
 test.afterAll(()=>rmSync(dir,{recursive:true,force:true}));
 test('proposed summary uses the supplied terms, human decisions, and honest reset caveat',()=>{
  const html=api.renderToStaticMarkup(api.createElement(api.PolicyHelp));
- for(const text of ['v1.0 (Proposed)','First notice','Second notice','Third notice','Fourth notice','Fifth notice','may result in removal','does not contact a parent or remove a member','policy says notices reset at kickoff','January 1 (UTC)','24 hours','five-minute','seven days','16 hours','10 hours','honor system','private medical information','Slack does not replace a website request'])expect(html).toContain(text);
+ for(const text of ['v1.0 (Proposed)','First notice','Second notice','Third notice','Fourth notice','Fifth notice','may result in removal','does not contact a parent or remove a member','January 9, 2027','midnight Mountain Time','24 hours','five-minute','seven days','16 hours','10 hours','honor system','private medical information','Slack does not replace a website request'])expect(html).toContain(text);
  for(const text of ['v0.3','removal threshold','parent confirmation required','attendance-v03.pdf'])expect(html).not.toContain(text);
 });
 test('notice progression is presentation only with the existing 2 and 5 boundaries',()=>{
@@ -24,14 +24,14 @@ test('notice progression is presentation only with the existing 2 and 5 boundari
  for(const n of [3,4])expect(api.strikeAction(n)).toContain('Continued member / family communication');
  for(const n of [5,6])expect(api.strikeAction(n)).toBe('Leadership participation review required');
 });
-test('24-hour cutoff and UTC annual counting remain unchanged',()=>{
+test('24-hour cutoff remains unchanged and counting uses the server boundary',()=>{
  const meeting={starts_at:'2026-10-14T18:00:00Z'};
  expect(api.noticeTiming({notice_at:'2026-10-13T18:00:00Z'},meeting)).toBe('At least 24 hours’ notice');
  expect(api.noticeTiming({notice_at:'2026-10-13T18:00:00.001Z'},meeting)).toContain('approved exception requires review');
  expect(api.noticeTiming({notice_at:null},meeting)).toBe('No request submitted');
- const data={policy:{strike_year_start:'2026-01-01T00:00:00Z'}};
- expect(api.inStrikeYear(data,{assigned_at:'2025-12-31T23:59:59Z'})).toBe(false);
- expect(api.inStrikeYear(data,{assigned_at:'2026-01-01T00:00:00Z'})).toBe(true);
+ const data={policy:{strike_year_start:'2027-01-09T07:00:00Z'}};
+ expect(api.inStrikeYear(data,{assigned_at:'2027-01-09T06:59:59.999Z'})).toBe(false);
+ expect(api.inStrikeYear(data,{assigned_at:'2027-01-09T07:00:00Z'})).toBe(true);
 });
 test('legacy routes and write contract remain compatible; policy upload is not implied',()=>{
  const source=readFileSync('src/attendance/Attendance.tsx','utf8');

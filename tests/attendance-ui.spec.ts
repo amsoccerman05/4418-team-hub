@@ -2054,8 +2054,8 @@ for (const width of [390, 1440]) test(`proposed attendance policy terminology an
  const policy=page.locator('.att-policy-help');
  await expect(policy).toContainText('Fifth notice: team leadership reviews continued participation.');
  await expect(policy).toContainText('This review may result in removal from the program.');
- await expect(policy).toContainText('the supplied policy says notices reset at kickoff');
- await expect(policy).toContainText('January 1 (UTC)');
+ await expect(policy).toContainText('midnight Mountain Time for the FRC 2027 kickoff');
+ await expect(policy).toContainText('January 9, 2027');
  await expect(policy).toContainText('Slack does not replace a website request');
  await expect(page.locator('.att-tabs').getByRole('link',{name:'Attendance Notices',exact:true})).toHaveAttribute('href','#attendance/strikes');
  expect(calls).toEqual([]);
