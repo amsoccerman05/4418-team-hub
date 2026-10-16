@@ -19,6 +19,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - run: node --test tests/suite-auth.test.mjs
       - name: Reject high and critical dependency advisories (including build tools)
         run: npm audit --audit-level=high
       - name: Verify design-decision concurrent transactions
