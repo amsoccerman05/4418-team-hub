@@ -2,7 +2,7 @@ import {test,expect} from '@playwright/test';
 import {createRequire} from 'node:module';
 const {harness}=createRequire(import.meta.url)('./fixtures/onboarding-lifecycle.cjs');
 const tick=()=>new Promise<void>(resolve=>setImmediate(resolve));
-const globals=['location','window','document','history','fetch'] as const;
+const globals=['location','window','document','history','fetch','setInterval'] as const;
 let original:Map<string,PropertyDescriptor|undefined>;
 test.beforeEach(()=>{original=new Map(globals.map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]));});
 test.afterEach(()=>{for(const [key,descriptor] of original){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else Reflect.deleteProperty(globalThis,key);}});
@@ -25,6 +25,7 @@ async function brokerFixture(){
  const dispatch=(data:any)=>emit('message',{origin:'https://team.frc4418.org',source:frame.contentWindow,data});
  const reply=(message:any,session:any)=>dispatch({protocol:'4418-suite-auth-v1',id:message.id,result:{data:{session},error:null}});
  Object.assign(globalThis,{
+  setInterval:()=>0, // Session polling is exercised by the dedicated transport regressions.
   location:{origin:'https://team.frc4418.org',pathname:'/',search:'',hash:'#team-management'},
   window:{opener:null,addEventListener(kind:string,fn:any){if(!listeners.has(kind))listeners.set(kind,new Set());listeners.get(kind)!.add(fn);},removeEventListener(kind:string,fn:any){listeners.get(kind)?.delete(fn);}},
   document:{referrer:'',createElement(){return frame;},body:{append(f:any){f.onload();}},addEventListener(){}},history:{replaceState(){}},
@@ -56,7 +57,8 @@ for(const stage of [1,2])for(const transition of ['account switch','unmount','ro
  runner.replaceRows(f.h.reviewedRows(1));f.hold(stage);const running=runner.start();await f.wait();expect(f.sent).toHaveLength(0);
  if(transition==='account switch')f.change(f.b);else if(transition==='unmount')unmount();else f.navigate('#planning/my-work');
  f.release(transition==='account switch'?f.b:f.a);await running;expect(f.sent).toHaveLength(0);
- if(stage===2)expect(f.aborted).toBe(1);
+ if(stage===2)expect(f.aborted).toBe(transition==='account switch'?0:1);
+ if(transition==='account switch'){expect(controller.signal.aborted).toBe(true);expect(current).toBe(false);}
  unmount();sub.data.subscription.unsubscribe();
 });
 
