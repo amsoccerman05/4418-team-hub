@@ -39,7 +39,9 @@ test.beforeAll(async()=>{
  await expect(db.exec(migration.replace('commit;',()=>"do $$begin raise exception 'forced migration failure';end$$;commit;"))).rejects.toThrow(/forced migration failure/);
  await db.exec('rollback');expect(await snapshot()).toEqual(before);
  expect((await db.query<any>("select to_regclass('public.planning_task_assignees') relation, to_regprocedure('planning_private.context(uuid,boolean)') helper, pg_get_functiondef('planning_save(text,jsonb)'::regprocedure) body")).rows[0]).toEqual({relation:null,helper:null,body:oldFunction});rollbackVerified=true;
- await db.exec(migration);after=await snapshot();
+ await db.exec(migration);
+ await db.exec(readFileSync('supabase/migrations/20261018051320_planning_current_writer_guard.sql','utf8'));
+ after=await snapshot();
 });
 test.afterAll(async()=>{await db.close();});
 test.beforeEach(async()=>{await as(1);await db.exec('begin');});

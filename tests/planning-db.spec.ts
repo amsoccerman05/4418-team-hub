@@ -26,6 +26,7 @@ test.beforeAll(async()=>{
  await db.exec(readFileSync('supabase/migrations/202610020001_planning_v1.sql','utf8'));
  await db.exec(readFileSync('supabase/migrations/202610030001_planning_task_dependencies.sql','utf8'));
  await db.exec(readFileSync('supabase/migrations/202610040001_planning_task_assignees.sql','utf8'));
+ await db.exec(readFileSync('supabase/migrations/20261018051320_planning_current_writer_guard.sql','utf8'));
  expect((await existing()).rows).toEqual(before.rows);await as(1);
 });
 test.afterAll(()=>db.close());
@@ -227,4 +228,57 @@ test('board archival preserves records, season archive is read only, functional 
  await save('season',{...c.seasons.find((s:any)=>s.id===season),status:'archived'});await expect(save('task',{...c.tasks[0],status:'todo'})).rejects.toThrow(/archived/);
  await save('season',{name:'2028',status:'active'});c=await context();expect(c.boards.map((b:any)=>b.name)).toEqual(['Admin']);
  expect((await context(season)).tasks).toHaveLength(1);
+});
+
+test('readonly accounts keep Planning reads but cannot comment or write retained assignments after demotion',async()=>{
+ await as(1);await db.exec('begin');
+ async function denied(fn:()=>Promise<unknown>){await db.exec('savepoint writer_denial');await expect(fn()).rejects.toThrow(/writer account required/);await db.exec('rollback to writer_denial');}
+ try{
+  const c=await context();const sid=c.seasons.find((s:any)=>s.status==='active')?.id||await save('season',{name:'Readonly regression',status:'active'});
+  const bid=await save('board',{kind:'area',name:'Writer guard fixture'});
+  const tid=await save('task',{board_id:bid,title:'Retained assignment',status:'todo',priority:'normal',owner_ids:[id(3)]});
+  const other=await save('task',{board_id:bid,title:'Unassigned comment target',status:'todo',priority:'normal',owner_ids:[]});
+  const step=await save('step',{task_id:tid,text:'Retained checklist'});
+  await db.exec(`reset role;update profiles set role='readonly' where id='${id(3)}';insert into team_member_positions values('${id(3)}','software_lead',null);`);
+  await as(3);expect((await context(sid)).can_manage).toBe(false);
+  expect((await context(sid)).tasks.some((t:any)=>t.id===tid)).toBe(true);
+  const mine=(await db.query<any>('select planning_my_work_context($1) c',[sid])).rows[0].c;
+  expect(mine.tasks.some((t:any)=>t.id===tid)).toBe(true);
+  const before=await detail(tid);expect(before.steps.some((s:any)=>s.id===step)).toBe(true);
+  const t=(await context(sid)).tasks.find((t:any)=>t.id===tid);
+  await denied(()=>save('comment',{task_id:other,text:'Unassigned readonly comment',role:'admin',can_manage:true}));
+  await denied(()=>save('comment',{task_id:tid,text:'Assigned readonly comment'}));
+  await denied(()=>save('task',{...t,status:'done'}));
+  await denied(()=>save('step',{...before.steps[0],done:true}));
+  await denied(()=>save('step',{task_id:tid,text:'New readonly step'}));
+  for(const entity of ['season','group','board','item']) await denied(()=>save(entity,{name:'Denied',title:'Denied'}));
+  await db.exec('savepoint readonly_dependency');await expect(dependency('add',tid,other)).rejects.toThrow(/Planning leadership required/);await db.exec('rollback to readonly_dependency');
+  expect(await detail(tid)).toEqual(before);expect((await detail(other)).comments).toHaveLength(0);
+  await db.exec('reset role');expect((await db.query<any>('select count(*)::int n from planning_task_assignees where task_id=$1 and user_id=$2',[tid,id(3)])).rows[0].n).toBe(1);
+ }finally{await db.exec('rollback');}
+});
+
+test('current student, lead, mentor and admin writers retain task, checklist and comment workflows; inactive accounts fail closed',async()=>{
+ await as(1);await db.exec('begin');
+ try{
+  if(!(await context()).seasons.some((s:any)=>s.status==='active'))await save('season',{name:'Allowed writer regression',status:'active'});
+  const bid=await save('board',{kind:'area',name:'Allowed writer fixture'});
+  const tid=await save('task',{board_id:bid,title:'Editable work',status:'todo',priority:'normal',owner_ids:[id(3)]});
+  const other=await save('task',{board_id:bid,title:'Comment-only work',status:'todo',priority:'normal',owner_ids:[]});
+  for(const role of ['student','lead','mentor','admin']){
+   await db.exec(`reset role;update profiles set role='${role}',active=true where id='${id(3)}'`);await as(3);
+   const t=(await context()).tasks.find((t:any)=>t.id===tid);
+   await save('task',{...t,title:'Allowed '+role});
+   const step=await save('step',{task_id:tid,text:'Allowed '+role});
+   const d=await detail(tid);await save('step',{...d.steps.find((s:any)=>s.id===step),done:true});
+   await save('comment',{task_id:other,text:'Allowed '+role,author_id:id(1)});
+   expect((await detail(other)).comments.some((c:any)=>c.text==='Allowed '+role&&c.author_id===id(3))).toBe(true);
+  }
+  const before=await detail(tid);await db.exec(`reset role;update profiles set active=false where id='${id(3)}'`);await as(3);
+  for(const entity of ['comment','task','step']){
+   await db.exec('savepoint inactive');await expect(save(entity,{task_id:tid,text:'Inactive',id:tid})).rejects.toThrow(/Active team account required/);await db.exec('rollback to inactive');
+  }
+  await db.exec('savepoint inactive_read');await expect(context()).rejects.toThrow(/Active team account required/);await db.exec('rollback to inactive_read');
+  await as(1);expect(await detail(tid)).toEqual(before);
+ }finally{await db.exec('rollback');}
 });
