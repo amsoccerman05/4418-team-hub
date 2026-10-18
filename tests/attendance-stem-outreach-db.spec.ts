@@ -133,6 +133,7 @@ test.beforeAll(async () => {
   await db.exec(readFileSync(migration, 'utf8'));
   await db.exec(source('20261014051116_attendance_checkout_grace.sql'));
   await db.exec(source('20261014052049_attendance_stem_outreach.sql'));
+  await db.exec(source('20261018051317_attendance_legacy_notice_validation.sql'));
   afterData = await snapshot();afterBoundary = await boundary();
   await root('update public.team_meeting_members set attempts=0,attempt_window=null');
 });
@@ -262,4 +263,73 @@ test('new endpoint and private-policy permissions deny anonymous and direct tabl
  for(const q of ['select team_attendance_outreach_summary(null)',"select team_attendance_outreach_goal('{}'::jsonb)","select team_attendance_outreach_correct('{}'::jsonb)"]){await rejects(()=>db.query(q),/permission denied/);}
  await as(3);await rejects(()=>db.query('select * from team_attendance_private.outreach_goal'),/permission denied/);
  await rejects(()=>db.query('update team_attendance set left_at=clock_timestamp()'),/permission denied/);
+});
+
+// The compatibility endpoint must never have a weaker submission policy than
+// the current RPC. All cases execute the real migrations as authenticated users.
+async function legacyNotice(meeting = mid, actor: number | null = 3, reason = 'Synthetic absence notice') {
+ await as(actor);
+ return db.query('select public.team_attendance_notice($1,$2)', [meeting, reason]);
+}
+async function currentRequest(kind: string, expected: string | null = null, actor = 3) {
+ const a = await attendance(actor);await as(actor);
+ return db.query('select public.team_attendance_request($1)', [JSON.stringify({meeting_id: mid, version: a.version, notice_type: kind, expected_at: expected, reason: 'Synthetic current request'})]);
+}
+async function schedule(start: string, end: string, status = 'closed') {
+ await root(`update public.team_meetings set starts_at=clock_timestamp()+$2::interval,ends_at=clock_timestamp()+$3::interval,status=$4 where id=$1`, [mid, start, end, status]);
+}
+
+test('legacy notice rejects ended non-finalized meetings without deferring automatic absence', async () => {
+ await schedule('-2 hours', '-1 hour');
+ const before = await snapshot();
+ await rejects(() => legacyNotice(), /Contact leadership after the meeting/);
+ expect(await snapshot()).toEqual(before);
+ await rejects(() => currentRequest('absent'), /Contact leadership after the meeting/);
+ const a = await attendance();expect(a.review_status).not.toBe('pending');expect(a.notice_at).toBeNull();
+ // The denied legacy call cannot remove an otherwise eligible absence candidate.
+ expect((await root(`select count(*)::int n from team_attendance where id=$1 and notice_at is null and review_status<>'pending'`, [a.id]))[0].n).toBe(1);
+});
+
+test('legacy notice rejects finalized and exact start/end boundaries; current early departure remains available', async () => {
+ await schedule('1 hour', '2 hours', 'finalized');
+ await rejects(() => legacyNotice(), /Contact leadership after the meeting/);
+ await schedule('0 seconds', '1 hour');
+ const before = await snapshot();
+ await rejects(() => legacyNotice(), /During a meeting only early-departure/);
+ expect(await snapshot()).toEqual(before);
+ await currentRequest('early', new Date(Date.now()+30*60_000).toISOString());
+ let a = await attendance();expect(a.notice_type).toBe('early');expect(a.review_status).toBe('pending');
+ // A different, untouched roster row exercises the end boundary.
+ await schedule('-1 hour', '0 seconds');
+ await rejects(() => legacyNotice(mid, 5), /Contact leadership after the meeting/);
+ await rejects(() => currentRequest('early', new Date(Date.now()+30*60_000).toISOString(), 5), /Contact leadership after the meeting/);
+ a = await attendance(5);expect(a.notice_at).toBeNull();expect(a.review_status).not.toBe('pending');
+});
+
+test('legacy first notice becomes an audited typed absence and cannot replace a prior request', async () => {
+ await schedule('1 hour', '2 hours');
+ const before = await attendance();
+ const historyBefore = (await root('select count(*)::int n from team_attendance_history where entity_id=$1', [before.id]))[0].n;
+ await legacyNotice(mid, 3, '  Synthetic first absence  ');
+ const after = await attendance();
+ expect(after).toMatchObject({notice_type: 'absent', expected_at: null, notice_reason: 'Synthetic first absence', review_status: 'pending', version: before.version+1});
+ expect(after.notice_at).toBeTruthy();expect(after.physical_status).toBe(before.physical_status);
+ expect((await root('select count(*)::int n from team_attendance_history where entity_id=$1', [before.id]))[0].n).toBe(historyBefore+1);
+ await rejects(() => legacyNotice(mid, 3, 'Replacement'), /Notice already submitted/);
+ expect(await attendance()).toEqual(after);
+ // Current clients can still amend a request using the authoritative version.
+ await currentRequest('late', new Date(Date.now()+90*60_000).toISOString());
+ expect((await attendance()).notice_type).toBe('late');
+ await rejects(() => legacyNotice(), /Notice already submitted/);
+});
+
+test('legacy notice preserves participant, roster, reason and anonymous denials', async () => {
+ await schedule('1 hour', '2 hours');
+ for (const actor of [null, 7, 8]) await rejects(() => legacyNotice(mid, actor), /Active Attendance participant required/);
+ await rejects(() => legacyNotice(mid, 3, ' '), /notice reason/);
+ await rejects(() => legacyNotice(mid, 3, 'x'.repeat(2001)), /notice reason/);
+ await root('delete from public.team_attendance where meeting_id=$1 and student_id=$2', [mid, id(5)]);
+ await rejects(() => legacyNotice(mid, 5), /not on this meeting roster/);
+ await db.exec('reset role;set role anon');
+ await rejects(() => db.query('select public.team_attendance_notice($1,$2)', [mid, 'Denied anonymous notice']), /permission denied/);
 });
