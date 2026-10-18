@@ -43,6 +43,14 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
       - run: npx playwright install --with-deps chromium
       - run: npm test
+      - name: Retain synthetic parent homepage previews
+        if: ${{ always() && github.event_name == 'pull_request' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: parent-homepage-preview
+          path: test-results/parents-preview-*.png
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Retain synthetic account access previews
         if: ${{ always() && github.event_name == 'pull_request' }}
         uses: actions/upload-artifact@v4
