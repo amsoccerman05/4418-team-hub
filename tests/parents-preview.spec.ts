@@ -1,0 +1,35 @@
+import {test,expect} from '@playwright/test';
+import {session} from './hub-session';
+for(const width of [390,768,1440])test(`parent design preview at ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:1000});await session(page);
+ const writes:string[]=[];const reads:string[]=[];const errors:string[]=[];
+ page.on('request',r=>{if(r.url().includes('/rest/v1/')){reads.push(new URL(r.url()).pathname);if(r.method()!=='GET'&&!r.url().endsWith('/notification_center'))writes.push(r.url());}});
+ page.on('pageerror',e=>errors.push(e.message));
+ await page.route('**/rest/v1/rpc/notification_center',r=>r.fulfill({json:{unread:0,attention:[],items:[],has_more:false}}));
+ await page.goto('/#parents-preview');
+ await expect(page.getByRole('heading',{name:'Parent home',exact:true})).toBeVisible();
+ await expect(page.getByText('No family calendar is connected to this preview yet.')).toBeVisible();
+ await expect(page.getByText('Saturday build meeting',{exact:true})).toHaveCount(0);
+ await page.getByLabel('Show example content').check();
+ await expect(page.getByText('Example content only.',{exact:false})).toBeVisible();
+ await expect(page.getByRole('heading',{name:'Saturday build meeting'})).toBeVisible();
+ await page.getByRole('button',{name:'View signups'}).last().click();
+ await page.getByRole('button',{name:'View signups'}).last().click();
+ await expect(page.getByRole('status')).toContainText('does not submit signups');
+ await expect(page.locator('.parent-preview-notice')).toHaveCount(1);
+ await page.getByRole('button',{name:'Dismiss'}).click();await expect(page.locator('.parent-preview-notice')).toHaveCount(0);
+ await page.getByRole('link',{name:'Coach updates',exact:true}).click();
+ await expect(page.locator('#parent-updates')).toBeFocused();expect(page.url()).toContain('#parents-preview');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.screenshot({path:`test-results/parents-preview-${width}.png`,fullPage:true});
+ await page.getByLabel('Show example content').uncheck();await expect(page.getByRole('heading',{name:'Saturday build meeting'})).toHaveCount(0);
+ await page.reload();await expect(page.getByLabel('Show example content')).not.toBeChecked();
+ expect(writes).toEqual([]);expect(reads.filter(p=>/team_announcements|team_attendance|team_meetings|meals/.test(p))).toEqual([]);
+ await page.getByRole('link',{name:'Back to Team Hub',exact:true}).click();await expect(page.getByRole('heading',{name:'Parent home',exact:true})).toHaveCount(0);
+ await page.goBack();await expect(page.getByRole('heading',{name:'Parent home',exact:true})).toBeVisible();
+ expect(errors).toEqual([]);
+});
+test('signed-out preview remains behind existing team sign-in',async({page})=>{
+ await page.goto('/#parents-preview');await expect(page.getByRole('heading',{name:'Team sign in'})).toBeVisible();
+ await expect(page.getByRole('heading',{name:'Parent home',exact:true})).toHaveCount(0);
+});
