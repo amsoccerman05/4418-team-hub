@@ -21,6 +21,7 @@ for(const width of [390,768,1440])test(`parent design preview at ${width}`,async
  await page.getByRole('link',{name:'Coach updates',exact:true}).click();
  await expect(page.locator('#parent-updates')).toBeFocused();expect(page.url()).toContain('#parents-preview');
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.evaluate(()=>{(document.activeElement as HTMLElement)?.blur();window.scrollTo(0,0);});
  await page.screenshot({path:`test-results/parents-preview-${width}.png`,fullPage:true});
  await page.getByLabel('Show example content').uncheck();await expect(page.getByRole('heading',{name:'Saturday build meeting'})).toHaveCount(0);
  await page.reload();await expect(page.getByLabel('Show example content')).not.toBeChecked();
