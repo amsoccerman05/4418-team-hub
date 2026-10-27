@@ -51,6 +51,14 @@ jobs:
           path: test-results/account-access-*.png
           if-no-files-found: ignore
           retention-days: 7
+      - name: Retain synthetic Home task previews
+        if: ${{ always() && github.event_name == 'pull_request' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: home-task-shortcuts-review
+          path: test-results/home-task-shortcuts-*.png
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Retain privacy notice browser previews
         if: ${{ always() }}
         uses: actions/upload-artifact@v4

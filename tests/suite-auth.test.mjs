@@ -7,23 +7,23 @@ const source=readFileSync(new URL('../src/suite-auth.ts',import.meta.url),'utf8'
 const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
 const hub='https://team.frc4418.org',pit='https://pit.frc4418.org';
 const makeSession=(token='token-1',id='scout')=>({access_token:token,expires_at:Math.floor(Date.now()/1000)+3600,user:{id}});
-async function fixture({opened=false,initialError=false,delayFrameLoad=false}={}){
- const listeners={},docListeners={},intervals=[],events=[],frames=[],pending=[],authTokens=[];
+async function fixture({opened=false,initialError=false,delayFrameLoad=false,origin=pit,popupBlocked=false}={}){
+ const listeners={},docListeners={},intervals=[],events=[],frames=[],pending=[],authTokens=[],launched=[];
  let session=makeSession(),error=initialError,hold=false,removed=0,id=0,frameTimeout,tokenProvider;
  const dispatch=(data,origin=hub,source=transport)=>{for(const f of listeners.message||[])f({data,origin,source});};
  const reply=(data,source)=>{const result={data:{session},error:error?{message:'temporary outage'}:null};if(data.method==='signOut'){session=null;dispatch({protocol:data.protocol,event:'SIGNED_OUT',session:null},hub,source);result.data.session=null;}if(data.method==='signInWithPassword'){error=false;session=makeSession();result.data.session=session;result.error=null;dispatch({protocol:data.protocol,event:'SIGNED_IN',session},hub,source);}const send=()=>dispatch({protocol:data.protocol,id:data.id,result},hub,source);if(hold&&data.method==='getSession')pending.push(send);else queueMicrotask(send);};
  const opener=opened?{closed:false,postMessage(data,origin){assert.equal(origin,hub);reply(data,opener);}}:null;
  const transport={postMessage(data,origin){assert.equal(origin,hub);reply(data,transport);}};
  const frame={contentWindow:transport};
- const window={opener,addEventListener(name,cb){(listeners[name]||=[]).push(cb);}};
+ const window={opener,open(url,target){launched.push({url,target});return popupBlocked?null:{opener:window,closed:false};},addEventListener(name,cb){(listeners[name]||=[]).push(cb);}};
  const document={referrer:opened?hub+'/':'',hidden:false,createElement:()=>frame,body:{append(f){frames.push(f);if(!delayFrameLoad)queueMicrotask(()=>f.onload());}},addEventListener(name,cb){(docListeners[name]||=[]).push(cb);}};
  const dataClient={realtime:{setAuth(token){authTokens.push(token);}},removeAllChannels(){removed++;}};
  const module={exports:{}};
- vm.runInNewContext(code,{module,exports:module.exports,require:()=>({createClient:(_url,_key,options)=>{tokenProvider=options.accessToken;return dataClient;}}),window,document,location:{origin:pit,search:'',hash:'',pathname:'/'},history:{replaceState(){}},URL,URLSearchParams,crypto:{randomUUID:()=>String(++id)},setTimeout(cb,ms){if(delayFrameLoad&&ms===15000){frameTimeout=cb;return 0;}return setTimeout(cb,ms);},clearTimeout,setInterval(cb){intervals.push(cb);},console});
+ vm.runInNewContext(code,{module,exports:module.exports,require:()=>({createClient:(_url,_key,options)=>{tokenProvider=options.accessToken;return dataClient;}}),window,document,location:{origin,search:'',hash:'',pathname:'/'},history:{replaceState(){}},URL,URLSearchParams,crypto:{randomUUID:()=>String(++id)},setTimeout(cb,ms){if(delayFrameLoad&&ms===15000){frameTimeout=cb;return 0;}return setTimeout(cb,ms);},clearTimeout,setInterval(cb){intervals.push(cb);},console});
  const client=module.exports.createSuiteClient('https://fixture.invalid','public-key');
  client.auth.onAuthStateChange((event,next)=>events.push({event,session:next}));
  const settle=()=>new Promise(resolve=>setImmediate(resolve));await settle();
- return {client,opener,events,frames,authTokens,settle,accessToken:()=>tokenProvider(),timeoutFrame(){frameTimeout();},loadFrame(){frame.onload();},source:transport,dispatch,get removed(){return removed;},setSession(next){session=next;},setError(next){error=next;},setHold(next){hold=next;},release(){for(const send of pending.splice(0))send();},async fire(name){for(const cb of listeners[name]||[])cb();await settle();},async tick(){for(const cb of intervals)cb();await settle();}};
+ return {client,opener,events,frames,authTokens,settle,launched,click(href){const event={defaultPrevented:false,button:0,target:{closest:()=>({href,hasAttribute:()=>false})},preventDefault(){this.defaultPrevented=true;}};for(const cb of docListeners.click||[])cb(event);return event.defaultPrevented;},accessToken:()=>tokenProvider(),timeoutFrame(){frameTimeout();},loadFrame(){frame.onload();},source:transport,dispatch,get removed(){return removed;},setSession(next){session=next;},setError(next){error=next;},setHold(next){hold=next;},release(){for(const send of pending.splice(0))send();},async fire(name){for(const cb of listeners[name]||[])cb();await settle();},async tick(){for(const cb of intervals)cb();await settle();}};
 }
 test('closing the Hub reconnects via the pinned broker without signing out a valid session',async()=>{const f=await fixture({opened:true});assert.equal(f.frames.length,0);f.opener.closed=true;await f.fire('focus');assert.equal(f.frames.length,1);assert.equal(f.events.some(e=>e.event==='SIGNED_OUT'),false);assert.equal((await f.client.auth.getSession()).data.session.user.id,'scout');await f.client.auth.signOut();assert.equal(f.events.at(-1).session,null);assert.ok(f.removed>0);});
 test('direct visits reconcile missed refresh on resume, then confirmed signout',async()=>{const f=await fixture();f.setSession(makeSession('token-2'));await f.fire('focus');assert.equal(f.events.at(-1).event,'TOKEN_REFRESHED');assert.equal(f.events.at(-1).session.access_token,'token-2');f.setSession(null);await f.fire('online');assert.equal(f.events.at(-1).event,'SIGNED_OUT');});
@@ -36,3 +36,18 @@ test('shared clients do not add credential persistence or token handoff URLs',()
 test('a timed-out frame can finish loading and recover without reloading the app',async()=>{const f=await fixture({delayFrameLoad:true});f.timeoutFrame();await f.settle();assert.equal(f.events.at(-1).session,null);f.loadFrame();const result=await f.client.auth.getSession();assert.equal(result.error,null);assert.equal(result.data.session.user.id,'scout');});
 
 test('in-flight data token lookup cannot reuse signed-out or switched-account credentials',async()=>{for(const next of [null,makeSession('other-token','other-account')]){const f=await fixture();f.setHold(true);const lookup=f.accessToken();const rejected=assert.rejects(lookup,/account changed/);await f.settle();f.dispatch({protocol:'4418-suite-auth-v1',event:next?'SIGNED_IN':'SIGNED_OUT',session:next});f.release();await rejected;}});
+
+
+test('Home task destinations keep exact query/hash through the existing first-party handoff',async()=>{
+ const f=await fixture({origin:hub});
+ for(const url of ['https://inventory.frc4418.org/#inventory','https://finance.frc4418.org/?action=request-purchase','https://pit.frc4418.org/']){
+  assert.equal(f.click(url),true);assert.deepEqual(f.launched.at(-1),{url,target:'_blank'});
+ }
+ assert.equal(f.click(hub+'/#planning/my-work'),false);assert.equal(f.launched.length,3);
+ assert.equal(f.click('https://untrusted.example/?action=request-purchase'),false);assert.equal(f.launched.length,3);
+});
+test('blocked popups retain native Home task navigation rather than dropping the task',async()=>{
+ const f=await fixture({origin:hub,popupBlocked:true});
+ assert.equal(f.click('https://finance.frc4418.org/?action=request-purchase'),false);
+ assert.equal(f.launched.at(-1).url,'https://finance.frc4418.org/?action=request-purchase');
+});

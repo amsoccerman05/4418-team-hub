@@ -100,3 +100,41 @@ for(const width of [390,1440])test(`adaptive dashboard priority ${width}`,async(
  c.next_meeting={id:'00000000-0000-0000-0000-000000000010',title:'Build session',starts_at:new Date(Date.now()+3600000).toISOString(),ends_at:new Date(Date.now()+7200000).toISOString(),type:'build',required:true,check_in_open:false};await page.getByRole('button',{name:'Refresh',exact:true}).click();await expect(page.locator('.my-next')).toContainText('Build session');await expect(page.getByRole('link',{name:'View meeting'})).toHaveAttribute('href','#attendance/meeting/00000000-0000-0000-0000-000000000010');expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
 
+
+for(const width of [390,768,1440])test(`Home task shortcuts are direct, responsive, and read-only at ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});const c=await setup(page);
+ c.orders=[{id:'draft',po_number:31,vendor:'Fixture draft',amount:20,status:'draft',approvals:0},{id:'changes',po_number:32,vendor:'Fixture changes',amount:30,status:'changes_requested',approvals:0},{id:'waiting',po_number:33,vendor:'Fixture review',amount:40,status:'awaiting_approval',approvals:1}];
+ const writes:string[]=[];page.on('request',r=>{if(r.method()!=='GET'&&!/\/(team_dashboard_context|planning_my_work_context|notification_center)$/.test(new URL(r.url()).pathname))writes.push(r.url());});
+ await page.goto('/');const tasks=page.getByRole('navigation',{name:'Start a task'});await expect(tasks).toBeVisible();await expect(tasks.getByRole('link')).toHaveCount(4);
+ for(const [name,href] of [['Find a part','https://inventory.frc4418.org/#inventory'],['Request a purchase','https://finance.frc4418.org/?action=request-purchase'],['Report a problem','https://pit.frc4418.org/'],['My assignments','#planning/my-work']]){
+  const link=tasks.getByRole('link',{name,exact:true});await expect(link).toHaveAttribute('href',href);await expect(link).not.toHaveAttribute('target');expect((await link.boundingBox())!.height).toBeGreaterThanOrEqual(44);expect((await link.boundingBox())!.height).toBeLessThan(220);
+ }
+ await expect(tasks.getByText('Open Pit, then choose Report issue.')).toBeVisible();await expect(page.getByText('Complete your request, then submit it for approval.')).toBeVisible();await expect(page.getByText('Review the requested changes, update your request, and resubmit.')).toBeVisible();await expect(page.getByText('Waiting for the remaining approver. Nothing to do right now.')).toBeVisible();await expect(page.getByText('Waiting for attendance review. Nothing to do right now.')).toBeVisible();
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);expect(writes).toEqual([]);await page.screenshot({path:`test-results/home-task-shortcuts-${width}.png`,fullPage:true});
+});
+
+async function emptyPersonalWork(page:Page){
+ const uid='00000000-0000-0000-0000-000000000001';
+ await page.route('**/rpc/planning_my_work_context',r=>r.fulfill({json:{user_id:uid,can_manage:false,season_id:'season',seasons:[{id:'season',name:'Fixture season',status:'active'}],members:[],areas:[],groups:[],items:[],boards:[],tasks:[]}}));
+}
+async function signInFixture(page:Page){
+ const user={id:'00000000-0000-0000-0000-000000000001',aud:'authenticated',email:'test@example.invalid',app_metadata:{},user_metadata:{}};
+ const token=[{alg:'HS256'},{sub:user.id,exp:4000000000,aud:'authenticated'}].map(x=>Buffer.from(JSON.stringify(x)).toString('base64url')).join('.')+'.fixture';
+ await page.route('**/auth/v1/token**',r=>r.fulfill({json:{access_token:token,refresh_token:'fixture-refresh',expires_in:3600,token_type:'bearer',user}}));
+ await page.getByLabel('Email',{exact:true}).fill(user.email);await page.getByLabel('Password',{exact:true}).fill('fixture-password');await page.getByRole('button',{name:'Sign in',exact:true}).click();
+}
+for(const width of [390,1440])test(`My assignments shortcut supports repeated navigation and Back/Forward at ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});await setup(page);await emptyPersonalWork(page);await page.goto('/');
+ for(let n=0;n<2;n++){
+  await page.getByRole('link',{name:'My assignments',exact:true}).click();await expect(page.getByRole('heading',{name:'My Work',exact:true})).toBeVisible();await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.goBack();await expect(page.getByRole('navigation',{name:'Start a task'})).toBeVisible();await page.goForward();await expect(page.getByRole('heading',{name:'My Work',exact:true})).toBeVisible();await expect(page.getByRole('dialog')).toHaveCount(0);await page.goBack();
+ }
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+for(const width of [390,1440])test(`My assignments survives sign-in and session interruption but explicit sign-out clears it at ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});await setup(page);await emptyPersonalWork(page);await page.addInitScript(()=>localStorage.removeItem('4418-team-hub-auth'));
+ await page.goto('/#planning/my-work');await expect(page.getByRole('heading',{name:'Team sign in',exact:true})).toBeVisible();await expect(page.getByRole('navigation',{name:'Start a task'})).toHaveCount(0);await signInFixture(page);await expect(page.getByRole('heading',{name:'My Work',exact:true})).toBeVisible();await expect(page).toHaveURL(/#planning\/my-work$/);
+ await page.evaluate(()=>{localStorage.removeItem('4418-team-hub-auth');const channel=new BroadcastChannel('4418-team-hub-auth');channel.postMessage({event:'SIGNED_OUT',session:null});channel.close();});
+ await expect(page.getByRole('heading',{name:'Team sign in',exact:true})).toBeVisible();await expect(page).toHaveURL(/#planning\/my-work$/);await signInFixture(page);await expect(page.getByRole('heading',{name:'My Work',exact:true})).toBeVisible();await expect(page.getByRole('dialog')).toHaveCount(0);
+ await page.route('**/auth/v1/logout**',r=>r.fulfill({status:204}));await page.getByRole('button',{name:'Sign out',exact:true}).click();await expect(page.getByRole('heading',{name:'Team sign in',exact:true})).toBeVisible();expect(new URL(page.url()).hash).toBe('');
+});
