@@ -10,6 +10,7 @@ async function setup(page:Page,mentor=false){
  if(path.endsWith('/planning_my_work_context'))return r.fulfill({json:{user_id:uid,season_id:null,seasons:[],boards:[],tasks:[]}});
  if(path.endsWith('/pit_issues'))return r.fulfill({json:[],headers:{'content-range':'*/0','access-control-expose-headers':'content-range'}});
  if(path.endsWith('/team_dashboard_context'))return r.fulfill({json:{...c,announcements:announcements.filter(a=>a.active)}});
+ if(path.endsWith('/team_attendance'))return r.fulfill({json:c.next_meeting?[{meeting_id:c.next_meeting.id,physical_status:c.next_meeting.physical_status||'pending',checked_in_at:null,left_at:null}]:[]});
  if(path.endsWith('/team_announcements'))return r.fulfill({json:announcements});
  if(path.endsWith('/team_positions'))return r.fulfill({json:[{key:'communications_lead',name:'Communications Lead'}]});
  if(path.endsWith('/areas'))return r.fulfill({json:[{id:uid,name:'Fabrication',active:true}]});
@@ -35,7 +36,7 @@ test('dashboard clears personal data on sign-out',async({page})=>{await setup(pa
 
 test('populated personal cards and announcement expiration',async({page})=>{
  await page.clock.install();const c=await setup(page);const future=new Date(Date.now()+3600000).toISOString();
- c.next_meeting={id:'meeting',title:'Build night',type:'preseason',starts_at:future,ends_at:future,required:true,check_in_open:true,code_expires_at:future,physical_status:'pending'};
+ c.next_meeting={id:'00000000-0000-0000-0000-000000000010',title:'Build night',type:'preseason',starts_at:new Date(Date.now()-60000).toISOString(),ends_at:future,required:true,check_in_open:true,code_expires_at:future,physical_status:'pending'};
  c.orders=[{id:'po',po_number:27,vendor:'Parts vendor',amount:12.5,status:'awaiting_approval',approvals:1}];
  await page.route('**/rpc/team_dashboard_context',r=>r.fulfill({json:{...c,announcements:[{id:'notice',title:'Urgent update',body:'<script>plain text</script>',severity:'urgent',created_at:new Date().toISOString(),expires_at:new Date(Date.now()+10000).toISOString()}]}}));
  await page.goto('/');await expect(page.getByText('Build night')).toBeVisible();await expect(page.getByText('Check-in open',{exact:true})).toBeVisible();await expect(page.getByRole('link',{name:'PO #27 · Parts vendor'})).toHaveAttribute('href','https://finance.frc4418.org/#po/po');await expect(page.getByText('1/2 approvals for this submission')).toBeVisible();await expect(page.getByText('<script>plain text</script>',{exact:true})).toBeVisible();await page.clock.fastForward(31000);await expect(page.getByText('Urgent update')).toHaveCount(0);
@@ -96,5 +97,6 @@ test('quiet Home stays compact on phone with a subtle usable refresh',async({pag
 
 for(const width of [390,1440])test(`adaptive dashboard priority ${width}`,async({page})=>{
  await page.setViewportSize({width,height:900});const c=await setup(page,true);await page.goto('/');await expect(page.locator('.my-attention')).toBeVisible();const attention=await page.locator('.my-attention').boundingBox(),next=await page.locator('.my-next').boundingBox();expect(attention!.y).toBeLessThanOrEqual(next!.y);await expect(page.locator('.my-team-status')).toContainText('Inventory · 1 item out of stock · 3 low stock');await expect(page.locator('#home-announcements')).toHaveCount(0);await expect(page.locator('.my-team-status a[href="https://inventory.frc4418.org/#restock"]')).toBeVisible();await expect(page.locator('.hub-nav').getByRole('link',{name:'Competition Operations',exact:true,includeHidden:true})).toHaveAttribute('href','https://pit.frc4418.org');
- c.next_meeting={title:'Build session',starts_at:new Date(Date.now()+3600000).toISOString(),ends_at:new Date(Date.now()+7200000).toISOString(),type:'build',required:true,check_in_open:false};await page.getByRole('button',{name:'Refresh',exact:true}).click();await expect(page.locator('.my-next')).toContainText('Build session');await expect(page.getByRole('link',{name:'View meeting'})).toHaveAttribute('href','#attendance');expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ c.next_meeting={id:'00000000-0000-0000-0000-000000000010',title:'Build session',starts_at:new Date(Date.now()+3600000).toISOString(),ends_at:new Date(Date.now()+7200000).toISOString(),type:'build',required:true,check_in_open:false};await page.getByRole('button',{name:'Refresh',exact:true}).click();await expect(page.locator('.my-next')).toContainText('Build session');await expect(page.getByRole('link',{name:'View meeting'})).toHaveAttribute('href','#attendance/meeting/00000000-0000-0000-0000-000000000010');expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
+

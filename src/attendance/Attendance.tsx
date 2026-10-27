@@ -37,6 +37,7 @@ import { VolunteerHours } from "./volunteer/VolunteerHours";
 import { MeetingEditor } from "./MeetingEditor";
 import { ParticipantRosterSync } from "./ParticipantRosterSync";
 import { AutomaticAbsencePreview } from "./AutomaticAbsencePreview";
+import { attendanceMeetingId } from "./meeting-route";
 import { checkInSuccessMessage } from "./checkInResult";
 import { automaticAbsenceStrikePreview, automaticAbsenceFinalizationConfirmation, automaticAbsenceCorrection } from "./automaticAbsenceStrikes";
 const time = (s: string | null) =>
@@ -87,9 +88,11 @@ function Stats({ data, id }: { data: Data; id: string }) {
 export function AttendanceHub({
   workspace,
   tab,
+  route = location.hash,
 }: {
   workspace: boolean;
   tab: string;
+  route?: string;
 }) {
   const [profile, setProfile] = useState<Profile | null>(null),
     [signedIn, setSignedIn] = useState(false),
@@ -99,6 +102,10 @@ export function AttendanceHub({
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false);
   const generation = useRef(0);
+  const running = useRef<symbol|null>(null);
+  const currentRoute = useRef(route);
+  currentRoute.current = route;
+  useEffect(() => { setError(""); setMessage(""); }, [route]);
   useEffect(() => {
     if (!supabase) return;
     let mounted = true;
@@ -111,6 +118,9 @@ export function AttendanceHub({
         if (nextUser === currentUser && event !== "USER_UPDATED") return;
         currentUser = nextUser;
         const gen = ++generation.current;
+        running.current = null;
+        setBusy(false);
+        setMessage("");
         setProfile(null);
         setData(null);
         setError("");
@@ -155,6 +165,10 @@ export function AttendanceHub({
     };
   }, []);
   async function run(work: () => Promise<unknown>, success: string | ((result: unknown) => string) = "Saved", afterRefresh?: () => void) {
+    if (running.current) return;
+    const action = Symbol();
+    running.current = action;
+    const actionRoute = route;
     let workCompleted = false;
     setBusy(true);
     setError("");
@@ -168,11 +182,11 @@ export function AttendanceHub({
         const d = await loadData(isManager(profile));
         if (gen === generation.current) setData(d);
       }
-      if (gen === generation.current) { setMessage(successMessage); afterRefresh?.(); }
+      if (gen === generation.current && actionRoute === currentRoute.current) { setMessage(successMessage); afterRefresh?.(); }
     } catch (e) {
-      if (gen === generation.current) setError(workCompleted && afterRefresh ? "Meeting saved, but the refreshed view could not be loaded. Your draft is kept. Choose Refresh meeting to verify the saved details." : errorText(e));
+      if (gen === generation.current && actionRoute === currentRoute.current) setError(workCompleted && afterRefresh ? "Meeting saved, but the refreshed view could not be loaded. Your draft is kept. Choose Refresh meeting to verify the saved details." : errorText(e));
     } finally {
-      setBusy(false);
+      if (running.current === action) { running.current = null; setBusy(false); }
     }
   }
   return (
@@ -297,6 +311,7 @@ export function AttendanceHub({
                       data={data}
                       profile={profile}
                       tab={tab}
+                      route={route}
                       run={run}
                       busy={busy}
                       error={error}
@@ -1135,6 +1150,7 @@ function Workspace({
   data,
   profile,
   tab,
+  route,
   run,
   busy,
   error,
@@ -1143,6 +1159,7 @@ function Workspace({
   data: Data;
   profile: Profile;
   tab: string;
+  route: string;
   run: Run;
   busy: boolean;
   error: string;
@@ -1157,7 +1174,9 @@ function Workspace({
   tabs.splice(tabs.length-1,0,"stem-outreach");
   if (manager && canRequestForSelf) tabs.splice(tabs.indexOf("notices"), 0, "my-requests");
   if (profile.active && ['mentor','admin'].includes(profile.role)) tabs.splice(tabs.length-1,0,'volunteer-hours');
-  const current = tabs.includes(tab) ? tab : manager ? "dashboard" : "calendar";
+  const linkedMeeting = tab === "meeting";
+  const linkedMeetingId = attendanceMeetingId(route);
+  const current = linkedMeeting ? "calendar" : tabs.includes(tab) ? tab : manager ? "dashboard" : "calendar";
   const [selected, setSelected] = useState<string | null>(null),
     [creating, setCreating] = useState<Date | null>(null),
     [search, setSearch] = useState("");
@@ -1169,7 +1188,7 @@ function Workspace({
     setSelected(null);
     setCreating(null);
     setSearch("");
-  }, [tab]);
+  }, [route]);
   // Personal participation is independent of leadership/reviewer access. Never
   // use the team review queue as the source for the personal request view.
   const personalData = {
@@ -1195,7 +1214,18 @@ function Workspace({
         strikes: data.strikes.filter((s) => s.student_id === profile.id),
       };
   const currentAttendanceMeetings = data.meetings.filter(m => Date.now()<Date.parse(m.ends_at)+30*60_000 && data.attendance.some(a=>a.meeting_id===m.id&&a.student_id===profile.id&&a.checked_in_at));
-  const selectedMeeting = data.meetings.find((m) => m.id === selected);
+  // Resolve only the requested meeting after authenticated, RLS-filtered loading.
+  // Never substitute another meeting when a stale, deleted or inaccessible link fails.
+  const selectedMeeting = data.meetings.find((m) => m.id === (linkedMeeting ? linkedMeetingId : selected));
+  const linkedAvailable = !!selectedMeeting && canRequestForSelf && personalData.attendance.some(a=>a.meeting_id===selectedMeeting.id)
+    && ['draft','open','closed','finalized'].includes(selectedMeeting.status);
+  const closeMeeting = () => {
+    setSelected(null);
+    if(linkedMeeting){
+      window.history.replaceState(null,'',location.pathname+location.search+'#attendance/calendar');
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    }
+  };
   const notices = (personalRequests ? personalData : ownData).attendance.filter(
     (a) =>
       (a.notice_at || a.review_status === "pending") &&
@@ -1469,11 +1499,12 @@ function Workspace({
           />
         </Modal>
       )}
-      {selectedMeeting && (
+      {linkedMeeting && !linkedAvailable && <p className="att-panel" role="alert">This meeting is unavailable or you are not on its attendance roster. <a href="#attendance/calendar">View your calendar</a></p>}
+      {selectedMeeting && (!linkedMeeting || linkedAvailable) && (
         <Modal
           title="Meeting details"
           busy={busy}
-          onClose={() => setSelected(null)}
+          onClose={closeMeeting}
         >
           {error && (
             <p className="att-error" role="alert">
@@ -1482,7 +1513,7 @@ function Workspace({
           )}
           {message && <p className="att-success" role="status">{message}</p>}
           <p className="att-muted"><a href="#attendance/how-to">How to use Attendance →</a></p>
-          {manager && !personalRequests ? (
+          {manager && !personalRequests && !linkedMeeting ? (
             <Management
               key={selectedMeeting.id}
               selected={selectedMeeting.id}
@@ -1707,3 +1738,4 @@ function DepartureForm({
     </details>
   );
 }
+

@@ -48,6 +48,7 @@ function App() {
         {notifications&&<Notifications/>}
         {auth.signed && workspace && <AttendanceHub
           workspace={workspace}
+          route={route}
           tab={route.split("/")[1] || ""}
         />}
         {auth.signed && auth.userId && planning && !reviews && <Planning route={route} actorId={auth.userId}/> }
@@ -74,4 +75,5 @@ createRoot(document.getElementById("root")!).render(
 );
 
 import "./design-system.css";
+
 
