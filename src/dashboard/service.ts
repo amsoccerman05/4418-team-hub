@@ -1,10 +1,45 @@
 import {supabase} from '../attendance/service';
+import {attendanceMeetingId} from '../attendance/meeting-route';
+import {currentCheckoutMeeting,attendancePresence} from './next-meeting';
 export type Announcement={id:string;title:string;body:string;severity:'normal'|'important'|'urgent';created_at:string;expires_at:string|null;active?:boolean;area_id?:string|null;version?:number;audience?:string;position_key?:string|null;image_path?:string|null};
-export type Dashboard={name:string;role:string;admin:boolean;personal:{percent:number|null;strikes:number;pending:number};next_meeting:null|{id:string;title:string;type:string;starts_at:string;ends_at:string;required:boolean;check_in_open:boolean;code_expires_at:string|null;physical_status:string};orders:{id:string;po_number:number;vendor:string;amount:number;status:string;approvals:number}[];finance:{allowed:boolean;approvals:number;school:number};attention:null|{open_meetings:number;requests:number;strike_actions:number};robot:null|{event:string;open:number;blocking:number;readiness:string};inventory:null|{out:number;low:number};announcements:Announcement[]};
-export async function context():Promise<Dashboard>{
- const {data,error}=await supabase!.rpc('team_dashboard_context').abortSignal(AbortSignal.timeout(15000));
+export type Dashboard={name:string;role:string;admin:boolean;personal:{percent:number|null;strikes:number;pending:number};next_meeting:null|{id:string;title:string;type:string;starts_at:string;ends_at:string;required:boolean;check_in_open:boolean;code_expires_at:string|null;physical_status:string;checked_in_at?:string|null;left_at?:string|null};orders:{id:string;po_number:number;vendor:string;amount:number;status:string;approvals:number}[];finance:{allowed:boolean;approvals:number;school:number};attention:null|{open_meetings:number;requests:number;strike_actions:number};robot:null|{event:string;open:number;blocking:number;readiness:string};inventory:null|{out:number;low:number};announcements:Announcement[]};
+export async function context(userId:string):Promise<Dashboard>{
+ const signal=AbortSignal.timeout(15000),now=Date.now();
+ const {data,error}=await supabase!.rpc('team_dashboard_context').abortSignal(signal);
  if(error)throw error;
  if(!data?.personal||!Array.isArray(data.orders))throw new Error('Dashboard is unavailable. Please try again.');
+ if(!['student','lead','mentor','admin'].includes(data.role))return data;
+ // The existing dashboard RPC omits departure timestamps and ended meetings.
+ // Read only RLS-visible current meetings and the caller's own attendance so the
+ // existing 30-minute checkout grace remains reachable from Home. No writes.
+ type CurrentMeeting={id:string;title:string;status:string;meeting_type:string;starts_at:string;ends_at:string;check_in_open:boolean;code_expires_at:string|null};
+ const current:CurrentMeeting[]=[];
+ for(let from=0;;from+=500){
+  const result=await supabase!.from('team_meetings').select('id,title,status,meeting_type,starts_at,ends_at,check_in_open,code_expires_at')
+   .lte('starts_at',new Date(now).toISOString()).gt('ends_at',new Date(now-30*60_000).toISOString())
+   .in('status',['draft','open','closed','finalized']).order('id').range(from,from+499).abortSignal(signal);
+  if(result.error)throw result.error;
+  current.push(...result.data);if(result.data.length<500)break;
+ }
+ const next=data.next_meeting as Dashboard['next_meeting'];
+ const ids=[...new Set([...current.map(m=>m.id),...(next&&attendanceMeetingId(`#attendance/meeting/${next.id}`)?[next.id]:[])])];
+ type OwnAttendance={meeting_id:string;physical_status:string;checked_in_at:string|null;left_at:string|null};
+ const records:OwnAttendance[]=[];
+ for(let from=0;from<ids.length;from+=100){
+  const result=await supabase!.from('team_attendance').select('meeting_id,physical_status,checked_in_at,left_at')
+   .eq('student_id',userId).in('meeting_id',ids.slice(from,from+100)).abortSignal(signal);
+  if(result.error)throw result.error;records.push(...result.data);
+ }
+ const active=currentCheckoutMeeting(current,records,now);
+ if(active){
+  const own=records.find(a=>a.meeting_id===active.id)!;
+  const snapshot=await supabase!.from('team_meeting_members').select('required').eq('meeting_id',active.id).eq('student_id',userId).abortSignal(signal).maybeSingle();
+  if(snapshot.error)throw snapshot.error;
+  data.next_meeting={...active,type:active.meeting_type,required:!!snapshot.data?.required,...attendancePresence(own)};
+ }else if(next&&attendanceMeetingId(`#attendance/meeting/${next.id}`)){
+  const own=records.find(a=>a.meeting_id===next.id);
+  data.next_meeting=own?{...next,...attendancePresence(own)}:null;
+ }
  return data;
 }
 export async function announcementData(){
@@ -28,3 +63,4 @@ export async function uploadImage(file:File){
 }
 export async function removeImage(path:string){const r=await supabase!.storage.from(mediaBucket).remove([path]);if(r.error)throw r.error;}
 export async function sendAnnouncementUpdate(a:Announcement,request_id:string){const r=await supabase!.rpc('team_announcement_send_update',{announcement_id:a.id,expected_version:a.version,request_id}).abortSignal(AbortSignal.timeout(15000));if(r.error)throw r.error;}
+
