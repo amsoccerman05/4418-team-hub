@@ -3,6 +3,15 @@
 .my-dashboard > .my-welcome, .my-dashboard > .my-empty, .my-activity, .my-team-status, .my-announcement-section { grid-column: 1 / -1; }
 .my-dashboard h2 { font-size: 18px; margin: 0 0 16px; }
 .my-welcome { margin: 0; padding-bottom: 24px; border-bottom: 1px solid var(--suite-border); }
+.my-dashboard > .my-welcome { order: -2; }
+.my-task-shortcuts { grid-column: 1 / -1; order: -1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.my-task-shortcuts a { display: flex; align-items: flex-start; gap: 10px; min-width: 0; min-height: 76px; padding: 16px; border: 1px solid var(--suite-border); border-radius: var(--radius-card); background: var(--suite-surface); color: var(--suite-primary); }
+.my-task-shortcuts a:hover { background: var(--suite-info-bg); border-color: var(--suite-input-border); }
+.my-task-shortcuts a > svg { flex-shrink: 0; margin-top: 2px; }
+.my-task-shortcuts a > svg:last-child { margin-left: auto; }
+.my-task-shortcuts a > span { display: grid; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+.my-task-shortcuts strong { font-size: 14px; line-height: 1.4; }
+.my-task-shortcuts small { color: var(--suite-muted); font-size: 12px; line-height: 1.5; }
 .my-welcome h1 { font-size: 11px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; color: var(--suite-muted); margin: 0 0 10px; }
 .my-dashboard .my-welcome h2 { font-size: clamp(27px, 2.5vw, 34px); line-height: 1.25; letter-spacing: -.8px; margin: 0 0 8px; }
 .my-welcome p { max-width: 55ch; color: var(--suite-muted); }
@@ -37,6 +46,8 @@
 .my-next.is-empty p:last-child { margin-bottom: 0; }
 .my-next a:not(.my-primary-link) { color: var(--suite-primary); font-weight: 550; }
 .my-request-summary { font-size: 13px; padding-top: 12px; border-top: 1px solid var(--suite-subtle); margin-bottom: 0 !important; }
+.my-request-summary > span { display: block; margin-top: 6px; }
+.my-order-next-step { line-height: 1.5; }
 .my-grid, .my-announcements { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
 .my-activity { order: 2; }
 .my-card { position: relative; display: flex; flex-direction: column; gap: 16px; padding: 20px; }
@@ -91,8 +102,14 @@
 .announcement-hint { font-size: 13px; color: var(--suite-muted); line-height: 1.5; }
 .my-dialog input[type=file] { font-size: 13px; }
 .my-dashboard :is(button, a):focus-visible, .my-dialog :focus-visible { outline: 3px solid var(--suite-primary); outline-offset: 3px; }
+@media (max-width: 1200px) {
+ .my-task-shortcuts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 @media (max-width: 760px) {
  .my-dashboard { display: flex; flex-direction: column; gap: 20px; }
+ .my-task-shortcuts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+ .my-task-shortcuts a { padding: 12px; gap: 8px; }
+ .my-task-shortcuts a > svg:last-child { display: none; }
  .my-dashboard .my-welcome { position: relative; padding: 0 76px 20px 0; align-items: flex-start; }
  .my-dashboard .my-refresh { position: absolute; right: 0; top: 0; gap: 5px; padding-inline: 4px; }
  .my-dashboard .my-welcome h2 { font-size: 28px; }

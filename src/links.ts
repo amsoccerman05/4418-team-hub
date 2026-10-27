@@ -40,6 +40,16 @@ export const suiteApps = [
   { name: "Team Hub / Home", url: "https://team.frc4418.org/" },
   ...systems.map(app => ({ ...app, url: app.id === "attendance" ? "https://team.frc4418.org/#attendance" : app.url })),
 ];
+// Task destinations are explicit contracts with the existing workspaces. These
+// only navigate; the destination app still checks access before showing a form.
+export const homeTasks = [
+  {id:'find-part',name:'Find a part',description:'Search parts, tools, and supplies.',url:'https://inventory.frc4418.org/#inventory'},
+  {id:'request-purchase',name:'Request a purchase',description:'Start a purchase request in Finance.',url:'https://finance.frc4418.org/?action=request-purchase'},
+  // Pit has no create-issue deep link. Do not imply that opening it submits or
+  // opens a report; name the existing next button instead of guessing a route.
+  {id:'report-problem',name:'Report a problem',description:'Open Pit, then choose Report issue.',url:'https://pit.frc4418.org/'},
+  {id:'my-assignments',name:'My assignments',description:'Open your assigned Planning tasks.',url:'#planning/my-work'},
+] as const;
 export const resources: HubLink[] = [
   {
     id: "first",

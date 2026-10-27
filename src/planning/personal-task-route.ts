@@ -1,5 +1,8 @@
 import type {Context,Task} from './service';
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export function isPersonalWorkRoute(route:string):boolean {
+ return route==='#planning/my-work'||/^#planning\/my-work\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(route)&&route.startsWith('#planning/my-work/');
+}
 export function personalTaskFromRoute(route:string,data:Context):Task|null {
  const match=/^#planning\/my-work\/([^/]+)$/.exec(route);
  if(!match||!uuid.test(match[1]))return null;
