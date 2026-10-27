@@ -1,6 +1,6 @@
 import {supabase} from '../attendance/service';
 import {attendanceMeetingId} from '../attendance/meeting-route';
-import {currentCheckoutMeeting} from './next-meeting';
+import {currentCheckoutMeeting,attendancePresence} from './next-meeting';
 export type Announcement={id:string;title:string;body:string;severity:'normal'|'important'|'urgent';created_at:string;expires_at:string|null;active?:boolean;area_id?:string|null;version?:number;audience?:string;position_key?:string|null;image_path?:string|null};
 export type Dashboard={name:string;role:string;admin:boolean;personal:{percent:number|null;strikes:number;pending:number};next_meeting:null|{id:string;title:string;type:string;starts_at:string;ends_at:string;required:boolean;check_in_open:boolean;code_expires_at:string|null;physical_status:string;checked_in_at?:string|null;left_at?:string|null};orders:{id:string;po_number:number;vendor:string;amount:number;status:string;approvals:number}[];finance:{allowed:boolean;approvals:number;school:number};attention:null|{open_meetings:number;requests:number;strike_actions:number};robot:null|{event:string;open:number;blocking:number;readiness:string};inventory:null|{out:number;low:number};announcements:Announcement[]};
 export async function context(userId:string):Promise<Dashboard>{
@@ -35,10 +35,10 @@ export async function context(userId:string):Promise<Dashboard>{
   const own=records.find(a=>a.meeting_id===active.id)!;
   const snapshot=await supabase!.from('team_meeting_members').select('required').eq('meeting_id',active.id).eq('student_id',userId).abortSignal(signal).maybeSingle();
   if(snapshot.error)throw snapshot.error;
-  data.next_meeting={...active,type:active.meeting_type,required:!!snapshot.data?.required,...own};
+  data.next_meeting={...active,type:active.meeting_type,required:!!snapshot.data?.required,...attendancePresence(own)};
  }else if(next&&attendanceMeetingId(`#attendance/meeting/${next.id}`)){
   const own=records.find(a=>a.meeting_id===next.id);
-  data.next_meeting=own?{...next,...own}:null;
+  data.next_meeting=own?{...next,...attendancePresence(own)}:null;
  }
  return data;
 }

@@ -1,6 +1,6 @@
 import {test,expect} from '@playwright/test';
 import {attendanceMeetingId,attendanceMeetingHref} from '../src/attendance/meeting-route';
-import {nextMeetingAction,currentCheckoutMeeting} from '../src/dashboard/next-meeting';
+import {nextMeetingAction,currentCheckoutMeeting,attendancePresence} from '../src/dashboard/next-meeting';
 const id='00000000-0000-0000-0000-000000000001',now=Date.parse('2026-10-27T17:10:00Z');
 const meeting={id,title:'Build',type:'preseason',starts_at:'2026-10-27T17:00:00Z',ends_at:'2026-10-27T19:00:00Z',required:true,check_in_open:true,code_expires_at:'2026-10-27T17:30:00Z',physical_status:'pending'};
 test('meeting routes accept only exact UUID targets, never codes or write arguments',()=>{
@@ -30,4 +30,11 @@ test('current checkout selection honors exact grace, roster records, cancellatio
  const later={...m,id:'00000000-0000-0000-0000-000000000002',ends_at:'2026-10-27T18:00:00Z'};
  expect(currentCheckoutMeeting([later,m],[a,{...a,meeting_id:later.id}],now)?.id).toBe(id);
  expect(currentCheckoutMeeting([{...m,starts_at:'2026-10-27T18:00:00Z'}],[a],now)).toBeUndefined();
+});
+
+test('presence enrichment cannot replace meeting identity with attendance record identity',()=>{
+ const row={id:'different-attendance-record',meeting_id:id,student_id:'someone',physical_status:'present',checked_in_at:meeting.starts_at,left_at:null};
+ const enriched={...meeting,...attendancePresence(row)};
+ expect(enriched.id).toBe(id);expect(nextMeetingAction(enriched,now).href).toBe(`#attendance/meeting/${id}`);
+ expect(attendancePresence(row)).toEqual({physical_status:'present',checked_in_at:meeting.starts_at,left_at:null});
 });

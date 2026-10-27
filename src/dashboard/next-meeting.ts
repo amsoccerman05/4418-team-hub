@@ -15,3 +15,9 @@ export function currentCheckoutMeeting<T extends {id:string;starts_at:string;end
   &&records.some(a=>a.meeting_id===m.id&&a.checked_in_at&&!a.left_at&&['present','late'].includes(a.physical_status)))
   .sort((a,b)=>Date.parse(a.ends_at)-Date.parse(b.ends_at)||a.id.localeCompare(b.id))[0];
 }
+
+// Copy presence, not record identity: attendance.id is not meeting.id. Keeping
+// this projection explicit also makes richer API/mock rows safe to consume.
+export function attendancePresence(row:{physical_status:string;checked_in_at:string|null;left_at:string|null}) {
+ return {physical_status:row.physical_status,checked_in_at:row.checked_in_at,left_at:row.left_at};
+}
