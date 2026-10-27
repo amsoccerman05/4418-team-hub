@@ -1,7 +1,7 @@
-# My 4418 meeting check-in — review draft
+# My 4418 meeting check-in
 
 Prepared against Hub `f834bcf72c09bd01b0f9ad2057a14a44d293c297`.
-No migration, backend grant, production attendance record, deployment, or external app is changed.
+No migration, backend grant, production attendance record, or external app is changed by this implementation.
 
 ## Behavior
 
@@ -22,10 +22,10 @@ Passed locally:
 - All non-browser `tests/attendance-*.spec.ts`, plus `tests/dashboard-db.spec.ts` and the initial new model tests: 237 passed with synthetic PGlite/mock auth.
 - Final focused model/database regression rerun: 22 passed, including route validation, current checkout selection, exact grace/cancellation/overlap, and existing dashboard/RPC outcomes.
 
-Browser coverage is **prepared, not verified**: `tests/attendance-home-checkin-ui.spec.ts` covers phone/desktop explicit code entry, wrong codes, repeated submission, check-out cancellation, Home state, stale targets, permission denial, sign-in/session interruption, Close/Escape/Refresh/Back/Forward, newer navigation, and checkout grace. Existing dashboard fixtures were updated for the precise meeting link and authoritative timing.
+GitHub CI verified the browser coverage at feature head `6737c42a183055c1434d69ec294f0e1099a24e2d`: the existing focused Attendance workflow passed **379 tests**, including all 18 new Home UI scenarios and 4 model regressions. Coverage includes phone/desktop explicit code entry, wrong codes, repeated submission, check-out cancellation, Home state, stale targets, permission denial, sign-in/session interruption, Close/Escape/Refresh/Back/Forward, newer navigation, and checkout grace. Existing dashboard fixtures use the precise meeting link and authoritative timing. Attendance-state enrichment explicitly preserves meeting identity.
 
-The standard Playwright executable is absent in this workspace. Installed Chromium fails before launch under the socket-restricted sandbox. One escalated local test attempt also failed before execution with a sandbox mount error. No browser assertion or screenshot was successfully executed. The local-only alternative config is not part of this change.
+The local sandbox could not launch Chromium, so browser evidence comes from GitHub CI, not local browser assertions. Independent static review also completed. Disposable Auth/PostgREST, Attendance/shared-sites/Fabrication integration checks, volunteer-hours checks and scanned Inventory return checks passed at that head.
 
-Before publication/readiness, run the new browser suite and existing Dashboard/Attendance suites in a working test environment, then the repository aggregate checks and exact-commit PR CI. The published feature commit is based on the verified upstream main tree and parent; the connector-materialized local snapshot history is not published. Browser/aggregate PR CI is still the required readiness gate. Merge, deployment, and any live smoke test require their separate authorization.
+The Home regression files use the existing `attendance-*` naming convention so both the focused Attendance workflow and aggregate suite run them. The original aggregate run stopped at a pre-existing Vite security advisory; aggregate build/full browser stages were skipped, not passed. The approved minimal patch updates only Vite's lockfile version/resolved/integrity from 6.4.3 to 6.4.5, within the existing package.json range, with unchanged dependency/peer/engine ranges. The audit gate remains enabled.
 
-The Home regression files use the existing `attendance-*` naming convention so the focused Attendance workflow runs them as well as the aggregate suite. The original aggregate run stopped at the pre-existing Vite dependency security audit before any browser tests. The audit remains enabled and blocking.
+[PR #35](https://github.com/amsoccerman05/4418-team-hub/pull/35) records the final exact-commit checks and release status. The feature history is based on the verified upstream main tree and parent, not the connector-materialized local snapshot history. Release requires successful final checks and the separately authorized merge/deployment; production attendance records must not be used for smoke tests.
