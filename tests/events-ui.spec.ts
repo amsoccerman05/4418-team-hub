@@ -7,6 +7,7 @@ import {session} from './hub-session';
 const uid='00000000-0000-0000-0000-000000000001';
 async function setup(page:Page){
  await session(page);const calls:string[]=[];page.on('request',r=>{if(r.url().includes('/rest/v1/'))calls.push(r.url());});
+ await page.route('**/rest/v1/rpc/team_attendance_sync_my_rosters',r=>{expect(r.request().postDataJSON()).toEqual({});return r.fulfill({json:{added:0}});});
  await page.route('**/rest/v1/rpc/notification_center',r=>r.fulfill({json:{unread:0,attention:[],items:[],has_more:false}}));return calls;
 }
 test('empty event registry and retired overview/preview links render without event content or operations',async()=>{
@@ -37,10 +38,14 @@ for(const width of [390,768,1440])test(`retired guide links and Hub navigation a
  await page.reload();await expect(page.getByRole('heading',{name:'Event not found',exact:true})).toBeVisible();
  await page.goBack();expect(page.url()).toContain('#events/kcmt-2026');
  await page.goForward();expect(page.url()).toContain('/preview');
+ // Retired event routes must not enroll or read operational records. Home may
+ // perform its own narrow enrollment only after explicit navigation back.
+ expect(calls.filter(url=>/planning|inventory|team_attendance/.test(url))).toEqual([]);
  await page.getByRole('link',{name:'Back to Team Hub'}).click();
  await expect(page.getByRole('heading',{name:'Event not found',exact:true})).toHaveCount(0);
  await expect(page.locator('a[href^="#events"],a[href*="event.html"]')).toHaveCount(0);
- expect(calls.filter(url=>/planning|inventory|team_attendance/.test(url)).filter(url=>!url.includes('rpc/my_4418'))).toEqual([]);expect(errors).toEqual([]);
+ await expect.poll(()=>calls.some(url=>new URL(url).pathname==='/rest/v1/rpc/team_attendance_sync_my_rosters')).toBe(true);
+ expect(calls.filter(url=>/planning|inventory|team_attendance/.test(url)).filter(url=>new URL(url).pathname!=='/rest/v1/rpc/team_attendance_sync_my_rosters')).toEqual([]);expect(errors).toEqual([]);
 });
 test('sign-in interruption reaches a safe retired state without reading operational records',async({page})=>{
  const calls:string[]=[];await page.route('**/rest/v1/**',r=>{calls.push(r.request().url());return r.fulfill({json:new URL(r.request().url()).pathname.endsWith('/profiles')?{display_name:'Fixture',role:'student',active:true}:{unread:0,attention:[],items:[],has_more:false}});});
