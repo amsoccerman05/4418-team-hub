@@ -29,7 +29,7 @@ function harness(initialRole='mentor'){
  const contextGates=new Map<string,ReturnType<typeof deferred<any>>>();
  const manager={members:[],areas:[],positions:[],assignments:[],invitations:[{id:'other-invitation',email:'private-other@example.test',display_name:'Other member',status:'pending',created_at:'2026-10-01T00:00:00Z'}],history:[{id:1,actor_id:'other-actor',action:'invitation_requested',reason:'Private manager history',created_at:'2026-10-01T00:00:00Z'}]};
  const lead={members:[],areas:[],positions:[],assignments:[],invitations:[],history:[]};
- const calls:string[]=[],runners:any[]=[];
+ const calls:string[]=[],runners:any[]=[];let sendGate:ReturnType<typeof deferred<any>>|undefined;const sends:any[]=[];
  const supabase={
   auth:{onAuthStateChange(callback:any){authCallback=callback;callback('INITIAL_SESSION',{user:{id:'fixture-actor'}});return {data:{subscription:{unsubscribe(){}}}};}},
   from(){return {select(){return this;},eq(){return this;},abortSignal(){return this;},single(){calls.push('profile');if(profileGate){const gate=profileGate;profileGate=undefined;return gate.promise;}return Promise.resolve({data:{role,active}});}};},
@@ -56,7 +56,7 @@ function harness(initialRole='mentor'){
    if(name.endsWith('.css'))return {};
    if(name==='./ManagementForms')return forms;
    if(name==='../attendance/service')return {supabase};
-   if(name==='./invitation-client')return {submitReviewedInvitation:async()=>{throw Error('These tests must never send invitations');}};
+   if(name==='./invitation-client')return {submitReviewedInvitation:async(payload:any,scope:any)=>{if(!scope.isCurrent())return {status:'not_sent',stage:'before_reservation',code:'invalid_request'};sends.push(payload);return sendGate?sendGate.promise:{status:'accepted'};}};
    if(!name.startsWith('.'))return repoRequire(name);
    let next=resolve(dirname(path),name);if(!extname(next))next+=existsSync(next+'.ts')?'.ts':'.tsx';
    const result=load(next);
@@ -84,7 +84,7 @@ function harness(initialRole='mentor'){
   for(const [label,value] of [['Name for recipient 1','Reviewed student'],['Email for recipient 1','reviewed@example.test'],['Reason for recipient 1','Approved student joining']]){find('input',label,true).props.onChange({target:{value}});render();}
   click('Review batch',true);
  }
- return {manager,lead,calls,render,settle,click,draft,
+ return {manager,lead,calls,sends,render,settle,click,draft,holdSend(){sendGate=deferred<any>();return sendGate;},singleInvite(payload:any){click('+ Invite member');return descendants(tree).find(n=>n.type===forms.InviteForm)!.props.invite(payload);},
   get childTree(){return onboardingTree;},get node(){return onboardingNode;},get tree(){return tree;},get runner(){return runners.at(-1);},
   holdContext(name:string){const gate=deferred<any>();contextGates.set(name,gate);return gate;},
   holdProfile(){const gate=deferred<any>();profileGate=gate;return gate;},
@@ -134,4 +134,6 @@ test('same-user permission change clears reviewed manager drafts',async()=>{
  }finally{h.close();}
 });
 
-test('same identity recheck synchronously blocks retained dispatch and preserves reviewed request IDs',async()=>{const h=harness('admin_lead');try{h.render();await h.settle();h.draft();const rows=h.runner.snapshot(),key=h.node.key;const pending=h.holdProfile();h.auth();expect(h.node.props.isCurrentIdentity()).toBe(false);expect(h.node.props.active).toBe(false);expect(h.runner.snapshot()).toEqual(rows);pending.resolve({data:{role:'admin_lead',active:true}});await h.settle();expect(h.node.key).toBe(key);expect(h.node.props.isCurrentIdentity()).toBe(true);expect(h.runner.snapshot()).toEqual(rows);}finally{h.close();}});
+test('same identity recheck synchronously blocks retained dispatch and preserves reviewed request IDs',async()=>{const h=harness('admin_lead');try{h.render();await h.settle();h.draft();const rows=h.runner.snapshot(),key=h.node.key;const pending=h.holdProfile();h.auth();expect(h.node.props.canDispatch()).toBe(false);expect(h.node.props.isCurrentIdentity()).toBe(true);expect(h.node.props.active).toBe(false);expect(h.runner.snapshot()).toEqual(rows);pending.resolve({data:{role:'admin_lead',active:true}});await h.settle();expect(h.node.key).toBe(key);expect(h.node.props.isCurrentIdentity()).toBe(true);expect(h.runner.snapshot()).toEqual(rows);}finally{h.close();}});
+
+for(const outcome of [{status:'accepted'},{status:'review',message:'Uncertain result retained'}])test(`same identity suspended lookup retains single ${outcome.status} result and releases busy without new dispatch`,async()=>{const h=harness('admin_lead');try{h.render();await h.settle();const send=h.holdSend();const result=h.singleInvite({id:'00000000-0000-0000-0000-000000000020',email:'fixture@example.test'});await h.settle();expect(h.sends).toHaveLength(1);const profile=h.holdProfile();h.auth();await h.settle();expect(h.node.props.canDispatch()).toBe(false);send.resolve(outcome);await result;await h.settle();expect(h.node.props.existingEmails).toEqual([expect.objectContaining({email:'fixture@example.test',kind:outcome.status==='accepted'?'invitation':'review'})]);expect(h.node.props.busy).toBe(true);profile.resolve({data:{role:'admin_lead',active:true}});await h.settle();expect(h.node.props.busy).toBe(false);expect(h.sends).toHaveLength(1);}finally{h.close();}});

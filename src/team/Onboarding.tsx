@@ -7,7 +7,7 @@ import {invitationSetup,invitationDirectory,attendanceRegistration,linkedInvitat
 import {parseInvitationList} from './onboarding-input';
 import './onboarding.css';
 export type OnboardingData={members:OnboardingMember[];invitations?:OnboardingInvitation[];areas:{id:string;name:string;active:boolean}[]};
-type Props={actorId:string;actorRole?:string;studentOnly?:boolean;identitySignal:AbortSignal;isCurrentIdentity:()=>boolean;data:OnboardingData;active:boolean;busy:boolean;existingEmails:InvitationValidationContext['existingEmails'];refresh:(isCurrent:()=>boolean)=>Promise<OnboardingData>;onBusyChange:(busy:boolean)=>void;onBlock:(entry:{id:string;email:string;kind:'review'|'invitation'|'member'})=>void;onActivity:()=>void;onMember:(id:string)=>void};
+type Props={actorId:string;actorRole?:string;studentOnly?:boolean;identitySignal:AbortSignal;isCurrentIdentity:()=>boolean;canDispatch?:()=>boolean;data:OnboardingData;active:boolean;busy:boolean;existingEmails:InvitationValidationContext['existingEmails'];refresh:(isCurrent:()=>boolean)=>Promise<OnboardingData>;onBusyChange:(busy:boolean)=>void;onBlock:(entry:{id:string;email:string;kind:'review'|'invitation'|'member'})=>void;onActivity:()=>void;onMember:(id:string)=>void};
 const statusLabel=(row:InvitationRow)=>({draft:'Needs review',ready:'Reviewed · not sent',sending:'Sending',accepted:row.outcome?.status==='accepted'&&row.outcome.alreadyInvited?'Already accepted':'Accepted by service',not_sent:'Not sent',review:'Result needs review'}[row.status]);
 const editable=(row:InvitationRow)=>['draft','ready','not_sent'].includes(row.status);
 const safeDate=(value:string)=>Number.isNaN(Date.parse(value))?'Date unavailable':new Date(value).toLocaleDateString();
@@ -17,7 +17,7 @@ export function Onboarding(props:Props){
  const workspaceRequests=useRef(new AbortController());
  const mounted=useRef(true),operation=useRef(false),pauseRequested=useRef(false),runner=useRef<InvitationBatchRunner|null>(null);
  const [rows,setRows]=useState<readonly InvitationRow[]>([]),[paste,setPaste]=useState(''),[reason,setReason]=useState(''),[step,setStep]=useState<'draft'|'review'>('draft'),[acknowledged,setAcknowledged]=useState(false),[running,setRunning]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[past,setPast]=useState<InvitationRow[]>([]),[search,setSearch]=useState(''),[status,setStatus]=useState('all'),[directoryView,setDirectoryView]=useState<'open'|'history'>('open'),[batchOpen,setBatchOpen]=useState(false);
- const currentWorkspace=()=>mounted.current&&latest.current.active&&latest.current.isCurrentIdentity()&&location.hash==='#team-management';
+ const currentWorkspace=()=>mounted.current&&latest.current.active&&latest.current.isCurrentIdentity()&&(latest.current.canDispatch?.()??true)&&location.hash==='#team-management';
  const context=(data=latest.current.data):InvitationValidationContext=>({areas:data.areas,studentOnly:latest.current.studentOnly,allowAdmin:latest.current.actorRole==='admin',existingEmails:[...latest.current.existingEmails,...data.members.filter(member=>member.email).map(member=>({email:member.email!,kind:'member' as const})),...(data.invitations||[]).map(invitation=>({email:invitation.email,kind:'invitation' as const}))]});
  function makeRunner(initial:readonly InvitationRow[]=[]):InvitationBatchRunner{
   return createInvitationBatchRunner({rows:initial,sender:async(payload:InvitationPayload):Promise<InvitationOutcome>=>{

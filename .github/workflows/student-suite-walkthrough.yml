@@ -1,0 +1,43 @@
+name: Exact released Student suite walkthrough
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tests/suite/handoff*'
+      - 'tests/suite/released-artifacts.json'
+      - '.github/workflows/student-suite-walkthrough.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  exact-released-student:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HANDOFF_DIST_ROOT: ${{ github.workspace }}/.exact-released-artifacts
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify artifact contract and fail-closed guards
+        run: node --test tests/suite/handoff-artifacts.test.mjs
+      - name: Fetch public static bytes and compare every runtime asset with pinned Pages archive
+        run: node tests/suite/handoff-fetch-artifacts.mjs
+      - run: npx playwright install --with-deps chromium
+      - name: Walk through exact released apps as one genuine Student (offline synthetic backend)
+        run: npx playwright test --config tests/suite/handoff.config.ts --reporter=line --output=test-results/exact-student
+      - name: Retain exact provenance and fallback-font screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: exact-released-student-walkthrough
+          path: |
+            tests/suite/released-artifacts.json
+            test-results/
+          retention-days: 7
+          if-no-files-found: error

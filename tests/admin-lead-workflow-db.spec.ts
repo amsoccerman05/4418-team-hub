@@ -39,8 +39,15 @@ test.beforeAll(async()=>{
  await db.exec(readFileSync('tests/fixtures/fabrication-storage.sql','utf8'));
  for(const file of ['20261006201639_fabrication_v1.sql','20261006213850_assembly_testing_v1.sql','20261006235739_sprint_review_design_decisions_v1.sql','20261007155231_mentor_volunteer_hours.sql'])await sql(file);
  fixture=await planningFixture(db);await saveReview(db,'assignment',assignmentPayload());
+ await db.exec('reset role');await db.exec(readFileSync('tests/fixtures/workflow-core-prerequisite.sql','utf8'));
+ // The minimal foundation grants service_role default EXECUTE; live catalog pins show this private helper is owner-only.
+ await db.exec('revoke all on function planning_private.context(uuid,boolean),planning_private.manager(),public.planning_save(text,jsonb) from service_role');
  before=await security();const source=readFileSync(migration,'utf8');
  await expect(db.exec(source.replace(/commit;\s*$/,()=>"do $$begin raise exception 'forced adapter rollback';end$$;commit;"))).rejects.toThrow(/forced adapter rollback/);await db.exec('rollback');rollback=await security();
+ // Drift guards reject atomically, without changing any baseline object.
+ for(const drift of ["alter table profiles drop constraint profiles_role_check", "create or replace function public.team_my_positions() returns text[] language sql stable security definer set search_path='' as $$select '{}'::text[]$$", "alter function planning_private.manager() security invoker", "grant execute on function planning_private.manager() to anon"]){
+  await db.exec('begin;'+drift);const altered=await security();await expect(db.exec(source)).rejects.toThrow(/required|differs/);await db.exec('rollback');expect(await security()).toEqual(before);
+ }
  await db.exec(source);after=await security();
 });
 test.afterAll(()=>db?.close());

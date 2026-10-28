@@ -125,6 +125,21 @@ export async function runSharedSecurityIntegration({ base, anonKey, serviceKey, 
   await rejected(await rpc('inventory_action',{p_action:'create_trip',p_data:{name:'Denied'}},adminLead),/admins and mentors/);
   pass('Admin Lead retains own-area metadata but no cross-area or trip administration');
 
+  await json(await rpc('team_manage_v2',{action:'position_save',p:{create:true,key:'software_lead',name:'Software Lead',description:'Synthetic functional role',category:'Functional Leads',display_order:10,reason:'Synthetic named-position prerequisite'}},manager));
+  await json(await rpc('team_manage',{action:'assign_position',p:{user_id:adminLead.id,position_key:'software_lead',reason:'Synthetic assignment'}},manager));
+  assert.equal((await json(await rpc('inventory_location_creation_context',{},adminLead))).assigned_lead,true);
+  const storage=await json(await rpc('inventory_action',{p_action:'create_location',p_data:{name:'Synthetic assigned Admin Lead storage',classification:'permanent',kind:'Box',areaId:software}},adminLead));
+  const location=(await read('locations',`id=eq.${storage.id}`,adminLead))[0];
+  await json(await rpc('inventory_action',{p_action:'rename_location',p_data:{id:storage.id,name:'Synthetic name-only rename',updatedAt:location.updated_at}},adminLead));
+  sql(`update public.profiles set role='readonly' where id=${lit(adminLead.id)};`);
+  const deniedState=fingerprint(inventoryTables);
+  assert.equal((await json(await rpc('inventory_location_creation_context',{},adminLead))).assigned_lead,false);
+  await rejected(await rpc('change_inventory_quantity',{p_id:itemA,p_delta:1},adminLead),/permission/i);
+  await rejected(await rpc('inventory_action',{p_action:'create_location',p_data:{name:'Denied retained position',classification:'permanent'}},adminLead),/permission/i);
+  assert.equal(sql(`select count(*) from public.team_member_positions where user_id=${lit(adminLead.id)} and revoked_at is null`),'1');
+  assert.equal(fingerprint(inventoryTables),deniedState);sql(`update public.profiles set role='admin_lead' where id=${lit(adminLead.id)};`);
+  pass('real named-position Admin Lead can create/name-only rename; Readonly immediately wins over retained area/position with same JWT');
+
   const eventPayload = { name: 'Synthetic API security event', start_date: '2026-10-14', end_date: '2026-10-14' };
   const eventID = await json(await rpc('pit_save_event', { p: eventPayload }, manager));
   await json(await rpc('pit_activate_event', { p: { id: eventID } }, manager));
@@ -150,6 +165,7 @@ export async function runSharedSecurityIntegration({ base, anonKey, serviceKey, 
   await json(await request('/rest/v1/locations',{id:home,name:'Synthetic race home',location_type:'Drawer'},manager));
   await json(await request('/rest/v1/locations',{id:destination,name:'Synthetic race destination',location_type:'Storage'},manager));
   await json(await request('/rest/v1/inventory_items',{id:lockedItem,name:'Synthetic concurrency item',area_id:fabrication,category:'Test',quantity:10,location_id:home},manager));
+  const raceFailures=[];
   for(const change of ['readonly','inactive'])for(const operation of ['count','move','verify']){
     sql(`update public.profiles set role='student',active=true where id=${lit(student.id)};`);
     const stable=fingerprint(inventoryTables);
@@ -161,9 +177,13 @@ export async function runSharedSecurityIntegration({ base, anonKey, serviceKey, 
       await waitFor(()=>sql(`select count(*) from pg_stat_activity where wait_event_type='Lock' and cardinality(pg_blocking_pids(pid))>0 and query like '%${functionName}%'`) !== '0',`real ${operation} RPC blocked on synthetic item`);
       sql(`update public.profiles set ${change==='readonly'?"role='readonly'":'active=false'} where id=${lit(student.id)};`);
     } finally {await release();}
-    await rejected(await pending,/permission|cannot change inventory|audit/i);assert.equal(fingerprint(inventoryTables),stable);
-    pass(`native ${operation} denies ${change} after actual row-lock wait with identical JWT and no writes`);
+    const response=await pending;let denied=false,unchanged=false;
+    try{await rejected(response,/permission|cannot change inventory|audit/i);denied=true;}catch(error){raceFailures.push({operation,change,invariant:'403 permission denial',message:error.message});}
+    try{assert.equal(fingerprint(inventoryTables),stable);unchanged=true;}catch{raceFailures.push({operation,change,invariant:'no writes',message:'Inventory state or audit fingerprint changed'});}
+    if(denied&&unchanged)pass(`native ${operation} denies ${change} after actual row-lock wait with identical JWT and no writes`);
+    else console.error(`FAIL native ${operation}/${change}: HTTP ${response.status}, no-writes=${unchanged}`);
   }
+  assert.equal(raceFailures.length,0,JSON.stringify(raceFailures));
   sql(`update public.profiles set role='student',active=true where id=${lit(student.id)};`);
   const release=await gate({inventoryItem:lockedItem});const positive=rpc('change_inventory_quantity',{p_id:lockedItem,p_delta:1},student);
   try{await waitFor(()=>sql("select count(*) from pg_stat_activity where wait_event_type='Lock' and cardinality(pg_blocking_pids(pid))>0 and query like '%change_inventory_quantity%'")!=='0','positive control blocked');}finally{await release();}

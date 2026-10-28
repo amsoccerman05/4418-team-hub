@@ -40,13 +40,13 @@ for(const width of [390,1440]){
  test(`Planning draft survives denied save, unavailable access refresh and restoration ${width}`,async({page})=>{
   await page.setViewportSize({width,height:900});const state=await fixture(page);await page.goto('/#planning/boards/'+board);
   await page.getByRole('button',{name:'Details for Owned synthetic task',exact:true}).click();const dialog=page.getByRole('dialog');
-  await dialog.getByLabel('Title',{exact:true}).fill('My unsaved student work');await dialog.getByLabel('Description',{exact:true}).fill('Keep these notes');await dialog.getByLabel('Add a comment').fill('Keep my unsent comment');
+  await dialog.getByLabel('Title',{exact:true}).fill('My unsaved student work');await dialog.getByLabel('Description').fill('Keep these notes');await dialog.getByLabel('Add a comment').fill('Keep my unsent comment');
   state.denySave=true;state.failRead=true;await dialog.getByRole('button',{name:'Save',exact:true}).click();
   await expect(dialog.getByText(/Editing access could not be confirmed/)).toBeVisible();await expect(dialog.getByLabel('Title',{exact:true})).toHaveValue('My unsaved student work');await expect(dialog.getByLabel('Title',{exact:true})).toBeDisabled();expect(state.writes).toHaveLength(1);
   await page.screenshot({path:`test-results/planning-role-refresh-failed-${width}.png`,fullPage:true});
   state.failRead=false;await dialog.getByRole('button',{name:'Refresh editing access',exact:true}).click();await expect(dialog.getByText(/Planning is read only/)).toBeVisible();expect(state.writes).toHaveLength(1);
   state.role='admin_lead';state.write=true;state.denySave=false;await dialog.getByRole('button',{name:'Refresh editing access',exact:true}).click();
-  await expect(dialog.getByLabel('Title',{exact:true})).toBeEnabled();await expect(dialog.getByLabel('Description',{exact:true})).toHaveValue('Keep these notes');await expect(dialog.getByLabel('Add a comment')).toHaveValue('Keep my unsent comment');expect(state.writes).toHaveLength(1);
+  await expect(dialog.getByLabel('Title',{exact:true})).toBeEnabled();await expect(dialog.getByLabel('Description')).toHaveValue('Keep these notes');await expect(dialog.getByLabel('Add a comment')).toHaveValue('Keep my unsent comment');expect(state.writes).toHaveLength(1);
   await page.screenshot({path:`test-results/planning-role-restored-${width}.png`,fullPage:true});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await dialog.getByRole('button',{name:'Save',exact:true}).click();await expect(dialog).toHaveCount(0);expect(state.writes).toHaveLength(2);expect(state.writes[1].p.title).toBe('My unsaved student work');expect(state.unknown).toEqual([]);
  });
