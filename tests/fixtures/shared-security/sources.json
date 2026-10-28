@@ -80,5 +80,13 @@
     "source_path": "supabase/migrations/20261028160648_inventory_admin_lead_compatibility.sql",
     "sha256": "3b948dcfd4e445ebf50bae61da3b3864c5912e22d0545d996155016498ed2e54",
     "phase": "role"
+  },
+  {
+    "file": "tests/fixtures/shared-security/inventory-20261028170803_inventory_post_lock_authority.sql",
+    "repository": "https://github.com/amsoccerman05/4418-inventory.git",
+    "commit": "59d6b1de972fed902d36a3a47c68aefe2439457d",
+    "source_path": "supabase/migrations/20261028170803_inventory_post_lock_authority.sql",
+    "sha256": "07691889094176abd36358ca88476d643145000f228e1a0acdb0be2cf6c5013b",
+    "phase": "role"
   }
 ]

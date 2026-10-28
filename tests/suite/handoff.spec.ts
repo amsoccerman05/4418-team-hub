@@ -49,7 +49,7 @@ for(const width of [390,1440])for(const logout of ['hub','pit'])test(`first-part
   expect(await destination.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await destination.screenshot({path:`test-results/exact-student-${label.toLowerCase().replaceAll(' ','-')}-${width}-${logout}.png`,fullPage:true,animations:'disabled'});
  }
- await page.bringToFront();
+ await page.bringToFront();await audit.verify();
  await expect(page.locator('.hub-nav').getByRole('link',{name:'Team Management',exact:true})).toHaveCount(0);
  await page.screenshot({path:`test-results/exact-student-hub-${width}-${logout}.png`,fullPage:true,animations:'disabled'});
  await page.goto('https://team.frc4418.org/');
@@ -64,9 +64,14 @@ for(const width of [390,1440])for(const logout of ['hub','pit'])test(`first-part
  for(const tab of [page,...pages,po]){await expect(tab).toHaveURL('https://team.frc4418.org/');await expect(tab.getByRole('heading',{name:'Team sign in',exact:true})).toBeVisible();await expect(tab.locator('.suite-header')).toHaveCount(0);}
  await audit.verify();await context.close();
 });
-test('genuinely signed-out destinations return to Hub login',async({browser})=>{
+test('genuinely signed-out destinations show no private UI and link to Hub login',async({browser})=>{
  const context=await browser.newContext({serviceWorkers:'block'});const audit=await setup(context);await isolate(context);
- for(const host of ['pit','inventory','finance']){const page=await context.newPage();await page.goto(`https://${host}.frc4418.org/`);await expect(page).toHaveURL('https://team.frc4418.org/');await expect(page.getByRole('heading',{name:'Team sign in',exact:true})).toBeVisible();await expect(page.locator('.suite-header')).toHaveCount(0);expect(await page.evaluate(()=>(window as any).__privateFlash)).toBe(false);await page.close();}
+ for(const [host,title] of [['pit','Competition Operations sign in'],['inventory','Inventory sign in'],['finance','Finance sign in']]){
+  const page=await context.newPage();await page.goto(`https://${host}.frc4418.org/`);
+  await expect(page.getByRole('heading',{name:title,exact:true})).toBeVisible();await expect(page.locator('.suite-header')).toHaveCount(0);expect(await page.evaluate(()=>(window as any).__privateFlash)).toBe(false);
+  const hub=page.locator('a[href="https://team.frc4418.org/"]');await expect(hub).toHaveCount(1);await hub.click();
+  await expect(page).toHaveURL('https://team.frc4418.org/');await expect(page.getByRole('heading',{name:'Team sign in',exact:true})).toBeVisible();await audit.verify();await page.close();
+ }
  await audit.verify();await context.close();
 });
 

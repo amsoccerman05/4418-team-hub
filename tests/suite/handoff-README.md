@@ -18,7 +18,11 @@ and no administrative capability in each app. It uses one synthetic Auth identit
 and real released broker/client code for sign-in, opener transport, refresh,
 Finance own-PO deep links and cross-app logout at 390 and 1440 pixels. Tests assert
 Inventory Add item and Finance New purchase order are available, not Mentor-only
-shortcuts. Unknown HTTP/WebSocket requests fail closed. Expected Supabase sockets
+shortcuts. The exact observed automatic self-roster sync RPC is answered locally
+with `{added: 0}` (empty synthetic meeting roster), never sent to a server. Direct
+signed-out app tabs intentionally show their local sign-in form; the test checks
+no private UI and follows their existing Hub help link. Unknown HTTP/WebSocket
+requests fail closed. Expected Supabase sockets
 are locally closed; service workers are blocked. Only the observed Google Fonts
 CSS URL is locally fulfilled as empty CSS; screenshots use fallback fonts.
 

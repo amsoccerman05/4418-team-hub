@@ -1,0 +1,35 @@
+{
+  "provenance": "Fresh metadata-only production catalog captured 2026-10-28 17:08 UTC; Inventory candidate 59d6b1de972fed902d36a3a47c68aefe2439457d. Fixture normalization only; production migration preserves ACLs.",
+  "functions": [
+    {
+      "signature": "public.change_inventory_quantity(uuid,numeric,numeric,timestamp with time zone,boolean)",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,authenticated=X/postgres}",
+      "prosecdef": false,
+      "provolatile": "v",
+      "proconfig": [
+        "search_path=\"\""
+      ]
+    },
+    {
+      "signature": "public.inventory_action(text,jsonb)",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,authenticated=X/postgres}",
+      "prosecdef": true,
+      "provolatile": "v",
+      "proconfig": [
+        "search_path=\"\""
+      ]
+    },
+    {
+      "signature": "public.verify_balance_location(uuid,jsonb)",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,authenticated=X/postgres}",
+      "prosecdef": true,
+      "provolatile": "v",
+      "proconfig": [
+        "search_path=\"\""
+      ]
+    }
+  ]
+}
