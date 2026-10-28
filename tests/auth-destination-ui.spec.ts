@@ -1,0 +1,27 @@
+import {test,expect,type Page} from '@playwright/test';
+const uid='00000000-0000-0000-0000-000000000001',id='a1000000-0000-4000-8000-000000000001';
+const token={access_token:'fixture-token',refresh_token:'fixture-refresh',expires_at:4000000000,expires_in:3600,token_type:'bearer',user:{id:uid,aud:'authenticated',app_metadata:{},user_metadata:{}}};
+async function fixture(page:Page){
+ const writes:string[]=[];let failedSignIn=true;
+ const season='a1000000-0000-4000-8000-000000000002',stamp='2026-10-28T00:00:00Z';
+ const c={user_id:uid,can_manage:false,season_id:season,seasons:[{id:season,name:'Synthetic season',status:'active',start_date:null,end_date:null,version:1}],members:[],areas:[],groups:[],items:[],boards:[{id,season_id:season,name:'Synthetic intake',kind:'project',active:true,description:'',version:1}],tasks:[]};
+ const fabrication={user_id:uid,can_manage:false,is_operator:true,season_id:season,selected_project_id:id,loaded_at:stamp,seasons:c.seasons,projects:[{id,season_id:season,name:'Synthetic intake',active:true,can_submit:false,can_review:false,can_operate:true}],parts:[],revisions:[],parts_limit_reached:false};
+ const assembly={user_id:uid,board_id:id,version:1,can_edit:false,loaded_at:stamp,components:[],parts:[],revisions:[],tasks:[],linked_task_ids:[],checks:[],snapshots:[],facts:{parts_total:0,parts_done:0,components_total:0,components_available:0,tasks_total:0,tasks_done:0,tasks_blocked:0,checks_total:0,checks_passed:0,checks_failed:0,checks_blocked:0,checks_stale:0}};
+ await page.route('**/rest/v1/**',r=>{const path=new URL(r.request().url()).pathname;if(/save|mutate|check_in/.test(path))writes.push(path);return r.fulfill({json:path.endsWith('/profiles')?{display_name:'Fixture',role:'student',active:true}:path.endsWith('/planning_context')||path.endsWith('/planning_my_work_context')?c:path.endsWith('/fabrication_context')?fabrication:path.endsWith('/assembly_context')?assembly:[]});});
+ await page.route('**/auth/v1/token?grant_type=password',r=>r.fulfill(failedSignIn?{status:400,json:{message:'Invalid login credentials',error_description:'Invalid login credentials'}}:{json:token}));
+ await page.route('**/auth/v1/logout*',r=>r.fulfill({status:204}));
+ return {writes,allowSignIn:()=>{failedSignIn=false;}};
+}
+async function signIn(page:Page){await page.getByLabel('Email',{exact:true}).fill('fixture@example.invalid');await page.getByLabel('Password',{exact:true}).fill('fixture-only-password');await page.getByRole('button',{name:'Sign in',exact:true}).click();}
+for(const width of [390,1440])for(const route of [`#planning/boards/${id}`,`#planning/boards/${id}/assembly`,`#fabrication/projects/${id}`])test(`sign-in preserves ${route} through reload and retry at ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});const f=await fixture(page);await page.goto('/?redirect=https://evil.invalid&access_token=ignore'+route);await expect(page.getByRole('heading',{name:'Team sign in',exact:true})).toBeVisible();await expect(page.locator('.suite-header')).toHaveCount(0);
+ await page.reload();expect(new URL(page.url()).hash).toBe(route);await signIn(page);await expect(page.getByRole('alert')).toContainText('Invalid login credentials');expect(new URL(page.url()).hash).toBe(route);
+ f.allowSignIn();await signIn(page);await expect(page.locator('.suite-header')).toBeVisible();expect(new URL(page.url()).hash).toBe(route);expect(new URL(page.url()).search).toBe('');expect(f.writes).toEqual([]);
+ await expect(page.getByRole('heading',{name:'Synthetic intake',exact:true})).toBeVisible();if(route.endsWith('/assembly'))await expect(page.getByRole('region',{name:'Project assembly and testing'})).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:`test-results/planning-recovery-auth-${route.includes('fabrication')?'fabrication':route.endsWith('/assembly')?'assembly':'board'}-${width}.png`,fullPage:true});
+ await page.evaluate(()=>{localStorage.removeItem('4418-team-hub-auth');const channel=new BroadcastChannel('4418-team-hub-auth');channel.postMessage({event:'SIGNED_OUT',session:null});channel.close();});await expect(page.getByRole('heading',{name:'Team sign in',exact:true})).toBeVisible();expect(new URL(page.url()).hash).toBe(route);
+ await signIn(page);await expect(page.locator('.suite-header')).toBeVisible();expect(new URL(page.url()).hash).toBe(route);await page.getByRole('button',{name:'Sign out',exact:true}).click();await expect(page.getByRole('heading',{name:'Team sign in',exact:true})).toBeVisible();expect(new URL(page.url()).hash).toBe('');expect(f.writes).toEqual([]);
+});
+test('sign-in follows the current validated destination, not a stale target or arbitrary URL',async({page})=>{
+ const f=await fixture(page);f.allowSignIn();await page.goto('/#planning/boards/'+id);await expect(page.getByRole('heading',{name:'Team sign in',exact:true})).toBeVisible();await page.evaluate(()=>{location.hash='#planning/my-work';});await signIn(page);await expect(page.locator('.suite-header')).toBeVisible();expect(new URL(page.url()).hash).toBe('#planning/my-work');
+ await page.getByRole('button',{name:'Sign out',exact:true}).click();await page.evaluate(()=>{location.hash='#https://evil.invalid/';});await signIn(page);await expect(page.locator('.suite-header')).toBeVisible();expect(new URL(page.url()).hash).toBe('');expect(new URL(page.url()).origin).toBe('http://127.0.0.1:4422');expect(f.writes).toEqual([]);
+});

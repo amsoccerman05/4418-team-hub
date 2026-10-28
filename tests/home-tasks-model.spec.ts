@@ -39,6 +39,6 @@ test('assignment list and exact task routes survive sign-in while malformed or u
  const uuid='abcdef01-2345-4abc-8def-abcd12345678';
  for(const route of ['#planning/my-work',`#planning/my-work/${uuid}`,`#planning/my-work/${uuid.toUpperCase()}`])expect(api.isPersonalWorkRoute(route)).toBe(true);
  for(const route of ['#planning/my-work/','#planning/my-work/javascript:alert(1)',`#planning/my-work/${uuid}/extra`,'#PLANNING/my-work','#planning/MY-WORK','#planning/my-work?admin=1','#planning/boards'])expect(api.isPersonalWorkRoute(route)).toBe(false);
- const auth=readFileSync('src/HubAuth.tsx','utf8');expect(auth).toContain('explicitSignOut.current||!(attendanceMeetingId(location.hash)||isPersonalWorkRoute(location.hash))');
- expect(auth).toContain('const target=(attendanceMeetingId(location.hash)||isPersonalWorkRoute(location.hash)||');
+ const auth=readFileSync('src/HubAuth.tsx','utf8');expect(auth).toContain('clearHubDestinationOnSignOut(location.hash,explicitSignOut.current)');
+ expect(auth).toContain('const target=hubAuthDestination(location.hash)');
 });

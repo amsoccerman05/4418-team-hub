@@ -1,3 +1,4 @@
+import {planningBoardRoute} from './board-route';
 import {ProjectDecisions} from './reviews/ProjectDecisions';
 import {isCurrentEditor,type EditorSession} from './editor-session';
 import {personalTaskFromRoute} from './personal-task-route';
@@ -25,7 +26,7 @@ export function Planning({route,actorId}:{route:string;actorId:string}){
  const [data,setData]=useState<Context|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[edit,setEdit]=useState<Edit|null>(null),[view,setView]=useState('table'),[planView,setPlanView]=useState('table');
  const [search,setSearch]=useState(''),[owner,setOwner]=useState(''),[area,setArea]=useState(''),[status,setStatus]=useState(''),[priority,setPriority]=useState(''),[feedback,setFeedback]=useState('');
  const generation=useRef(0),selected=useRef<string|null>(null),openedTaskRoute=useRef<string|null>(null);
- const tab=route.split('/')[1]||'dashboard',boardId=route.split('/')[2],assemblyView=route.split('/')[3]==='assembly',decisionView=route.split('/')[3]==='decisions';
+ const boardRoute=planningBoardRoute(route),tab=route.split('/')[1]||'dashboard',boardId=boardRoute?.id||route.split('/')[2],assemblyView=boardRoute?.view==='assembly',decisionView=boardRoute?.view==='decisions';
  const editorMounted=useRef(true);
  useEffect(()=>{editorMounted.current=true;return()=>{editorMounted.current=false;};},[]);
  const editorSession=useRef<EditorSession>({route,edit});editorSession.current={route,edit};
@@ -46,7 +47,7 @@ export function Planning({route,actorId}:{route:string;actorId:string}){
  },[personalTaskRoute,data]);
  const closeEditor=()=>{if(!editorStillCurrent())return;setEdit(null);if(personalTaskRoute){history.replaceState(null,'',location.pathname+location.search+'#planning/my-work');window.dispatchEvent(new HashChangeEvent('hashchange'));}};
 
- const season=data?.seasons.find(s=>s.id===data.season_id),board=data?.boards.find(b=>b.id===boardId),readOnly=season?.status==='archived',manage=!!data?.can_manage;
+ const season=data?.seasons.find(s=>s.id===data.season_id),board=data?.boards.find(b=>b.id===boardId&&(tab!=='boards'||!!boardRoute)),readOnly=season?.status==='archived',manage=!!data?.can_manage;
  async function updateTask(t:Task,patch:Partial<Task>){if(busy)return;setBusy(true);setError('');setFeedback('');try{await savePlanning('task',{...t,...patch});await refresh();setFeedback('Task saved.');return true;}catch(e){await refresh();setError((e as Error).message);return false;}finally{setBusy(false);}}
  async function updateItem(i:Item,patch:Partial<Item>){if(busy)return;setBusy(true);setError('');setFeedback('');try{await savePlanning('item',{...i,...patch});await refresh();setFeedback('Plan item saved.');return true;}catch(e){setError((e as Error).message);return false;}finally{setBusy(false);}}
  const move=(t:Task,next:string)=>updateTask(t,{status:next});
