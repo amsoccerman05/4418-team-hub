@@ -16,6 +16,15 @@ export function currentCheckoutMeeting<T extends {id:string;starts_at:string;end
   .sort((a,b)=>Date.parse(a.ends_at)-Date.parse(b.ends_at)||a.id.localeCompare(b.id))[0];
 }
 
+// The legacy dashboard RPC only returns required meetings. A newly enrolled
+// participant can still attend an ongoing optional meeting, without receiving
+// a retroactive requirement. Never surface future optional meetings here.
+export function currentPendingMeeting<T extends {id:string;starts_at:string;ends_at:string;status:string}>(meetings:T[],records:{meeting_id:string;physical_status:string;checked_in_at:string|null;left_at:string|null}[],now=Date.now()):T|undefined {
+ return meetings.filter(m=>['draft','open'].includes(m.status)&&Date.parse(m.starts_at)<=now&&now<Date.parse(m.ends_at)
+  &&records.some(a=>a.meeting_id===m.id&&a.physical_status==='pending'&&!a.checked_in_at&&!a.left_at))
+  .sort((a,b)=>Date.parse(a.ends_at)-Date.parse(b.ends_at)||a.id.localeCompare(b.id))[0];
+}
+
 // Copy presence, not record identity: attendance.id is not meeting.id. Keeping
 // this projection explicit also makes richer API/mock rows safe to consume.
 export function attendancePresence(row:{physical_status:string;checked_in_at:string|null;left_at:string|null}) {

@@ -17,6 +17,7 @@ import { attendanceAutoStrikeSources } from './attendance-auto-strikes-stack.spe
 import { attendanceOperationsLeadSources } from './attendance-operations-lead-stack.spec.mjs';
 import { attendanceRequiredRosterSources } from './attendance-required-roster-stack.spec.mjs';
 import { attendanceAbuseSources } from './attendance-abuse-stack.spec.mjs';
+import { attendanceAutomaticRosterSources } from './attendance-automatic-roster-stack.spec.mjs';
 import { sharedSecuritySources } from './shared-security-fixture.mjs';
 import { attendanceSecuritySources, installAttendanceSecurityFixture } from './attendance-security-fixture.mjs';
 
@@ -53,7 +54,7 @@ function captureEdge(chunk) { const text = String(chunk); if (edgeOutputHead.len
 // Explicit gate release, not a timing-dependent sleep. Separate psql connection
 // holds the lock while real HTTP requests queue inside the deployed RPCs.
 async function gate(lock = '4418') {
-  assert(['4418', '9918,99'].includes(lock));
+  assert(['4418', '9918,99', '4418,10'].includes(lock));
   const child = spawn('docker', pgArgs, common);
   children.add(child); child.once('close', () => children.delete(child));
   let out = '', err = '', readyResolve, readyReject;
@@ -121,10 +122,10 @@ const sourcePaths = [
 const hashPaths = withSharedSecurity
   ? ['tests/integration/fabrication-local.mjs', 'tests/integration/fabrication-safety.mjs', ...sharedSecuritySources]
   : withAttendanceSecurity
-    ? ['tests/integration/fabrication-local.mjs', 'tests/integration/fabrication-safety.mjs', ...attendanceSecuritySources]
+    ? ['tests/integration/fabrication-local.mjs', 'tests/integration/fabrication-safety.mjs', ...attendanceSecuritySources, ...attendanceAutomaticRosterSources]
     : [...sourcePaths, ...attendanceEditingSources, ...(withVolunteerHours ? volunteerHoursSources : []),
     ...(withAttendanceRequests ? [...attendanceRequestSources, ...attendanceActiveRosterSources, ...attendanceAutoStrikeSources,
-      ...attendanceOperationsLeadSources, ...attendanceRequiredRosterSources, ...attendanceAbuseSources] : [])];
+      ...attendanceOperationsLeadSources, ...attendanceRequiredRosterSources, ...attendanceAbuseSources, ...attendanceAutomaticRosterSources] : [])];
 const hashes = Object.fromEntries(hashPaths.map(path => [path, createHash('sha256').update(readFileSync(join(repo, path))).digest('hex')]));
 try {
   const version = execFileSync(executable, ['--version'], common).trim();
@@ -214,6 +215,8 @@ verify_jwt = false
         await installAttendanceSecurityFixture(sql);
         const { runAttendanceAbuseIntegration } = await import('./attendance-abuse-stack.spec.mjs');
         checks = await runAttendanceAbuseIntegration({ ...status, sql, registerSecret: s => secrets.push(s) });
+        const { runAttendanceAutomaticRosterIntegration } = await import('./attendance-automatic-roster-stack.spec.mjs');
+        checks.push(...await runAttendanceAutomaticRosterIntegration({ ...status, sql, gate, waitFor, registerSecret: s => secrets.push(s) }));
       } else {
         sql(readFileSync(join(repo, 'tests/integration/fabrication-prerequisites.sql'), 'utf8'));
         for (const path of sourcePaths.filter(p => p.endsWith('.sql'))) sql(readFileSync(join(repo, path), 'utf8'));
@@ -286,6 +289,8 @@ verify_jwt = false
           // Apply the new result/abuse contract only after historical suites finish.
           const { runAttendanceAbuseIntegration } = await import('./attendance-abuse-stack.spec.mjs');
           checks.push(...await runAttendanceAbuseIntegration({ ...status, sql, registerSecret: s => secrets.push(s) }));
+          const { runAttendanceAutomaticRosterIntegration } = await import('./attendance-automatic-roster-stack.spec.mjs');
+          checks.push(...await runAttendanceAutomaticRosterIntegration({ ...status, sql, gate, waitFor, registerSecret: s => secrets.push(s) }));
         }
       }
       assert.equal(sql("select pg_get_functiondef('auth.uid()'::regprocedure)"), authFunction, 'Auth function changed');

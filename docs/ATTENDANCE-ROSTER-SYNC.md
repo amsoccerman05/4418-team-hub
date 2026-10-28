@@ -1,5 +1,7 @@
 # Attendance roster reconciliation
 
+**New:** [Automatic missing-roster enrollment](ATTENDANCE-AUTOMATIC-ROSTERS.md) supersedes the manual-only workflow for accepted participants opening Home or Attendance. The manual leadership actions below remain available for explicit broad-roster promotions.
+
 ## Cause and model
 
 `team_attendance_manage('create', ...)` copies current active student/lead profiles into `team_meeting_members` and creates their attendance entries once. The batch RPC calls that function for every recurrence occurrence. Registration updates do not revisit these snapshots. Meeting SELECT policies require a student's snapshot row, and request submission requires the corresponding attendance row.
@@ -14,7 +16,7 @@ The leadership-only RPC `team_attendance_sync_future_rosters()` shares Attendanc
 
 Missing eligible students receive a required snapshot and pending attendance entry. Existing non-required entries become required only if attendance is untouched (initial version, no check-in, notice or review). Existing requests/decisions stay unchanged and are counted as preserved for review. Already-required snapshots keep their original metadata. Sync is repeatable without duplicate rows or repeated mutation audit entries. Explicit snapshot audit events use the existing production public history table with the authenticated actor; normal attendance audit triggers and RLS remain unchanged.
 
-Automatic reconciliation on shared profile/registration writes is deliberately deferred in V1: it would couple account provisioning and registration transactions to potentially many meeting locks, with different existing lock orders. Run the explicit action after adding/activating students or changing registration. The migration itself performs no roster backfill and installs no profile triggers.
+Automatic reconciliation directly on shared profile/registration writes remains deliberately avoided: it would couple account provisioning and registration transactions to potentially many meeting locks, with different existing lock orders. Accepted participants now self-reconcile missing rows on Home/Attendance access. Use the explicit action when intentionally promoting existing optional rows after a registration change. The migration itself performs no roster backfill and installs no profile triggers.
 
 ## Rollout
 

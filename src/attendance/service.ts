@@ -116,6 +116,12 @@ export async function rpc(action: string, args: Record<string, unknown>) {
   if (data?.error) throw new Error(data.error);
   return data;
 }
+// Await before reads; retries are safe and enrollment never marks attendance.
+export async function syncMyMeetingRosters() {
+  if (!supabase) throw new Error("Attendance is not configured.");
+  const { error } = await supabase.rpc("team_attendance_sync_my_rosters").abortSignal(AbortSignal.timeout(15000));
+  if (error) throw error;
+}
 export const manage = (action: string, p: Record<string, unknown>) =>
   rpc("team_attendance_manage", { action, p });
 async function allRows<T>(
@@ -136,6 +142,7 @@ async function allRows<T>(
 }
 export async function loadData(manager: boolean): Promise<Data> {
   if (!supabase) throw new Error("Attendance is not configured.");
+  await syncMyMeetingRosters();
   const policy = await rpc("team_attendance_policy_context", {}) as PolicyContext;
   const [meetings, attendance, snapshots, strikes, members] = await Promise.all(
     [

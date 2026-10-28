@@ -6,6 +6,7 @@ async function setup(page:Page,mentor=false){
  await page.addInitScript(uid=>localStorage.setItem('4418-team-hub-auth',JSON.stringify({access_token:'fixture-token',refresh_token:'fixture-refresh',expires_at:4000000000,token_type:'bearer',user:{id:uid,aud:'authenticated',app_metadata:{},user_metadata:{},created_at:'2026-01-01T00:00:00Z'}})),uid);
  await page.route('**/rest/v1/**',async r=>{
  const path=new URL(r.request().url()).pathname;
+ if(path.endsWith('/team_attendance_sync_my_rosters')){expect(r.request().postDataJSON()).toEqual({});return r.fulfill({json:{added:0}});}
  if(path.endsWith('/profiles'))return r.fulfill({json:{id:uid,role:c.role,active:true}});
  if(path.endsWith('/planning_my_work_context'))return r.fulfill({json:{user_id:uid,season_id:null,seasons:[],boards:[],tasks:[]}});
  if(path.endsWith('/pit_issues'))return r.fulfill({json:[],headers:{'content-range':'*/0','access-control-expose-headers':'content-range'}});
@@ -104,13 +105,13 @@ for(const width of [390,1440])test(`adaptive dashboard priority ${width}`,async(
 for(const width of [390,768,1440])test(`Home task shortcuts are direct, responsive, and read-only at ${width}`,async({page})=>{
  await page.setViewportSize({width,height:900});const c=await setup(page);
  c.orders=[{id:'draft',po_number:31,vendor:'Fixture draft',amount:20,status:'draft',approvals:0},{id:'changes',po_number:32,vendor:'Fixture changes',amount:30,status:'changes_requested',approvals:0},{id:'waiting',po_number:33,vendor:'Fixture review',amount:40,status:'awaiting_approval',approvals:1}];
- const writes:string[]=[];page.on('request',r=>{if(r.method()!=='GET'&&!/\/(team_dashboard_context|planning_my_work_context|notification_center)$/.test(new URL(r.url()).pathname))writes.push(r.url());});
+ const writes:string[]=[],enrollmentCalls:unknown[]=[];page.on('request',r=>{const path=new URL(r.url()).pathname;if(path.endsWith('/team_attendance_sync_my_rosters')){enrollmentCalls.push(r.postDataJSON());return;}if(r.method()!=='GET'&&!/\/(team_dashboard_context|planning_my_work_context|notification_center)$/.test(path))writes.push(r.url());});
  await page.goto('/');const tasks=page.getByRole('navigation',{name:'Start a task'});await expect(tasks).toBeVisible();await expect(tasks.getByRole('link')).toHaveCount(4);
  for(const [name,href] of [['Find a part','https://inventory.frc4418.org/#inventory'],['Request a purchase','https://finance.frc4418.org/?action=request-purchase'],['Report a problem','https://pit.frc4418.org/'],['My assignments','#planning/my-work']]){
   const link=tasks.getByRole('link',{name,exact:true});await expect(link).toHaveAttribute('href',href);await expect(link).not.toHaveAttribute('target');expect((await link.boundingBox())!.height).toBeGreaterThanOrEqual(44);expect((await link.boundingBox())!.height).toBeLessThan(220);
  }
  await expect(tasks.getByText('Open Pit, then choose Report issue.')).toBeVisible();await expect(page.getByText('Complete your request, then submit it for approval.')).toBeVisible();await expect(page.getByText('Review the requested changes, update your request, and resubmit.')).toBeVisible();await expect(page.getByText('Waiting for the remaining approver. Nothing to do right now.')).toBeVisible();await expect(page.getByText('Waiting for attendance review. Nothing to do right now.')).toBeVisible();
- expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);expect(writes).toEqual([]);await page.screenshot({path:`test-results/home-task-shortcuts-${width}.png`,fullPage:true});
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);expect(writes).toEqual([]);expect(enrollmentCalls).toEqual([{}]);await page.screenshot({path:`test-results/home-task-shortcuts-${width}.png`,fullPage:true});
 });
 
 async function emptyPersonalWork(page:Page){

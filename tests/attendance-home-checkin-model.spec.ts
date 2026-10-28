@@ -1,6 +1,6 @@
 import {test,expect} from '@playwright/test';
 import {attendanceMeetingId,attendanceMeetingHref} from '../src/attendance/meeting-route';
-import {nextMeetingAction,currentCheckoutMeeting,attendancePresence} from '../src/dashboard/next-meeting';
+import {nextMeetingAction,currentCheckoutMeeting,currentPendingMeeting,attendancePresence} from '../src/dashboard/next-meeting';
 const id='00000000-0000-0000-0000-000000000001',now=Date.parse('2026-10-27T17:10:00Z');
 const meeting={id,title:'Build',type:'preseason',starts_at:'2026-10-27T17:00:00Z',ends_at:'2026-10-27T19:00:00Z',required:true,check_in_open:true,code_expires_at:'2026-10-27T17:30:00Z',physical_status:'pending'};
 test('meeting routes accept only exact UUID targets, never codes or write arguments',()=>{
@@ -37,4 +37,18 @@ test('presence enrichment cannot replace meeting identity with attendance record
  const enriched={...meeting,...attendancePresence(row)};
  expect(enriched.id).toBe(id);expect(nextMeetingAction(enriched,now).href).toBe(`#attendance/meeting/${id}`);
  expect(attendancePresence(row)).toEqual({physical_status:'present',checked_in_at:meeting.starts_at,left_at:null});
+});
+
+test('ongoing pending fallback excludes future, ended, closed, recorded, and unrostered meetings',()=>{
+ const m={...meeting,status:'open'};
+ const a={meeting_id:id,physical_status:'pending',checked_in_at:null,left_at:null};
+ expect(currentPendingMeeting([m],[a],now)).toEqual(m);
+ expect(currentPendingMeeting([{...m,status:'draft'}],[a],now)).toMatchObject({id});
+ for(const status of ['closed','finalized','canceled'])expect(currentPendingMeeting([{...m,status}],[a],now)).toBeUndefined();
+ expect(currentPendingMeeting([m],[a],Date.parse(m.starts_at)-1)).toBeUndefined();
+ expect(currentPendingMeeting([m],[a],Date.parse(m.ends_at))).toBeUndefined();
+ expect(currentPendingMeeting([m],[],now)).toBeUndefined();
+ for(const change of [{physical_status:'present'},{checked_in_at:m.starts_at},{left_at:m.starts_at}])expect(currentPendingMeeting([m],[{...a,...change}],now)).toBeUndefined();
+ const later={...m,id:'00000000-0000-0000-0000-000000000002',ends_at:'2026-10-27T20:00:00Z'};
+ expect(currentPendingMeeting([later,m],[a,{...a,meeting_id:later.id}],now)?.id).toBe(id);
 });
