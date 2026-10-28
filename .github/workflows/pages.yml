@@ -42,6 +42,9 @@ jobs:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
       - run: npx playwright install --with-deps chromium
+      - name: Check Planning recovery before the full regression suite
+        if: github.event_name == 'pull_request'
+        run: npx playwright test tests/planning-ui.spec.ts --grep 'task draft survives|task conflict requires' --workers=1
       - run: npm test
       - name: Retain synthetic account access previews
         if: ${{ always() && github.event_name == 'pull_request' }}
