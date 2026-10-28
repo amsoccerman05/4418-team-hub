@@ -53,15 +53,35 @@ for(const width of [390,1440])for(const logout of ['hub','pit'])test(`first-part
  await expect(page.locator('.hub-nav').getByRole('link',{name:'Team Management',exact:true})).toHaveCount(0);
  await page.screenshot({path:`test-results/exact-student-hub-${width}-${logout}.png`,fullPage:true,animations:'disabled'});
  await page.goto('https://team.frc4418.org/');
- // Reloading Hub would discard its opened-window registry, so the PO check uses
- // this fresh owner, and the other tabs are reopened for the logout check below.
+ // Reloading Hub discards its opened-window registry. The PO uses this fresh
+ // owner; the existing Pit tab reconnects through its browser-maintained opener.
  const opened=context.waitForEvent('page');await page.getByRole('link',{name:'PO #99 · Navigation test',exact:true}).click();
  const po=await opened;await expect(po.getByRole('dialog')).toBeVisible();expect(po.url()).toMatch(/#po\/00000000-0000-4000-8000-000000000099$/);
  // Existing children must remain usable and receive logout even if Hub reloads.
  await pages[0].reload();await expect(pages[0].locator('.suite-header')).toBeVisible();
  await audit.verify(true);
  await (logout==='hub'?page:pages[0]).getByRole('button',{name:'Sign out',exact:true}).click();
- for(const tab of [page,...pages,po]){await expect(tab).toHaveURL('https://team.frc4418.org/');await expect(tab.getByRole('heading',{name:'Team sign in',exact:true})).toBeVisible();await expect(tab.locator('.suite-header')).toHaveCount(0);}
+ const signedOutTabs=[
+  [page,'https://team.frc4418.org','Team sign in'],
+  [pages[0],'https://pit.frc4418.org','Competition Operations sign in'],
+  [pages[1],'https://inventory.frc4418.org','Inventory sign in'],
+  [pages[2],'https://finance.frc4418.org','Finance sign in'],
+  [po,'https://finance.frc4418.org','Finance sign in'],
+ ] as const;
+ const assertSignedOut=async(tab:any,origin:string,title:string)=>{
+  expect(new URL(tab.url()).origin).toBe(origin);
+  await expect(tab.getByRole('heading',{name:title,exact:true})).toBeVisible();
+  await expect(tab.locator('.suite-header')).toHaveCount(0);
+  await expect(tab.getByRole('dialog')).toHaveCount(0);
+ };
+ // Released apps clear private state in place; they do not redirect to Hub.
+ for(const [tab,origin,title] of signedOutTabs)await assertSignedOut(tab,origin,title);
+ const protectedReads=()=>audit.calls.filter(call=>call.path.startsWith('/rest/v1/')).length;
+ const afterLogout=protectedReads();
+ // A fresh app bootstrap (including the old PO hash) cannot resurrect the
+ // shared session or issue protected reads. Do not pretend logout revokes JWTs.
+ for(const [tab,origin,title] of signedOutTabs){await tab.reload();await assertSignedOut(tab,origin,title);}
+ expect(protectedReads(),'Signed-out reloads must not fetch protected data using the previous session').toBe(afterLogout);
  await audit.verify();await context.close();
 });
 test('genuinely signed-out destinations show no private UI and link to Hub login',async({browser})=>{

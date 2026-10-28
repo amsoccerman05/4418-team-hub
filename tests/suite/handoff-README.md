@@ -26,7 +26,12 @@ Inventory Add item and Finance New purchase order are available, not Mentor-only
 shortcuts. The exact observed automatic self-roster sync RPC is answered locally
 with `{added: 0}` (empty synthetic meeting roster), never sent to a server. Direct
 signed-out app tabs intentionally show their local sign-in form; the test checks
-no private UI and follows their existing Hub help link. Unknown HTTP/WebSocket
+no private UI and follows their existing Hub help link. Shared logout likewise
+clears each app in place: every tab (including the open PO) must show its local
+sign-in form with no private header/dialog, remain signed out after reload, and
+make no subsequent protected REST calls. The fixture does not falsely revoke
+access JWTs at logout; client shared-session clearing is the property under test.
+Unknown HTTP/WebSocket
 requests fail closed. Expected Supabase sockets
 are locally closed; service workers are blocked. Only the observed Google Fonts
 CSS URL is locally fulfilled as empty CSS; screenshots use fallback fonts.
