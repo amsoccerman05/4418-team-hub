@@ -1,6 +1,7 @@
 import {expect,type BrowserContext} from '@playwright/test';
 import {extname} from 'node:path';
 import {loadArtifacts,verifyArtifacts,manifest} from './handoff-artifacts.mjs';
+import {issuedTokens} from './handoff-auth.mjs';
 export const uid='00000000-0000-4000-8000-000000000001';
 export const fixtureUser={id:uid,email:'suite-student@example.invalid',aud:'authenticated',role:'authenticated',app_metadata:{provider:'email'},user_metadata:{},created_at:'2026-01-01T00:00:00Z'};
 const api='https://tuxwavmjvjfhmaddchtr.supabase.co';
@@ -11,7 +12,7 @@ const po={id:'00000000-0000-4000-8000-000000000099',requester_id:uid,po_number:9
 const profile={id:uid,display_name:'Suite Student',email:fixtureUser.email,role:'student',primary_area_id:null,active:true,updated_at:'2026-10-28T00:00:00Z'};
 const emptyTables=new Set(['locations','inventory_items','inventory_events','inventory_balances','inventory_movements','inventory_media','trips','trip_manifest_items','pit_events','pit_issues','pit_batteries','pit_battery_events','pit_issue_events','finance_po_approvals','finance_po_history','finance_po_revisions','finance_assignments','finance_po_actionability','team_meetings','team_attendance','team_meeting_members','team_announcements','team_positions']);
 export async function setup(context:BrowserContext){
- const assets=await loadArtifacts(),unexpected:string[]=[],calls:{path:string;method:string}[]=[],roles=new Map<string,string>();
+ const assets=await loadArtifacts(),unexpected:string[]=[],calls:{path:string;method:string}[]=[],roles=new Map<string,string>(),authenticatedOrigins=new Set<string>(),auth=issuedTokens(token);
  await context.routeWebSocket('**/*',ws=>{const u=new URL(ws.url());if(!(u.origin==='wss://tuxwavmjvjfhmaddchtr.supabase.co'&&u.pathname==='/realtime/v1/websocket'))unexpected.push('WebSocket '+u.origin+u.pathname);ws.close();});
  await context.route('**/*',async route=>{
   const request=route.request(),u=new URL(request.url()),method=request.method();
@@ -19,7 +20,13 @@ export async function setup(context:BrowserContext){
   if(u.href===font&&method==='GET')return route.fulfill({contentType:'text/css',body:'/* offline fallback fonts: no external font traffic */'});
   if(u.origin===api){
    calls.push({path:u.pathname,method});let result:any;const name=u.pathname.split('/').at(-1)!;
-   if(u.pathname==='/auth/v1/token'&&method==='POST')result={access_token:token(),refresh_token:'synthetic-refresh-token',expires_in:3600,token_type:'bearer',user:fixtureUser};
+   const protectedRoute=u.pathname.startsWith('/rest/v1/')||u.pathname==='/auth/v1/user'||u.pathname==='/auth/v1/logout';
+   if(protectedRoute&&!auth.accepts(request.headers().authorization)){
+    unexpected.push('Protected request without an issued synthetic bearer: '+method+' '+u.pathname);
+    return route.fulfill({status:401,json:{code:'PGRST301',message:'An issued synthetic bearer token is required'}});
+   }
+   if(u.pathname.startsWith('/rest/v1/'))authenticatedOrigins.add(new URL(request.frame().url()).origin);
+   if(u.pathname==='/auth/v1/token'&&method==='POST')result={access_token:auth.issue(),refresh_token:'synthetic-refresh-token',expires_in:3600,token_type:'bearer',user:fixtureUser};
    else if(u.pathname==='/auth/v1/user'&&method==='GET')result=fixtureUser;
    else if(u.pathname==='/auth/v1/logout'&&method==='POST')result={};
    else if(method==='GET'&&u.pathname==='/rest/v1/profiles'){expect(profile.role).toBe('student');roles.set(new URL(request.frame().url()).origin,profile.role);result=request.headers().accept?.includes('object')?profile:[profile];}
@@ -32,6 +39,7 @@ export async function setup(context:BrowserContext){
     else if(name==='team_dashboard_context'){result={name:profile.display_name,role:'student',admin:false,personal:{percent:null,strikes:0,pending:0},next_meeting:null,orders:[{...po,approvals:0}],finance:{allowed:false,approvals:0,school:0},attention:null,robot:null,inventory:null,announcements:[]};}
     else if(name==='planning_my_work_context')result={user_id:uid,season_id:null,seasons:[],boards:[],tasks:[]};
     else if(name==='notification_center')result={unread:0,attention:[],items:[],has_more:false};
+    else if(name==='finance_budget_context'){expect(request.postDataJSON()).toEqual({season:null});result={can_manage:false};}
     else if(name==='finance_context'){result={profile:{id:uid,display_name:profile.display_name,role:'student'},can_create:true,is_admin:false,capabilities:[],areas:[{id:area,name:'Fabrication',active:true}],people:[]};}
     else if(name==='inventory_features')result=4;
     else if(name==='inventory_location_creation_context')result={user_id:uid,assigned_lead:false};
@@ -49,5 +57,5 @@ export async function setup(context:BrowserContext){
   }
   return deny();
  });
- return {calls,roles,async verify(allRoles=false){expect(unexpected,'Every unknown HTTP/WebSocket request must fail closed').toEqual([]);if(allRoles)for(const a of Object.values(manifest.apps) as any[])expect(roles.get(a.origin),a.origin+' must receive literal Student').toBe('student');await verifyArtifacts(process.env.HANDOFF_DIST_ROOT);}};
+ return {calls,roles,async verify(allRoles=false){expect(unexpected,'Every unknown or unauthenticated HTTP/WebSocket request must fail closed').toEqual([]);if(allRoles)for(const a of Object.values(manifest.apps) as any[]){expect(roles.get(a.origin),a.origin+' must receive literal Student').toBe('student');expect(authenticatedOrigins.has(a.origin),a.origin+' must use an issued synthetic bearer for protected data').toBe(true);}await verifyArtifacts(process.env.HANDOFF_DIST_ROOT);}};
 }

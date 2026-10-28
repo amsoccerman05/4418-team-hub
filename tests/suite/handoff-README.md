@@ -15,7 +15,12 @@ checkout's dist is modified. Root bytes are checked before and after each case.
 
 The synthetic backend returns literal `student`, null primary area, no positions
 and no administrative capability in each app. It uses one synthetic Auth identity
-and real released broker/client code for sign-in, opener transport, refresh,
+whose bearer token must actually be issued by this browser fixture before any
+protected REST, user or logout request succeeds. Missing, public-anon or invented
+bearer credentials receive 401 and fail the request audit; each app must make an
+authenticated data read. This proves synthetic credential transport, not real JWT
+validation or server revocation (covered by the separate native gate).
+The real released broker/client code handles sign-in, opener transport, refresh,
 Finance own-PO deep links and cross-app logout at 390 and 1440 pixels. Tests assert
 Inventory Add item and Finance New purchase order are available, not Mentor-only
 shortcuts. The exact observed automatic self-roster sync RPC is answered locally
