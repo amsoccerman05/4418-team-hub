@@ -168,6 +168,7 @@ async function mock(page: Page, role = "student", options: { active?: boolean; c
           role,
           active: options.active ?? true,
         };
+      else if (path === "/rest/v1/rpc/team_attendance_sync_my_rosters") { expect(body).toEqual({}); result = {added:0}; }
       else if (path === "/rest/v1/rpc/notification_center") result = { unread: 0, attention: [], items: [], has_more: false };
       else if (path === "/rest/v1/rpc/planning_my_work_context") result = {user_id:user.id,season_id:null,seasons:[],boards:[],tasks:[]};
       else if (path === "/rest/v1/pit_issues") return route.fulfill({json:[],headers:{"content-range":"*/0","access-control-expose-headers":"content-range"}});
