@@ -42,6 +42,9 @@ jobs:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
       - run: npx playwright install --with-deps chromium
+      - name: Check Planning recovery before the full regression suite
+        if: github.event_name == 'pull_request'
+        run: npx playwright test tests/planning-ui.spec.ts --grep 'task draft survives|task conflict requires' --workers=1
       - run: npm test
       - name: Retain synthetic account access previews
         if: ${{ always() && github.event_name == 'pull_request' }}
@@ -57,6 +60,17 @@ jobs:
         with:
           name: home-task-shortcuts-review
           path: test-results/home-task-shortcuts-*.png
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Retain synthetic Planning save recovery previews
+        if: ${{ always() && github.event_name == 'pull_request' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: planning-recovery-review
+          path: |
+            test-results/planning-recovery-*.png
+            test-results/planning-ui-*/**/*
+            test-results/auth-destination-ui-*/**/*
           if-no-files-found: ignore
           retention-days: 7
       - name: Retain privacy notice browser previews

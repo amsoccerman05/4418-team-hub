@@ -310,3 +310,9 @@
 @media(max-width:600px){.planning button.planning-filter-reset{width:100%;min-height:44px}.planning-dialog .planning-editor-actions>button{flex:1;min-height:44px}}
 .planning>.planning-error{position:sticky;top:calc(var(--suite-header-height,76px) + 12px);z-index:5;box-shadow:var(--suite-shadow)}
 .planning-dialog>.planning-error{position:sticky;top:0;z-index:5}
+
+.planning-conflict-review{border:1px solid var(--suite-border);border-radius:8px;padding:16px;margin-bottom:16px;background:var(--suite-info-bg)}
+.planning-conflict-review ul{list-style:none;padding:0}.planning-conflict-review li{border-top:1px solid var(--suite-border);padding:12px 0}
+.planning-conflict-review h4{margin:0 0 8px}.planning-conflict-review dl{display:grid;grid-template-columns:minmax(90px,1fr) minmax(0,3fr);gap:8px;margin:0 0 12px}
+.planning-conflict-review dt{font-weight:600}.planning-conflict-review dd{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.planning-conflict-review .planning-toolbar{flex-wrap:wrap}
