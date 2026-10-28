@@ -8,6 +8,7 @@ on:
       - "tests/fixtures/attendance-production-functions.sql"
       - "tests/integration/**"
       - "tests/native/attendance-abuse-concurrency.mjs"
+      - "tests/native/attendance-roster-concurrency.mjs"
       - "tests/fixtures/shared-security/**"
       - "tests/fixtures/finance_v1.sql"
       - ".github/workflows/attendance-requests-check.yml"
@@ -50,6 +51,7 @@ jobs:
           ATTENDANCE_ABUSE_PG_BIN="$PG_BIN" node tests/native/attendance-abuse-concurrency.mjs
           ATTENDANCE_ABUSE_PG_BIN="$PG_BIN" node tests/native/attendance-checkout-concurrency.mjs
           ATTENDANCE_ABUSE_PG_BIN="$PG_BIN" node tests/native/attendance-outreach-concurrency.mjs
+          ATTENDANCE_ABUSE_PG_BIN="$PG_BIN" node tests/native/attendance-roster-concurrency.mjs
       - run: npx playwright install --with-deps chromium
       - run: npm run build
       - name: Verify Attendance browser, model, and database regressions

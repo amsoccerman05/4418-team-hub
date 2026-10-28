@@ -1,9 +1,10 @@
-import {supabase} from '../attendance/service';
+import {supabase,syncMyMeetingRosters} from '../attendance/service';
 import {attendanceMeetingId} from '../attendance/meeting-route';
-import {currentCheckoutMeeting,attendancePresence} from './next-meeting';
+import {currentCheckoutMeeting,currentPendingMeeting,attendancePresence} from './next-meeting';
 export type Announcement={id:string;title:string;body:string;severity:'normal'|'important'|'urgent';created_at:string;expires_at:string|null;active?:boolean;area_id?:string|null;version?:number;audience?:string;position_key?:string|null;image_path?:string|null};
 export type Dashboard={name:string;role:string;admin:boolean;personal:{percent:number|null;strikes:number;pending:number};next_meeting:null|{id:string;title:string;type:string;starts_at:string;ends_at:string;required:boolean;check_in_open:boolean;code_expires_at:string|null;physical_status:string;checked_in_at?:string|null;left_at?:string|null};orders:{id:string;po_number:number;vendor:string;amount:number;status:string;approvals:number}[];finance:{allowed:boolean;approvals:number;school:number};attention:null|{open_meetings:number;requests:number;strike_actions:number};robot:null|{event:string;open:number;blocking:number;readiness:string};inventory:null|{out:number;low:number};announcements:Announcement[]};
 export async function context(userId:string):Promise<Dashboard>{
+ await syncMyMeetingRosters();
  const signal=AbortSignal.timeout(15000),now=Date.now();
  const {data,error}=await supabase!.rpc('team_dashboard_context').abortSignal(signal);
  if(error)throw error;
@@ -30,13 +31,18 @@ export async function context(userId:string):Promise<Dashboard>{
    .eq('student_id',userId).in('meeting_id',ids.slice(from,from+100)).abortSignal(signal);
   if(result.error)throw result.error;records.push(...result.data);
  }
- const active=currentCheckoutMeeting(current,records,now);
+ const checkout=currentCheckoutMeeting(current,records,now);
+ // Keep checkout and an existing ongoing required meeting ahead of an optional
+ // fallback. Only the caller's own attendance and roster can supply this card.
+ const active=checkout||((!next||Date.parse(next.starts_at)>now)?currentPendingMeeting(current,records,now):undefined);
+ let currentShown=false;
  if(active){
   const own=records.find(a=>a.meeting_id===active.id)!;
   const snapshot=await supabase!.from('team_meeting_members').select('required').eq('meeting_id',active.id).eq('student_id',userId).abortSignal(signal).maybeSingle();
   if(snapshot.error)throw snapshot.error;
-  data.next_meeting={...active,type:active.meeting_type,required:!!snapshot.data?.required,...attendancePresence(own)};
- }else if(next&&attendanceMeetingId(`#attendance/meeting/${next.id}`)){
+  if(snapshot.data){data.next_meeting={...active,type:active.meeting_type,required:!!snapshot.data.required,...attendancePresence(own)};currentShown=true;}
+ }
+ if(!currentShown&&next&&attendanceMeetingId(`#attendance/meeting/${next.id}`)){
   const own=records.find(a=>a.meeting_id===next.id);
   data.next_meeting=own?{...next,...attendancePresence(own)}:null;
  }

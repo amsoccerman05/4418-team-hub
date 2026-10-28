@@ -96,6 +96,7 @@ export function AttendanceHub({
 }) {
   const [profile, setProfile] = useState<Profile | null>(null),
     [signedIn, setSignedIn] = useState(false),
+    [loadAttempt, setLoadAttempt] = useState(0),
     [loading, setLoading] = useState(!!supabase),
     [data, setData] = useState<Data | null>(null),
     [error, setError] = useState(""),
@@ -163,7 +164,7 @@ export function AttendanceHub({
       generation.current++;
       subscription.subscription.unsubscribe();
     };
-  }, []);
+  }, [loadAttempt]);
   async function run(work: () => Promise<unknown>, success: string | ((result: unknown) => string) = "Saved", afterRefresh?: () => void) {
     if (running.current) return;
     const action = Symbol();
@@ -225,10 +226,10 @@ export function AttendanceHub({
           {loading ? (
             <p role="status">Loading attendance…</p>
           ) : !profile && signedIn ? (
-            <p>
-              You are signed into the Team 4418 suite. Attendance is unavailable
-              for this account; you can still open your permitted apps above.
-            </p>
+            <div>
+              <p>Attendance could not be loaded. Check the message above, then try again. You can still open your permitted apps.</p>
+              <button className="att-secondary" onClick={() => setLoadAttempt(x => x + 1)}>Retry attendance</button>
+            </div>
           ) : !profile ? (
             <p>Sign in to Team Hub to open Attendance.</p>
           ) : (

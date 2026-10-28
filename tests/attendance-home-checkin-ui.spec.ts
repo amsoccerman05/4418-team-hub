@@ -4,28 +4,36 @@ const mid='00000000-0000-0000-0000-000000000010';
 const other='00000000-0000-0000-0000-000000000011';
 const now='2026-10-27T17:10:00Z';
 const target=`#attendance/meeting/${mid}`;
-async function setup(page:Page,options:{signed?:boolean;role?:string;active?:boolean}={}) {
+async function setup(page:Page,options:{signed?:boolean;role?:string;active?:boolean;autoEnroll?:boolean;optional?:boolean;syncFailures?:number;syncWait?:Promise<void>}={}) {
  await page.clock.setFixedTime(new Date(now));
  const user={id:uid,aud:'authenticated',email:'student@example.invalid',app_metadata:{},user_metadata:{},created_at:'2026-01-01T00:00:00Z'};
  const token=[{alg:'HS256'},{sub:uid,exp:4000000000,aud:'authenticated'}].map(x=>Buffer.from(JSON.stringify(x)).toString('base64url')).join('.')+'.fixture';
  const session={access_token:token,refresh_token:'fixture-refresh',expires_at:4000000000,expires_in:3600,token_type:'bearer',user};
  if(options.signed!==false)await page.addInitScript(session=>localStorage.setItem('4418-team-hub-auth',JSON.stringify(session)),session);
- const m={id:mid,title:'Correct build meeting',meeting_type:'preseason',starts_at:'2026-10-27T17:00:00Z',ends_at:'2026-10-27T19:00:00Z',late_minutes:10,requirement:'active',status:'open',check_in_open:true,code_expires_at:'2026-10-27T17:30:00Z',version:1};
- const a={id:'attendance',meeting_id:mid,student_id:uid,physical_status:'pending',review_status:'none',checked_in_at:null as string|null,left_at:null as string|null,notice_at:null,notice_reason:'',review_reason:'',reviewed_at:null,reviewed_by:null,version:1};
- const state={m,a,meetings:[m,{...m,id:other,title:'Different meeting'}],rostered:true,writes:[] as {name:string;args:any}[],ownReads:[] as string[],delay:0};
+ const m={id:mid,title:'Correct build meeting',meeting_type:'preseason',starts_at:'2026-10-27T17:00:00Z',ends_at:'2026-10-27T19:00:00Z',late_minutes:10,requirement:options.optional?'selected':'active',status:'open',check_in_open:true,code_expires_at:'2026-10-27T17:30:00Z',version:1};
+ const a={id:'attendance',meeting_id:mid,student_id:uid,physical_status:'pending',review_status:options.optional?'not_required':'none',checked_in_at:null as string|null,left_at:null as string|null,notice_at:null,notice_reason:'',review_reason:'',reviewed_at:null,reviewed_by:null,version:1};
+ const state={m,a,meetings:[m,{...m,id:other,title:'Different meeting'}],rostered:!options.autoEnroll,required:!options.optional,writes:[] as {name:string;args:any}[],syncCalls:[] as unknown[],rosterAdds:0,syncFailures:options.syncFailures||0,dataReads:[] as string[],ownReads:[] as string[],delay:0};
  await page.route('**/auth/v1/token**',r=>r.fulfill({json:session}));
  await page.route('**/auth/v1/logout**',r=>r.fulfill({status:204}));
  await page.route('**/rest/v1/**',async r=>{
   const url=new URL(r.request().url()),name=url.pathname.split('/').at(-1)!;
+  if(name==='team_attendance_sync_my_rosters'){
+   const args=r.request().postDataJSON();state.syncCalls.push(args);expect(args).toEqual({});
+   if(options.syncWait)await options.syncWait;
+   if(state.syncFailures-->0)return r.fulfill({status:503,json:{message:'Meeting roster sync temporarily unavailable'}});
+   const added=options.autoEnroll&&!state.rostered?1:0;if(added){state.rostered=true;state.rosterAdds++;}
+   return r.fulfill({json:{added}});
+  }
   if(name==='profiles')return r.fulfill({json:{id:uid,display_name:'Test Student',active:options.active!==false,role:options.role||'student'}});
-  if(name==='team_dashboard_context')return r.fulfill({json:{name:'Test Student',role:options.role||'student',admin:false,personal:{percent:100,strikes:0,pending:0},next_meeting:{id:mid,title:m.title,type:m.meeting_type,starts_at:m.starts_at,ends_at:m.ends_at,required:true,check_in_open:m.check_in_open,code_expires_at:m.code_expires_at,physical_status:a.physical_status},orders:[],finance:{allowed:false,approvals:0,school:0},attention:null,robot:null,inventory:null,announcements:[]}});
+  if(['team_dashboard_context','team_attendance_policy_context','team_meetings','team_attendance','team_meeting_members'].includes(name))state.dataReads.push(name);
+  if(name==='team_dashboard_context')return r.fulfill({json:{name:'Test Student',role:options.role||'student',admin:false,personal:{percent:100,strikes:0,pending:0},next_meeting:state.rostered&&state.required?{id:mid,title:m.title,type:m.meeting_type,starts_at:m.starts_at,ends_at:m.ends_at,required:true,check_in_open:m.check_in_open,code_expires_at:m.code_expires_at,physical_status:a.physical_status}:null,orders:[],finance:{allowed:false,approvals:0,school:0},attention:null,robot:null,inventory:null,announcements:[]}});
   if(name==='team_attendance_policy_context')return r.fulfill({json:{user_id:uid,can_participate:options.role!=='mentor',can_read_team:false,can_manage_meetings:false,can_review:false,people:[],warnings:[]}});
-  if(name==='team_meetings')return r.fulfill({json:state.meetings});
+  if(name==='team_meetings')return r.fulfill({json:state.rostered?state.meetings:[]});
   if(name==='team_attendance'){
    if(url.searchParams.has('student_id'))state.ownReads.push(url.search);
    return r.fulfill({json:state.rostered?[a]:[]});
   }
-  if(name==='team_meeting_members')return r.fulfill({json:state.rostered?[{meeting_id:mid,student_id:uid,required:true,member_status:'registered',team_area:'Build'}]:[]});
+  if(name==='team_meeting_members')return r.fulfill({json:state.rostered?[{meeting_id:mid,student_id:uid,required:state.required,member_status:'registered',team_area:'Build'}]:[]});
   if(name==='planning_my_work_context')return r.fulfill({json:{user_id:uid,season_id:null,seasons:[],boards:[],tasks:[]}});
   if(name==='team_attendance_check_in'||name==='team_attendance_check_out'){
    const args=r.request().postDataJSON();state.writes.push({name,args});
@@ -111,4 +119,44 @@ test('explicit sign-out clears a linked target while its data is still loading',
  const s=await setup(page);await page.route('**/rest/v1/team_meetings*',()=>new Promise(()=>{}));await page.goto('/'+target);
  await expect(page.getByText('Loading attendance…')).toBeVisible();await page.locator('.suite-header').getByRole('button',{name:'Sign out',exact:true}).click();
  await expect(page.getByRole('heading',{name:'Team sign in'})).toBeVisible();expect(new URL(page.url()).hash).toBe('');expect(s.writes).toEqual([]);
+});
+
+for(const width of [390,1440])test(`new accepted member is enrolled before Home reads and can see optional current meeting ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});let release!:()=>void;
+ const syncWait=new Promise<void>(resolve=>{release=resolve;});
+ const s=await setup(page,{autoEnroll:true,optional:true,syncWait});await page.goto('/');
+ await expect.poll(()=>s.syncCalls.length).toBeGreaterThan(0);expect(s.rostered).toBe(false);expect(s.dataReads).toEqual([]);
+ await expect(page.getByText('No required meetings scheduled.',{exact:false})).toHaveCount(0);release();
+ await expect(page.locator('.my-next')).toContainText(s.m.title);await expect(page.locator('.my-next')).toContainText('Optional');
+ await expect(page.locator('.my-next').getByRole('link',{name:'Check in',exact:true})).toHaveAttribute('href',target);
+ await page.locator('.my-next').getByRole('link',{name:'Check in',exact:true}).click();
+ await expect(dialog(page).getByRole('heading',{name:s.m.title,exact:true})).toBeVisible();await expect(dialog(page).getByLabel('6-digit meeting code')).toBeVisible();
+ expect(s.rosterAdds).toBe(1);expect(s.writes).toEqual([]);expect(s.a.checked_in_at).toBeNull();
+ await dialog(page).getByRole('button',{name:'Close',exact:true}).click();await home(page);
+ for(let repeat=0;repeat<2;repeat++){await page.locator('.my-dashboard').getByRole('button',{name:'Refresh',exact:true}).click();await expect(page.locator('.my-next')).toContainText(s.m.title);}
+ expect(s.rosterAdds).toBe(1);expect(s.syncCalls.length).toBeGreaterThanOrEqual(4);expect(s.syncCalls.every(args=>JSON.stringify(args)==='{}')).toBe(true);expect(s.writes).toEqual([]);
+});
+
+test('initial roster sync failure shows retry rather than a false empty Home calendar',async({page})=>{
+ const s=await setup(page,{autoEnroll:true,optional:true,syncFailures:1});await page.goto('/');
+ await expect(page.getByRole('alert')).toContainText('Meeting roster sync temporarily unavailable');
+ expect(s.rostered).toBe(false);expect(s.dataReads).toEqual([]);await expect(page.getByText('No required meetings scheduled.',{exact:false})).toHaveCount(0);
+ await page.getByRole('button',{name:'Try again',exact:true}).click();
+ await expect(page.locator('.my-next')).toContainText(s.m.title);await expect(page.locator('.my-next')).toContainText('Optional');
+ expect(s.rosterAdds).toBe(1);expect(s.syncCalls).toEqual([{},{}]);expect(s.writes).toEqual([]);expect(s.a.checked_in_at).toBeNull();
+});
+
+test('Attendance retries failed initial roster synchronization without a false access denial',async({page})=>{
+ const s=await setup(page,{autoEnroll:true,optional:true,syncFailures:1});await page.goto('/'+target);
+ await expect(page.getByRole('alert')).toContainText('Meeting roster sync temporarily unavailable');
+ await expect(page.getByText('Attendance is unavailable for this account',{exact:false})).toHaveCount(0);await expect(dialog(page)).toHaveCount(0);
+ expect(s.rostered).toBe(false);expect(s.dataReads).toEqual([]);
+ await page.getByRole('button',{name:'Retry attendance',exact:true}).click();
+ await expect(dialog(page).getByRole('heading',{name:s.m.title,exact:true})).toBeVisible();await expect(dialog(page).getByLabel('6-digit meeting code')).toBeVisible();
+ expect(s.rosterAdds).toBe(1);expect(s.syncCalls).toEqual([{},{}]);expect(s.writes).toEqual([]);
+});
+
+test('optional meeting fallback never promotes a future optional meeting into Home Next up',async({page})=>{
+ const s=await setup(page,{optional:true});s.m.starts_at='2026-10-27T18:00:00Z';s.m.ends_at='2026-10-27T20:00:00Z';
+ await page.goto('/');await expect(page.locator('.my-next')).toContainText('No required meetings scheduled.');expect(s.writes).toEqual([]);
 });
