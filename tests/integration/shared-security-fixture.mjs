@@ -17,6 +17,8 @@ const teamSources = [
   'supabase/migrations/20261007013837_lead_student_invitations.sql',
 ];
 export const sharedSecuritySources = [sharedSecurityManifest, ...upstream.map(s => s.file), ...teamSources,
+  'tests/fixtures/student-role-live-core.sql',
+  'supabase/migrations/20261028160322_student_admin_lead_roles.sql',
   'tests/integration/shared-security-fixture.mjs', 'tests/integration/shared-security-stack.spec.mjs'];
 export async function installSharedSecurityFixture(sql) {
   assert.equal(await sql("select coalesce(to_regclass('public.profiles')::text,'absent')"), 'absent', 'Refusing an existing application database');
@@ -25,8 +27,12 @@ export async function installSharedSecurityFixture(sql) {
     const source = read(entry.file);
     assert.equal(createHash('sha256').update(source).digest('hex'), entry.sha256, `Pinned upstream source changed: ${entry.file}`);
   }
-  for (const entry of upstream.filter(e => e.file.includes('/inventory-'))) await sql(read(entry.file));
+  for (const entry of upstream.filter(e => e.file.includes('/inventory-') && !e.phase)) await sql(read(entry.file));
   for (const path of teamSources) await sql(read(path));
+  for (const entry of upstream.filter(e => e.phase==='current')) await sql(read(entry.file));
+  await sql(read('tests/fixtures/student-role-live-core.sql'));
+  await sql(read('supabase/migrations/20261028160322_student_admin_lead_roles.sql'));
+  for (const entry of upstream.filter(e => e.phase==='role')) await sql(read(entry.file));
   for (const entry of upstream.filter(e => e.file.includes('/pit-'))) await sql(read(entry.file));
   await sql("notify pgrst, 'reload schema';");
 }

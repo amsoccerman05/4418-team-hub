@@ -1,0 +1,52 @@
+{
+  "repository": "amsoccerman05/4418-finance",
+  "commit": "115c8ed7",
+  "purpose": "Actual candidate SQL, synthetic combined-schema tests only; not extra production migrations",
+  "files": [
+    {
+      "source": "tests/fixtures/pit_operations.sql",
+      "file": "tests/fixtures/finance-candidate/pit_operations.sql",
+      "sha256": "8529d5f24b7ed59399878854481665140f95866782066e9b2f7253753fefd92b"
+    },
+    {
+      "source": "supabase/migrations/202609200001_finance_budget_core.sql",
+      "file": "tests/fixtures/finance-candidate/202609200001_finance_budget_core.sql",
+      "sha256": "92c375deb5b75787439695d19da7fc9816dc7c38ad30160f01ae2e3730e560ac"
+    },
+    {
+      "source": "supabase/migrations/202609200002_finance_workbook.sql",
+      "file": "tests/fixtures/finance-candidate/202609200002_finance_workbook.sql",
+      "sha256": "8e574d3c7b103871859d52747740dfafc4fa94f2984e348632cb8426bcc73229"
+    },
+    {
+      "source": "supabase/migrations/20261005235435_finance_repair_po_links.sql",
+      "file": "tests/fixtures/finance-candidate/20261005235435_finance_repair_po_links.sql",
+      "sha256": "e9c5c00456de0230916b8ad803a78bae8f91692f2b557caee9580520ebbd2fe3"
+    },
+    {
+      "source": "supabase/migrations/20261007011342_allow_all_active_student_purchase_requests.sql",
+      "file": "tests/fixtures/finance-candidate/20261007011342_allow_all_active_student_purchase_requests.sql",
+      "sha256": "dddaa5f0a2cf954307d052ae7b12390aa3dcfe01337a29bd96d8d317e29f59fa"
+    },
+    {
+      "source": "supabase/migrations/20261018051306_finance_notification_delivery_authorization.sql",
+      "file": "tests/fixtures/finance-candidate/20261018051306_finance_notification_delivery_authorization.sql",
+      "sha256": "e79f172097746f8f5dcd71ee683fac5c142744cd9a453ddb2425139f2f064352"
+    },
+    {
+      "source": "supabase/migrations/20261027204114_finance_po_received.sql",
+      "file": "tests/fixtures/finance-candidate/20261027204114_finance_po_received.sql",
+      "sha256": "579dace38bedb98c5f30df3819237f99b44977e819e0d755980090774dbfc298"
+    },
+    {
+      "source": "supabase/migrations/20261028033326_finance_po_actionability.sql",
+      "file": "tests/fixtures/finance-candidate/20261028033326_finance_po_actionability.sql",
+      "sha256": "9efea6bff298cc8269be5e95a00d81b13b5dbbccedb1ccf4c6f4a4cf12fa487f"
+    },
+    {
+      "source": "supabase/migrations/20261028160500_finance_student_roles_readonly_privacy.sql",
+      "file": "tests/fixtures/finance-candidate/20261028160500_finance_student_roles_readonly_privacy.sql",
+      "sha256": "5e262ea8d88879de30893962a67fc945d5103e38ed792d230e0651882e194079"
+    }
+  ]
+}

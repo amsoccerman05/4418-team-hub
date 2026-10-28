@@ -54,7 +54,9 @@ function captureEdge(chunk) { const text = String(chunk); if (edgeOutputHead.len
 // Explicit gate release, not a timing-dependent sleep. Separate psql connection
 // holds the lock while real HTTP requests queue inside the deployed RPCs.
 async function gate(lock = '4418') {
-  assert(['4418', '9918,99', '4418,10'].includes(lock));
+  const item = lock && typeof lock === 'object' ? lock.inventoryItem : null;
+  assert(item ? Object.keys(lock).length===1 && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(item) : ['4418', '9918,99', '4418,10'].includes(lock));
+  const lockSQL = item ? `select id from public.inventory_items where id='${item}'::uuid for update` : `select pg_advisory_xact_lock(${lock})`;
   const child = spawn('docker', pgArgs, common);
   children.add(child); child.once('close', () => children.delete(child));
   let out = '', err = '', readyResolve, readyReject;
@@ -67,7 +69,7 @@ async function gate(lock = '4418') {
   });
   // Attach handlers immediately so a failed readiness check cannot leak rejections.
   done.catch(() => {});
-  child.stdin.write(`begin;set statement_timeout='40s';set idle_in_transaction_session_timeout='40s';select pg_advisory_xact_lock(${lock});select 'FABRICATION_GATE_READY';\n`);
+  child.stdin.write(`begin;set statement_timeout='40s';set idle_in_transaction_session_timeout='40s';${lockSQL};select 'FABRICATION_GATE_READY';\n`);
   const timeout = setTimeout(() => readyReject(Error('SQL gate did not become ready')), 15_000);
   try { await ready; } catch (error) { child.kill('SIGTERM'); throw error; } finally { clearTimeout(timeout); }
   let released = false;
@@ -210,7 +212,7 @@ verify_jwt = false
       let checks;
       if (withSharedSecurity) {
         const { runSharedSecurityIntegration } = await import('./shared-security-stack.spec.mjs');
-        checks = await runSharedSecurityIntegration({ ...status, sql, registerSecret: s => secrets.push(s) });
+        checks = await runSharedSecurityIntegration({ ...status, sql, gate, waitFor, registerSecret: s => secrets.push(s) });
       } else if (withAttendanceSecurity) {
         await installAttendanceSecurityFixture(sql);
         const { runAttendanceAbuseIntegration } = await import('./attendance-abuse-stack.spec.mjs');

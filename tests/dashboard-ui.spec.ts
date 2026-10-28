@@ -116,7 +116,7 @@ for(const width of [390,768,1440])test(`Home task shortcuts are direct, responsi
 
 async function emptyPersonalWork(page:Page){
  const uid='00000000-0000-0000-0000-000000000001';
- await page.route('**/rpc/planning_my_work_context',r=>r.fulfill({json:{user_id:uid,can_manage:false,season_id:'season',seasons:[{id:'season',name:'Fixture season',status:'active'}],members:[],areas:[],groups:[],items:[],boards:[],tasks:[]}}));
+ await page.route('**/rpc/planning_my_work_context',r=>r.fulfill({json:{user_id:uid,can_manage:false,can_write:true,season_id:'season',seasons:[{id:'season',name:'Fixture season',status:'active'}],members:[],areas:[],groups:[],items:[],boards:[],tasks:[]}}));
 }
 async function signInFixture(page:Page){
  const user={id:'00000000-0000-0000-0000-000000000001',aud:'authenticated',email:'test@example.invalid',app_metadata:{},user_metadata:{}};

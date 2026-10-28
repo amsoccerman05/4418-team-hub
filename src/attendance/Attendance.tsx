@@ -140,7 +140,7 @@ export function AttendanceHub({
               if (e) throw e;
               if (
                 !p.active ||
-                !["student", "lead", "admin", "mentor"].includes(p.role)
+                !["student", "lead", "admin_lead", "admin", "mentor"].includes(p.role)
               )
                 throw new Error(
                   "Attendance access requires an active student or leadership account.",

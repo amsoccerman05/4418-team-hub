@@ -33,7 +33,7 @@ function harness(initialRole='mentor'){
  const supabase={
   auth:{onAuthStateChange(callback:any){authCallback=callback;callback('INITIAL_SESSION',{user:{id:'fixture-actor'}});return {data:{subscription:{unsubscribe(){}}}};}},
   from(){return {select(){return this;},eq(){return this;},abortSignal(){return this;},single(){calls.push('profile');if(profileGate){const gate=profileGate;profileGate=undefined;return gate.promise;}return Promise.resolve({data:{role,active}});}};},
-  rpc(name:string){return {abortSignal(){calls.push(name);const gate=contextGates.get(name);if(gate){contextGates.delete(name);return gate.promise;}return Promise.resolve({data:name==='team_invitation_context'?lead:manager});}};},
+  rpc(name:string){return {abortSignal(){calls.push(name);const gate=contextGates.get(name);if(gate){contextGates.delete(name);return gate.promise;}return Promise.resolve({data:name==='team_operations_context'?lead:manager});}};},
  };
  const react={
   useRef(value:any){const index=current.cursor++;return current.slots[index]??={current:value};},
@@ -85,7 +85,7 @@ function harness(initialRole='mentor'){
   click('Review batch',true);
  }
  return {manager,lead,calls,render,settle,click,draft,
-  get node(){return onboardingNode;},get tree(){return tree;},get runner(){return runners.at(-1);},
+  get childTree(){return onboardingTree;},get node(){return onboardingNode;},get tree(){return tree;},get runner(){return runners.at(-1);},
   holdContext(name:string){const gate=deferred<any>();contextGates.set(name,gate);return gate;},
   holdProfile(){const gate=deferred<any>();profileGate=gate;return gate;},
   refreshSingle(){click('+ Invite member');const form=descendants(tree).find(node=>node.type===forms.InviteForm)!;form.props.onRefresh();render();},
@@ -102,7 +102,7 @@ test('late manager refresh cannot replace a same-user lead projection',async()=>
  const h=harness();try{
   h.render();await h.settle();const oldSignal=h.node.props.identitySignal;
   const managerRefresh=h.holdContext('team_management_context_v2');h.refreshSingle();
-  h.auth('lead');await h.settle();expect(h.node.props.studentOnly).toBe(true);expect(oldSignal.aborted).toBe(true);expect(h.node.props.data.invitations).toEqual([]);
+  h.auth('admin_lead');await h.settle();expect(h.node.props.studentOnly).toBe(true);expect(oldSignal.aborted).toBe(true);expect(h.node.props.data.invitations).toEqual([]);
   managerRefresh.resolve({data:h.manager});await h.settle();
   expect(h.node.props.active).toBe(true);expect(h.node.props.data.invitations).toEqual([]);expect(words(h.tree)).not.toMatch(/Private manager history|private-other@example/);
  }finally{h.close();}
@@ -111,15 +111,15 @@ test('late manager refresh cannot replace a same-user lead projection',async()=>
 test('manager response before role discovery is discarded even when the new context fails',async()=>{
  const h=harness();try{
   h.render();await h.settle();const managerRefresh=h.holdContext('team_management_context_v2');h.refreshSingle();
-  const profile=h.holdProfile(),leadContext=h.holdContext('team_invitation_context');h.auth('lead');await h.settle();
+  const profile=h.holdProfile(),leadContext=h.holdContext('team_operations_context');h.auth('admin_lead');await h.settle();
   managerRefresh.resolve({data:h.manager});await h.settle();expect(h.node.props.active).toBe(false);
-  profile.resolve({data:{role:'lead',active:true}});await h.settle();leadContext.resolve({error:{message:'Fixture context interruption'}});await h.settle();
+  profile.resolve({data:{role:'admin_lead',active:true}});await h.settle();leadContext.resolve({error:{message:'Fixture context interruption'}});await h.settle();
   expect(h.node.props.studentOnly).toBe(true);expect(h.node.props.active).toBe(false);expect(h.node.props.data.invitations).toEqual([]);
   expect(words(h.tree)).toContain('Team management is unavailable.');expect(words(h.tree)).not.toMatch(/Private manager history|private-other@example/);
  }finally{h.close();}
 });
 
-for(const role of ['mentor','lead'])test(`same-role ${role} token refresh preserves the reviewed batch`,async()=>{
+for(const role of ['mentor','admin_lead'])test(`same-role ${role} token refresh preserves the reviewed batch`,async()=>{
  const h=harness(role);try{
   h.render();await h.settle();h.draft();const runner=h.runner,key=h.node.key,signal=h.node.props.identitySignal,rows=runner.snapshot();
   expect(rows[0].status).toBe('ready');h.auth(role);await h.settle();
@@ -130,6 +130,8 @@ for(const role of ['mentor','lead'])test(`same-role ${role} token refresh preser
 test('same-user permission change clears reviewed manager drafts',async()=>{
  const h=harness();try{
   h.render();await h.settle();h.draft();const runner=h.runner,key=h.node.key;expect(runner.snapshot()).toHaveLength(1);
-  h.auth('lead');await h.settle();expect(h.node.key).not.toBe(key);expect(h.runner).not.toBe(runner);expect(h.runner.snapshot()).toEqual([]);
+  h.auth('admin_lead');await h.settle();expect(h.node.key).not.toBe(key);expect(h.runner).not.toBe(runner);expect(h.runner.snapshot()).toEqual([]);
  }finally{h.close();}
 });
+
+test('same identity recheck synchronously blocks retained dispatch and preserves reviewed request IDs',async()=>{const h=harness('admin_lead');try{h.render();await h.settle();h.draft();const rows=h.runner.snapshot(),key=h.node.key;const pending=h.holdProfile();h.auth();expect(h.node.props.isCurrentIdentity()).toBe(false);expect(h.node.props.active).toBe(false);expect(h.runner.snapshot()).toEqual(rows);pending.resolve({data:{role:'admin_lead',active:true}});await h.settle();expect(h.node.key).toBe(key);expect(h.node.props.isCurrentIdentity()).toBe(true);expect(h.runner.snapshot()).toEqual(rows);}finally{h.close();}});

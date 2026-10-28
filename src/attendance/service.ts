@@ -102,11 +102,11 @@ export type Data = {
   members: Member[];
 };
 export const isManager = (p: Profile) =>
-  p.active && ["lead", "admin", "mentor"].includes(p.role);
+  p.active && ["admin_lead", "admin", "mentor"].includes(p.role);
 // Attendance participation is independent of shared suite management access.
 // Existing student/lead clients stay compatible until the new policy context is deployed.
-export const canParticipate = (p:Profile,data:Data) => p.active && ["student","lead","mentor","admin"].includes(p.role) && (
- data.policy?.can_participate ?? ["student","lead"].includes(p.role)
+export const canParticipate = (p:Profile,data:Data) => p.active && ["student","lead","admin_lead","mentor","admin"].includes(p.role) && (
+ data.policy?.can_participate ?? ["student","lead","admin_lead"].includes(p.role)
 );
 export async function rpc(action: string, args: Record<string, unknown>) {
   if (!supabase) throw new Error("Attendance is not configured.");

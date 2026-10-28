@@ -24,7 +24,7 @@ import './planning.css';
 export function Planning({route,actorId}:{route:string;actorId:string}){
  const [goalsRefresh,setGoalsRefresh]=useState(0),[assemblyRefresh,setAssemblyRefresh]=useState(0);
  const [data,setData]=useState<Context|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[edit,setEdit]=useState<Edit|null>(null),[view,setView]=useState('table'),[planView,setPlanView]=useState('table');
- const [search,setSearch]=useState(''),[owner,setOwner]=useState(''),[area,setArea]=useState(''),[status,setStatus]=useState(''),[priority,setPriority]=useState(''),[feedback,setFeedback]=useState('');
+ const [search,setSearch]=useState(''),[owner,setOwner]=useState(''),[area,setArea]=useState(''),[status,setStatus]=useState(''),[priority,setPriority]=useState(''),[feedback,setFeedback]=useState(''),[checkingAccess,setCheckingAccess]=useState(false);
  const generation=useRef(0),selected=useRef<string|null>(null),openedTaskRoute=useRef<string|null>(null);
  const boardRoute=planningBoardRoute(route),tab=route.split('/')[1]||'dashboard',boardId=boardRoute?.id||route.split('/')[2],assemblyView=boardRoute?.view==='assembly',decisionView=boardRoute?.view==='decisions';
  const editorMounted=useRef(true);
@@ -32,7 +32,7 @@ export function Planning({route,actorId}:{route:string;actorId:string}){
  const editorSession=useRef<EditorSession>({route,edit});editorSession.current={route,edit};
  const expectedEditor={route,edit};
  const editorStillCurrent=()=>isCurrentEditor(expectedEditor,editorSession.current,location.hash,editorMounted.current);
- async function refresh(sid=selected.current,isCurrent:()=>boolean=()=>true){const g=++generation.current;setError('');try{const c=await loadPlanning(sid,tab==='my-work');if(g===generation.current&&isCurrent()){setData(c);selected.current=c.season_id;}}catch(e){if(g===generation.current&&isCurrent())setError((e as Error).message);}}
+ async function refresh(sid=selected.current,isCurrent:()=>boolean=()=>true){const g=++generation.current;setError('');setCheckingAccess(true);setData(d=>d?{...d,can_write:undefined}:d);try{const c=await loadPlanning(sid,tab==='my-work');if(g===generation.current&&isCurrent()){setData(c);selected.current=c.season_id;return true;}}catch(e){if(g===generation.current&&isCurrent())setError((e as Error).message);}finally{if(g===generation.current&&isCurrent())setCheckingAccess(false);}return false;}
  useEffect(()=>{setData(null);void refresh();return()=>{generation.current++;};},[tab==='my-work']);
  useEffect(()=>{setSearch('');setOwner('');setArea('');setStatus('');setPriority('');setEdit(null);setFeedback('');},[boardId,tab,assemblyView,decisionView]);
  const personalTaskRoute=tab==='my-work'&&boardId?route:null;
@@ -40,31 +40,31 @@ export function Planning({route,actorId}:{route:string;actorId:string}){
   if(!personalTaskRoute){openedTaskRoute.current=null;return;}
   if(!data)return;
   const task=personalTaskFromRoute(personalTaskRoute,data);
-  if(!task){setEdit(null);return;}
+  if(!task){if(openedTaskRoute.current!==personalTaskRoute)setEdit(null);return;}
   if(openedTaskRoute.current===personalTaskRoute)return;
   openedTaskRoute.current=personalTaskRoute;
   setEdit({entity:'task',p:{...task}});
  },[personalTaskRoute,data]);
  const closeEditor=()=>{if(!editorStillCurrent())return;setEdit(null);if(personalTaskRoute){history.replaceState(null,'',location.pathname+location.search+'#planning/my-work');window.dispatchEvent(new HashChangeEvent('hashchange'));}};
 
- const season=data?.seasons.find(s=>s.id===data.season_id),board=data?.boards.find(b=>b.id===boardId&&(tab!=='boards'||!!boardRoute)),readOnly=season?.status==='archived',manage=!!data?.can_manage;
- async function updateTask(t:Task,patch:Partial<Task>){if(busy)return;setBusy(true);setError('');setFeedback('');try{await savePlanning('task',{...t,...patch});await refresh();setFeedback('Task saved.');return true;}catch(e){await refresh();setError((e as Error).message);return false;}finally{setBusy(false);}}
- async function updateItem(i:Item,patch:Partial<Item>){if(busy)return;setBusy(true);setError('');setFeedback('');try{await savePlanning('item',{...i,...patch});await refresh();setFeedback('Plan item saved.');return true;}catch(e){setError((e as Error).message);return false;}finally{setBusy(false);}}
+ const season=data?.seasons.find(s=>s.id===data.season_id),board=data?.boards.find(b=>b.id===boardId&&(tab!=='boards'||!!boardRoute)),readOnly=season?.status==='archived',writer=data?.can_write===true,manage=writer&&!!data?.can_manage;
+ async function updateTask(t:Task,patch:Partial<Task>){if(busy||!canEdit(t))return false;setBusy(true);setError('');setFeedback('');try{await savePlanning('task',{...t,...patch});await refresh();setFeedback('Task saved.');return true;}catch(e){await refresh();setError((e as Error).message);return false;}finally{setBusy(false);}}
+ async function updateItem(i:Item,patch:Partial<Item>){if(busy||!manage||readOnly)return false;setBusy(true);setError('');setFeedback('');try{await savePlanning('item',{...i,...patch});await refresh();setFeedback('Plan item saved.');return true;}catch(e){setError((e as Error).message);return false;}finally{setBusy(false);}}
  const move=(t:Task,next:string)=>updateTask(t,{status:next});
  const openTask=(t:Task)=>setEdit({entity:'task',p:{...t}});
  const openBoard=(id:string)=>{location.hash=`planning/boards/${id}`;setSearch('');setOwner('');setArea('');setStatus('');setPriority('');};
  const defaults=(entity:Edit['entity'])=>({season_id:data?.season_id,status:entity==='season'?'draft':entity==='item'?'not_started':entity==='task'?'todo':'backlog',kind:entity==='board'?'project':'work',active:true,display_order:nextOrder(entity==='group'?data?.groups||[]:entity==='board'?data?.boards||[]:data?.items||[]),board_id:board?.id,priority:'normal',...(entity==='task'?{owner_ids:[]}:{owner_id:null}),area_id:null,start_date:entity==='item'?localDate():null,end_date:entity==='item'?localDate():null});
- const newEntity=(entity:Edit['entity'],overrides:Record<string,unknown>={})=>setEdit({entity,p:{...defaults(entity),...overrides}});
+ const newEntity=(entity:Edit['entity'],overrides:Record<string,unknown>={})=>{if(!manage||entity==='task'&&!canCreateTask||readOnly&&!['season','board','task'].includes(entity))return;setEdit({entity,p:{...defaults(entity),...overrides}});};
  const canCreateTask=manage&&!!board?.active&&(!readOnly||board.kind==='area');
- async function quickCreate(entity:'item'|'task',title:string,extra:Record<string,unknown>){await savePlanning(entity,{...defaults(entity),title,...extra});if(entity==='task'){setSearch('');setOwner('');setArea('');setStatus('');setPriority('');}await refresh();}
+ async function quickCreate(entity:'item'|'task',title:string,extra:Record<string,unknown>){if(!manage||(entity==='task'?!canCreateTask:readOnly))throw Error('Editing access is unavailable. Your text has not been saved.');await savePlanning(entity,{...defaults(entity),title,...extra});if(entity==='task'){setSearch('');setOwner('');setArea('');setStatus('');setPriority('');}await refresh();}
  async function orderGroup(group:Group,edge:'top'|'bottom'){
-  if(busy||!data)return;const orders=data.groups.map(g=>g.display_order),order=edge==='top'?Math.min(...orders)-1:Math.max(...orders)+1;
+  if(busy||!data||!manage||readOnly)return;const orders=data.groups.map(g=>g.display_order),order=edge==='top'?Math.min(...orders)-1:Math.max(...orders)+1;
   if(order< -2147483648||order>2147483647){setError('Group order limit reached. Refresh before trying again.');return;}
   setBusy(true);setError('');setFeedback('');try{await savePlanning('group',{...group,display_order:order});await refresh();setFeedback('Group order saved.');}catch(e){setError((e as Error).message);}finally{setBusy(false);}
  }
  const clearFilters=()=>{setSearch('');setOwner('');setArea('');setStatus('');setPriority('');};
  const filtersActive=!!(search||owner||area||status||priority);
- const canEdit=(t:Task)=>!!data&&(manage||t.owner_ids.includes(data.user_id))&&!!data.boards.find(b=>b.id===t.board_id&&b.active&&(b.kind==='area'||!readOnly));
+ const canEdit=(t:Task)=>!!data&&writer&&(manage||!!data.tasks.find(current=>current.id===t.id&&current.owner_ids.includes(data.user_id)))&&!!data.boards.find(b=>b.id===t.board_id&&b.active&&(b.kind==='area'||!readOnly));
  const statusControl=(t:Task)=><select aria-label={`Status for ${t.title}`} className="planning-status-select" data-status={t.status} value={t.status} disabled={!canEdit(t)||busy} onChange={e=>void move(t,e.target.value)}>{Object.entries(taskStatuses).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select>;
  const name=(id:string|null,list:'members'|'areas')=>data?.[list].find(x=>x.id===id)?.name||'Unassigned';
  const card=(t:Task)=><article className={`planning-task ${t.status==='blocked'?'is-blocked':''}`} key={t.id} draggable={canEdit(t)} onDragStart={e=>e.dataTransfer.setData('application/x-planning-task',t.id)}><div className="planning-task-title">{canEdit(t)?<InlineTitle title={t.title} disabled={busy} onSave={p=>updateTask(t,p)} onDetails={()=>openTask(t)}/>:<button onClick={()=>openTask(t)}>{t.title}</button>}</div><div className="planning-task-meta"><OwnerSummary owners={t.owners}/><span className={`planning-badge priority-${t.priority}`}>{priorities[t.priority as keyof typeof priorities]}</span></div>{tab==='my-work'&&<small>{data?.boards.find(b=>b.id===t.board_id)?.name}</small>}{t.area_id&&<small>{name(t.area_id,'areas')}</small>}{t.due_date&&<small className={t.status!=='done'&&t.due_date<localDate()?'planning-overdue':''}>{t.status!=='done'&&t.due_date<localDate()?'Overdue · ':'Due '}{t.due_date}</small>}{t.status==='blocked'&&t.blocked_reason&&<small className="planning-blocked-reason">Blocked: {t.blocked_reason}</small>}{data&&<DependencyHint task={t} data={data}/ >}{statusControl(t)}</article>;
@@ -89,6 +89,6 @@ export function Planning({route,actorId}:{route:string;actorId:string}){
  {!data.tasks.some(t=>t.board_id===boardId)&&<p className="planning-empty">No tasks yet. {manage&&board.active&&(!readOnly||board.kind==='area')?'Use New task or Add task to break this board’s work into clear next steps.':'Tasks added to this board will appear here.'}</p>}
  {view==='gantt'?<BoardGantt key={board.id} tasks={tasks} data={data} onOpen={openTask}/>:view==='table'?<>{rows(tasks)}{canCreateTask&&<QuickAdd key={board.id} kind="task" onAdd={title=>quickCreate('task',title,{status:'todo'})}/>}</>:<div className="planning-kanban" aria-label="Kanban board">{Object.entries(taskStatuses).map(([k,v])=><section key={`${board.id}-${k}`} className="planning-column" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();const t=data.tasks.find(t=>t.id===e.dataTransfer.getData('application/x-planning-task')&&t.board_id===boardId);if(t&&canEdit(t))void move(t,k);}}><h3 data-status={k}>{v} · <span>{tasks.filter(t=>t.status===k).length}</span></h3>{tasks.filter(t=>t.status===k).map(card)}{!tasks.some(t=>t.status===k)&&<p className="planning-column-empty">No {v.toLowerCase()} tasks</p>}{canCreateTask&&<QuickAdd kind="task" onAdd={title=>quickCreate('task',title,{status:k})}/>}</section>)}</div>}</>}</>:<p className="planning-empty">Board unavailable. <a href="#planning/boards">View boards</a></p>)}
  {tab==='my-work'&&<>{personalTaskRoute&&!personalTaskFromRoute(personalTaskRoute,data)&&<p className="planning-empty" role="status">This assigned task is no longer available. <a href="#planning/my-work">View your current work</a>.</p>}{['Overdue','Today','This week','Later','Blocked'].map(group=>{const ts=data.tasks.filter(t=>t.owner_ids.includes(data.user_id)&&t.status!=='done'&&data.boards.some(b=>b.id===t.board_id&&b.active)&&workGroup(t)===group);return ts.length?<section className="planning-work-group" data-group={group} key={group}><h3>{group} · {ts.length}</h3><div className="planning-grid">{ts.map(card)}</div></section>:null;})}{!data.tasks.some(t=>t.owner_ids.includes(data.user_id)&&t.status!=='done'&&data.boards.some(b=>b.id===t.board_id&&b.active))&&<p className="planning-empty">You’re caught up. Tasks assigned to you will appear here.</p>}</>}
- </>}{edit&&<Editor key={`${edit.entity}-${edit.p.id||'new'}`} edit={edit} data={data} onClose={closeEditor} onSaved={async message=>{if(!editorStillCurrent())return;await refresh(selected.current,editorStillCurrent);if(editorStillCurrent())setAssemblyRefresh(x=>x+1);if(editorStillCurrent()&&message)setFeedback(message);}}/>}</>}
+ </>}{edit&&<Editor key={`${edit.entity}-${edit.p.id||'new'}`} edit={edit} data={data} accessChecking={checkingAccess} onRefreshAccess={()=>refresh(selected.current,editorStillCurrent)} onClose={closeEditor} onSaved={async message=>{if(!editorStillCurrent())return;await refresh(selected.current,editorStillCurrent);if(editorStillCurrent())setAssemblyRefresh(x=>x+1);if(editorStillCurrent()&&message)setFeedback(message);}}/>}</>}
  </section>;
 }
