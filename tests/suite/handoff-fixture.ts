@@ -29,7 +29,7 @@ export async function setup(context:BrowserContext){
    else if(method==='GET'&&u.pathname.startsWith('/rest/v1/')&&emptyTables.has(name))result=[];
    else if(method==='POST'&&u.pathname.startsWith('/rest/v1/rpc/')){
     if(name==='team_attendance_sync_my_rosters'){expect(request.postDataJSON()).toEqual({});result={added:0};}
-    else if(name==='team_dashboard_context'){result={name:profile.display_name,role:'student',admin:false,personal:{percent:null,strikes:0,pending:0},next_meeting:null,orders:[{...po,approvals:0}],finance:{allowed:true,approvals:0,school:0},attention:null,robot:null,inventory:null,announcements:[]};}
+    else if(name==='team_dashboard_context'){result={name:profile.display_name,role:'student',admin:false,personal:{percent:null,strikes:0,pending:0},next_meeting:null,orders:[{...po,approvals:0}],finance:{allowed:false,approvals:0,school:0},attention:null,robot:null,inventory:null,announcements:[]};}
     else if(name==='planning_my_work_context')result={user_id:uid,season_id:null,seasons:[],boards:[],tasks:[]};
     else if(name==='notification_center')result={unread:0,attention:[],items:[],has_more:false};
     else if(name==='finance_context'){result={profile:{id:uid,display_name:profile.display_name,role:'student'},can_create:true,is_admin:false,capabilities:[],areas:[{id:area,name:'Fabrication',active:true}],people:[]};}
