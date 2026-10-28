@@ -1448,6 +1448,10 @@ for (const [index, persona] of leadershipRequestPersonas.entries()) {
     await expect(dialog.getByText("Absence requested · Pending", { exact: true })).toBeVisible();
     expect(attempts).toHaveLength(2);
     expect(calls).toEqual([{ p: { meeting_id: "m1", version: 2, notice_type: "absent", expected_at: null, reason: "Retry after refreshing the latest request" } }]);
+    // The pending heading already existed before this save. Wait for the completed
+    // refresh before opening the new version's collapsed request form.
+    await expect(dialog.getByRole("status")).toHaveText("Attendance request submitted for leadership review");
+    await expect(dialog.locator(".att-progress")).toHaveCount(0);
     await dialog.getByText("Edit request", { exact: true }).click();
     await dialog.getByRole("textbox", { name: "Reason", exact: true }).fill("Navigation should discard this unsent draft");
     await dialog.getByRole("link", { name: "How to use Attendance →", exact: true }).click();

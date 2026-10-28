@@ -64,7 +64,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: planning-recovery-review
-          path: test-results/planning-recovery-*.png
+          path: |
+            test-results/planning-recovery-*.png
+            test-results/planning-ui-*/**/*
+            test-results/auth-destination-ui-*/**/*
           if-no-files-found: ignore
           retention-days: 7
       - name: Retain privacy notice browser previews
