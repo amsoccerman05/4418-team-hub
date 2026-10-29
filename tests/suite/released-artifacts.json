@@ -1,23 +1,23 @@
 {
   "version": 1,
   "kind": "exact-archived-released-pages",
-  "captured": "2026-10-28T16:36Z",
-  "note": "Freshly re-downloaded original deployed archives. No candidate rebuild or demo substitution. Offline screenshots use documented fallback fonts.",
+  "captured": "2026-10-29T18:28:35.290094+00:00",
+  "note": "Exact merged and deployed role-batch Pages archives, independently verified byte-for-byte against live public delivery. No rebuild, demo or candidate substitution. Offline screenshots use documented fallback fonts.",
   "apps": {
     "hub": {
       "repository": "amsoccerman05/4418-team-hub",
       "origin": "https://team.frc4418.org",
-      "commit": "255a201a537ae67ed9ce92d37da8a13ee5e30892",
-      "run": 40634019721,
-      "artifact": 12792854527,
-      "archive_sha256": "f852d334ce9ea756bb08d358aca80fce424789dd826933181f921be5a143b028",
+      "commit": "47ee5cd84e6182fc9f2725cd50b1daab7343c349",
+      "run": 40928848717,
+      "artifact": 12921204940,
+      "archive_sha256": "27313fe927e0c64100fc6bf198d9afcf80b9fdf91fda152dc549eacc203d7c74",
       "files": {
         "assets/design-system-BNFmUPLv.css": "5993dc784cce287c971bc1f12db43c6f1e292a384c1598ec04876e778190bdce",
         "assets/design-system-qx3cU2yL.js": "12360ae023d2bb99ec26058f585ae6bf0c253394745df8a7fc3a79e091796648",
         "assets/event-BlnN96lR.js": "00dfb31af02776fe7c21306157019aa22c404d7c07a4354b9a25bdd20e8656b4",
-        "assets/index-BL9x_UXw.js": "7c72eb124a76d67ba4476befeb5f744e99eec3cdb1f5a929c0cbd357ba2afa36",
+        "assets/index-qz8ix-pE.js": "22bc48007b2e4470299a55adf434be54e749ef1beb51f715ac36a309f049b073",
         "assets/main-C_HBXZeR.css": "2e393c9393f46425b53c345f31603c10fa2550fe491972f68f1502b1a7e3647e",
-        "assets/main-uLlsGW8c.js": "83b41f4bd647e9f900801a801a978255a6cdacd74b9877aa6e236503cb1b7d6d",
+        "assets/main-sFi3NHy0.js": "cbf2383ec0fa1b947ba1d432c84470812d282b950f0ac2732ce06c7dd477293c",
         "assets/modulepreload-polyfill-B5Qt9EMX.js": "d2a32840421496e872ade591618d2fa5c33797605d1aec04301717e5a90757d0",
         "assets/suite-auth-BIY0ZEDk.js": "a3c2bbe6be14c93636f3954f62b0ccec38035c10c8d22a7f021aac9dc44eb83f",
         "assets/suite-auth-CkONPnfq.js": "34d7f77b42194c5a0dbddeb6ad3332429357852cef195f12049ccb53c04d05cc",
@@ -28,7 +28,7 @@
         "branding/README.md": "3484a52eb41a5896708ab72347f6a0d3978c59954f3300e46746766289669310",
         "event.html": "4c4d4ec707ebbdd8bbe6197181881f08fd678fc738e88d6d53484b7a34783d91",
         "events/published.json": "940682500438ddc56f6a4b40df49e9f90ca10d840b920d2b986205d816454270",
-        "index.html": "b9592119e86ff0ddf520e899063f189417e210601ae5d45038c3982f9aa39c31",
+        "index.html": "8f8456c2e4c4f2caa2b27d17e21b750cf1b8ec9331c51cb19ed6f78839813889",
         "policies/attendance-v03.pdf": "8bd4c96ebb462a19134cffe08c39a15d3a660508adbe9de5a9d1c317079252f5",
         "privacy.css": "12c9d33f38c28f6c8e74fee22fa851a22ed8d4fd26bf834bed8e48261abea7c8",
         "privacy.html": "edefd465ceaed27f8b035ee9f781f4a0cf89cac9d3d2586d178c43042ba21693",
@@ -38,59 +38,59 @@
     "inventory": {
       "repository": "amsoccerman05/4418-inventory",
       "origin": "https://inventory.frc4418.org",
-      "commit": "d24ee23b8c0a988cff1d7f32885cd039540d581e",
-      "run": 40632277352,
-      "artifact": 12792285963,
-      "archive_sha256": "002c9b2de9dc7d6c4366d5905949cb8995d929a3ce4c4b2d746fee0fb72b3808",
+      "commit": "f82a9f05f4881245e33521888cf2c6a1010e6d10",
+      "run": 40929883140,
+      "artifact": 12922336298,
+      "archive_sha256": "cb078d0b6beeb6703405883cb53eb2cba7125cd68f28a884ee0e40560dea60b7",
       "files": {
         "CNAME": "e4158f5f2ebb594c7fce76ba949f193b4d88372eca8584ce0d4135e2b9f1d5ea",
-        "assets/index-0L0gxRtq.js": "6162c50d152f2ec56d6e5ee4fe43d36dfd81d9c971e1128ab985c9d7ec9c8401",
+        "assets/index-ClMf1_uz.js": "9a379bad340fdd8aa2abc97fdce6038bb0a5b47216bbad519b9d1246467a0a34",
         "assets/index-cE_KeZOB.css": "1f7c909cd79e1d31f6315172801e36b5a82e3aceacd7e21e9f6b93a0df81b859",
         "branding/4418-impulse-emblem.png": "890376104cbc68857df843c5744e521b3073ebba5c413731782561c7cac4223a",
         "branding/4418-impulse-wordmark.png": "09f76042124317a94e5224c4970baf85dce5212b33f66e154c441ac1a969bbf6",
         "branding/4418-suite-icon-180.png": "c1ebf11b4878e49c4667167e2e26b452a15f4991de21844a040d2c107707a4dc",
         "branding/4418-suite-icon.svg": "a14ac3fa8ae0bb1f1e3620868830a6f05cf20d3d7ed930ac1e4e91fae22febba",
         "branding/README.md": "3484a52eb41a5896708ab72347f6a0d3978c59954f3300e46746766289669310",
-        "index.html": "a53e5ea68b6e7dcd6e60c2ab4a8927766677213c93ac745c70f272c338ef087a"
-      }
-    },
-    "pit": {
-      "repository": "amsoccerman05/4418-pit-app",
-      "origin": "https://pit.frc4418.org",
-      "commit": "5f4e345bbd3b6b5850d723009ec78e0cf8f50e7c",
-      "run": 40639818433,
-      "artifact": 12795365971,
-      "archive_sha256": "547c74085b514b7385b9a99804a81d039757f13f4409e8cb3c9a897a9df2bc40",
-      "files": {
-        "assets/index-Bf8l27MF.css": "dcc36f6acf4a264cde8d519c4df920dd56a37de8aaa9e04e00b54cdd34061df2",
-        "assets/index-CBQvX91_.js": "912783ab0a948666b69e92937596e25ae4fc52c300e76c4151c8dcf768c06ca0",
-        "branding/4418-impulse-emblem.png": "890376104cbc68857df843c5744e521b3073ebba5c413731782561c7cac4223a",
-        "branding/4418-impulse-wordmark.png": "09f76042124317a94e5224c4970baf85dce5212b33f66e154c441ac1a969bbf6",
-        "branding/4418-suite-icon-180.png": "c1ebf11b4878e49c4667167e2e26b452a15f4991de21844a040d2c107707a4dc",
-        "branding/4418-suite-icon.svg": "a14ac3fa8ae0bb1f1e3620868830a6f05cf20d3d7ed930ac1e4e91fae22febba",
-        "branding/README.md": "3484a52eb41a5896708ab72347f6a0d3978c59954f3300e46746766289669310",
-        "index.html": "7c40080a2b8995a44e5d46a6ebafbf8af2eee330e95a6bea30d9bcc29cb3a711"
+        "index.html": "72a10b55702797f32a88621b2b038ccc0aba09d3cdc741548ff64c11d2981445"
       }
     },
     "finance": {
       "repository": "amsoccerman05/4418-finance",
       "origin": "https://finance.frc4418.org",
-      "commit": "a679e0e0d4b2638081088b962a446854aeac49e9",
-      "run": 40632336115,
-      "artifact": 12792720434,
-      "archive_sha256": "a4d6f07c872b02e530fda91fcefe7e75a44445f747b506370e415ff7f6138e95",
+      "commit": "8eb209dc1959317830e8b8676dba1963580d8990",
+      "run": 40930087188,
+      "artifact": 12922426824,
+      "archive_sha256": "5e33062893427cc5d123e968dcd9118498f1da693f39ef597ebf73172fdab0a6",
       "files": {
         "CNAME": "35bef2b04298647fe00c50d0c1535708065937133aa7f6592065536ee9521c4d",
-        "assets/finance-workbook-DqTOvXk5.js": "0993556c3d173011fc42a103bd5d688e643c7cd2b06243d8889bb7cf901207ef",
+        "assets/finance-workbook-CZfMO1ch.js": "41ab341f9dc6ef00508e804635f7e3205da82f8a0c7a5da8719a1eb033766b22",
         "assets/index-BgaMUhWn.css": "4715708a105a11385c01b40f1c3df7d7864b5de4b2838d758baff6283d7f8f2b",
-        "assets/index-Bm5ALT3U.js": "156cd7bf55e7d0e4952952b715d765ab3bd67747c9104d6ea01c8efa7310be4c",
+        "assets/index-CU3Toz1k.js": "debc1e26bec8acaa04d5fa1baaf4c9655d8d2dcd28a80dc1e4980e0b9f9efea8",
         "branding/4418-impulse-emblem.png": "890376104cbc68857df843c5744e521b3073ebba5c413731782561c7cac4223a",
         "branding/4418-impulse-wordmark.png": "09f76042124317a94e5224c4970baf85dce5212b33f66e154c441ac1a969bbf6",
         "branding/4418-suite-icon-180.png": "c1ebf11b4878e49c4667167e2e26b452a15f4991de21844a040d2c107707a4dc",
         "branding/4418-suite-icon.svg": "a14ac3fa8ae0bb1f1e3620868830a6f05cf20d3d7ed930ac1e4e91fae22febba",
         "branding/README.md": "3484a52eb41a5896708ab72347f6a0d3978c59954f3300e46746766289669310",
         "finance-workbook.xlsx": "c1dc57b00fbdb66f2d5c666b005fbef27e74a5ba3af7a4ce175b7ccf460c47f0",
-        "index.html": "ead1b16d69f501d6f4a07309656fbc1cae5683719cab47ea0e3e6543de2c1a2f"
+        "index.html": "ce99bd8bca95ab0ee0d98cfa5891af8a0650a91c3f429072ce6b4a2957a4fe3c"
+      }
+    },
+    "pit": {
+      "repository": "amsoccerman05/4418-pit-app",
+      "origin": "https://pit.frc4418.org",
+      "commit": "08c2b163797c1d840cbec23214498f4151b9f6ed",
+      "run": 40928860014,
+      "artifact": 12921053303,
+      "archive_sha256": "27aab55a02f71ae2e90efe50b03ea67e5de925dc0b3bc7d0729f35f6e7208945",
+      "files": {
+        "assets/index-Bf8l27MF.css": "dcc36f6acf4a264cde8d519c4df920dd56a37de8aaa9e04e00b54cdd34061df2",
+        "assets/index-M9C7VvYH.js": "19501054a36ad7179f7ac32160bfce985ca0413751415eba85f9e1f3a056aba9",
+        "branding/4418-impulse-emblem.png": "890376104cbc68857df843c5744e521b3073ebba5c413731782561c7cac4223a",
+        "branding/4418-impulse-wordmark.png": "09f76042124317a94e5224c4970baf85dce5212b33f66e154c441ac1a969bbf6",
+        "branding/4418-suite-icon-180.png": "c1ebf11b4878e49c4667167e2e26b452a15f4991de21844a040d2c107707a4dc",
+        "branding/4418-suite-icon.svg": "a14ac3fa8ae0bb1f1e3620868830a6f05cf20d3d7ed930ac1e4e91fae22febba",
+        "branding/README.md": "3484a52eb41a5896708ab72347f6a0d3978c59954f3300e46746766289669310",
+        "index.html": "d68f130018a2cd008f8a9b2177e0e17f8e4e779e0485f8c73e2353cdc70c2201"
       }
     }
   }
