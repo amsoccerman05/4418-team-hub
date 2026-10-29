@@ -11,7 +11,7 @@ for(const width of [390,1440])test(`suite switcher keyboard and mobile layout ${
 });
 
 for(const width of [390,1440])test(`Attendance identifies the current app and Planning has a direct Home route ${width}`,async({page})=>{
- await page.setViewportSize({width,height:900});await session(page);await page.route('**/rest/v1/rpc/planning_context',r=>r.fulfill({json:{user_id:'fixture',can_manage:false,season_id:null,seasons:[],members:[],areas:[],groups:[],items:[],boards:[],tasks:[]}}));await page.goto('/#attendance');
+ await page.setViewportSize({width,height:900});await session(page);await page.route('**/rest/v1/rpc/planning_context',r=>r.fulfill({json:{user_id:'fixture',can_manage:false,can_write:true,season_id:null,seasons:[],members:[],areas:[],groups:[],items:[],boards:[],tasks:[]}}));await page.goto('/#attendance');
  await expect(page.locator('.suite-brand strong')).toHaveText('Attendance');await expect(page.locator('.suite-picker summary')).toContainText('Attendance');
  await page.goto('/#planning');if(width===390)await page.getByRole('button',{name:'Planning menu'}).click();
  await page.getByRole('navigation',{name:'Planning workspace'}).getByRole('link',{name:'Team Hub / Home',exact:true}).click();

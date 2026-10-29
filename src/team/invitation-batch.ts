@@ -1,6 +1,6 @@
 /** A client-side review boundary, not an authorization check or email quota. */
 export const INVITATION_BATCH_LIMIT = 20;
-export const INVITATION_ROLES = ['student', 'lead', 'mentor', 'admin', 'readonly'] as const;
+export const INVITATION_ROLES = ['student', 'lead', 'admin_lead', 'mentor', 'admin', 'readonly'] as const;
 export const INVITATION_REGISTRATIONS = ['', 'prospective', 'registered', 'inactive'] as const;
 export type InvitationRole = typeof INVITATION_ROLES[number];
 export type InvitationRegistration = typeof INVITATION_REGISTRATIONS[number];
@@ -22,6 +22,7 @@ export type InvitationValidationContext = {
   areas: readonly { id: string; active: boolean }[];
   existingEmails: readonly ExistingInvitationEmail[];
   studentOnly?: boolean;
+  allowAdmin?: boolean;
 };
 export type InvitationIssue = {
   rowId: string | null;
@@ -32,7 +33,7 @@ export type InvitationIssue = {
 /** Only these known handler rejections establish that reservation/send did not occur. */
 export const PRE_RESERVATION_CODES = [
   'invalid_request', 'sign_in_required', 'origin_not_allowed', 'method_not_allowed',
-  'manager_required', 'inviter_required', 'student_only', 'invitation_not_owned', 'invalid_details', 'inactive_area', 'existing_account',
+  'admin_only', 'manager_required', 'inviter_required', 'student_only', 'invitation_not_owned', 'invalid_details', 'inactive_area', 'existing_account',
 ] as const;
 export type InvitationOutcome =
   | { status: 'accepted'; alreadyInvited?: boolean; message?: string }
@@ -94,7 +95,8 @@ export function validateInvitationBatch(rows: readonly InvitationRow[], context:
     if (!p.email) add(row.id, 'email', 'required', 'Email is required.');
     else if (p.email.length > 254) add(row.id, 'email', 'too_long', 'Email must be 254 characters or fewer.');
     else if (!emailPattern.test(p.email)) add(row.id, 'email', 'invalid', 'Enter a valid email address.');
-    if (context.studentOnly && p.role !== 'student') add(row.id, 'role', 'invalid', 'Leads can invite students only.');
+    if (context.studentOnly && p.role !== 'student') add(row.id, 'role', 'invalid', 'Admin Leads can invite students only.');
+    if (context.allowAdmin===false && p.role==='admin') add(row.id,'role','invalid','Only an owner Admin can invite a new Admin.');
     if (!(INVITATION_ROLES as readonly string[]).includes(p.role)) add(row.id, 'role', 'invalid', 'Choose an existing account role.');
     if (!(INVITATION_REGISTRATIONS as readonly string[]).includes(p.member_status)) add(row.id, 'member_status', 'invalid', 'Choose an existing attendance registration status.');
     if (!locked(row) && p.area_id && !context.areas.some(area => area.id === p.area_id && area.active)) add(row.id, 'area_id', 'inactive_area', 'Choose an active area or leave it unassigned.');

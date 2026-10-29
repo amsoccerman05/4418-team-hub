@@ -9,7 +9,7 @@ export async function context(userId:string):Promise<Dashboard>{
  const {data,error}=await supabase!.rpc('team_dashboard_context').abortSignal(signal);
  if(error)throw error;
  if(!data?.personal||!Array.isArray(data.orders))throw new Error('Dashboard is unavailable. Please try again.');
- if(!['student','lead','mentor','admin'].includes(data.role))return data;
+ if(!['student','lead','admin_lead','mentor','admin'].includes(data.role))return data;
  // The existing dashboard RPC omits departure timestamps and ended meetings.
  // Read only RLS-visible current meetings and the caller's own attendance so the
  // existing 30-minute checkout grace remains reachable from Home. No writes.

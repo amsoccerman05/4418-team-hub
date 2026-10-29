@@ -1,87 +1,5 @@
-import { test, expect, type BrowserContext } from "@playwright/test";
-import { readFile } from "node:fs/promises";
-import { resolve, extname } from "node:path";
-const roots: Record<string, string> = {
-  "team.frc4418.org": "4418-team-hub",
-  "inventory.frc4418.org": "amsoccerman05.github.io",
-  "pit.frc4418.org": "4418-pit-app",
-  "finance.frc4418.org": "4418-finance",
-};
-const uid = "00000000-0000-0000-0000-000000000001";
-const user = {
-  id: uid,
-  email: "suite-test@example.invalid",
-  aud: "authenticated",
-  role: "authenticated",
-  app_metadata: { provider: "email" },
-  user_metadata: {},
-  created_at: "2026-01-01T00:00:00Z",
-};
-const token = () =>
-  `${Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url")}.${Buffer.from(JSON.stringify({ sub: uid, role: "authenticated", exp: Math.floor(Date.now() / 1000) + 3600, iat: Math.floor(Date.now() / 1000), aud: "authenticated" })).toString("base64url")}.fixture-signature`;
-async function setup(context: BrowserContext) {
-  const calls: { path: string; body: any }[] = [];
-  await context.routeWebSocket("**", (ws) => ws.close());
-  await context.route("https://**/*", async (route) => {
-    const u = new URL(route.request().url());
-    if (u.hostname.endsWith(".supabase.co")) {
-      let result: any = [];
-      const body = route.request().postDataJSON();
-      calls.push({ path: u.pathname + u.search, body });
-      if (u.pathname === "/auth/v1/token")
-        result = {
-          access_token: token(),
-          refresh_token: "fixture-refresh-token",
-          expires_in: 3600,
-          token_type: "bearer",
-          user,
-        };
-      else if(u.pathname.endsWith('/finance_purchase_orders')) result=[{id:'00000000-0000-0000-0000-000000000099',requester_id:uid,po_number:99,vendor:'Navigation test',amount:10,status:'awaiting_approval',revision:1,version:1,area_id:'area',purpose:'Navigation check',sheet_url:'https://docs.google.com/spreadsheets/d/test/edit',created_at:new Date().toISOString(),school_reference:''}];
- else if(u.pathname.endsWith('/team_management_context_v2'))result={members:[],areas:[],positions:[],assignments:[],history:[]};
- else if (u.pathname === "/auth/v1/user") result = user;
-      else if (u.pathname.endsWith('/team_dashboard_context')) result={name:'Suite Student',role:'mentor',admin:true,personal:{percent:null,strikes:0,pending:0},next_meeting:null,orders:[{id:'00000000-0000-0000-0000-000000000099',po_number:99,vendor:'Navigation test',amount:10,status:'awaiting_approval',approvals:0}],finance:{allowed:true,approvals:1,school:0},attention:null,robot:null,inventory:null,announcements:[]};
-      else if (u.pathname.endsWith('/finance_context')) result={profile:{id:uid,display_name:'Suite Student',role:'student'},can_create:true,is_admin:false,capabilities:[],areas:[],people:[]};
-      else if (
-        u.pathname === "/auth/v1/logout" ||
-        u.pathname === "/auth/v1/recover"
-      )
-        result = {};
-      else if (u.pathname === "/rest/v1/profiles") {
-        const p = {
-          id: uid,
-          display_name: "Suite Student",
-          email: user.email,
-          role: "mentor",
-          active: true,
-        };
-        result = route.request().headers().accept?.includes("object") ? p : [p];
-      }
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(result),
-      });
-    }
-    const repo = roots[u.hostname];
-    if(repo){
-      if(process.env.HANDOFF_LIVE)return route.continue();
-      const name=({'team.frc4418.org':'hub','inventory.frc4418.org':'inventory','pit.frc4418.org':'pit','finance.frc4418.org':'finance'} as Record<string,string>)[u.hostname];
-      const file=resolve(process.env.HANDOFF_DIST_ROOT||'/tmp',`handoff-${name}/dist`,'.'+(u.pathname==='/'?'/index.html':u.pathname));
-      return route.fulfill({body:await readFile(file),contentType:({'.html':'text/html','.js':'text/javascript','.css':'text/css','.png':'image/png'} as Record<string,string>)[extname(file)]||'application/octet-stream'});
-    }
-    if (u.hostname === "untrusted.frc4418.org")
-      return route.fulfill({
-        contentType: "text/html",
-        body: '<iframe src="https://team.frc4418.org/suite-auth.html"></iframe>',
-      });
-    return route.abort();
-  });
-  return calls;
-}
-
-
-
-
+import {test,expect,type BrowserContext} from "@playwright/test";
+import {setup,fixtureUser as user} from "./handoff-fixture";
 
 async function login(page:any){
  await page.goto('https://team.frc4418.org/');
@@ -109,7 +27,7 @@ async function isolate(context:BrowserContext){
  });
 }
 for(const width of [390,1440])for(const logout of ['hub','pit'])test(`first-party navigation and ${logout} logout ${width}`,async({browser})=>{
- const context=await browser.newContext({viewport:{width,height:844},isMobile:width===390,hasTouch:width===390});await setup(context);await isolate(context);
+ const context=await browser.newContext({viewport:{width,height:844},isMobile:width===390,hasTouch:width===390,serviceWorkers:'block'});const audit=await setup(context);await isolate(context);
  const page=await context.newPage();await login(page);
  const pages:any[]=[];
  for(const label of ['Competition Operations','Inventory','Finance']){
@@ -126,30 +44,59 @@ for(const width of [390,1440])for(const logout of ['hub','pit'])test(`first-part
   // Reload retains the opener transport and does not depend on destination storage.
   await destination.reload();await expect(destination.locator('.suite-header')).toBeVisible();
   expect(await destination.evaluate(()=>Object.keys(localStorage).filter(k=>/auth|token/i.test(k)))).toEqual([]);
+  if(label==='Inventory'){await expect(destination.getByRole('button',{name:'Add item',exact:true})).toBeEnabled();await expect(destination.getByRole('button',{name:'Admin',exact:true})).toHaveCount(0);await expect(destination.getByRole('button',{name:'Add location',exact:true})).toHaveCount(0);}
+  if(label==='Finance')await expect(destination.getByRole('button',{name:'New purchase order',exact:true})).toBeEnabled();
+  expect(await destination.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await destination.screenshot({path:`test-results/exact-student-${label.toLowerCase().replaceAll(' ','-')}-${width}-${logout}.png`,fullPage:true,animations:'disabled'});
  }
- await page.bringToFront();
- if(width===390)await page.getByRole('button',{name:'Hub menu'}).click();
- await page.locator('.hub-nav').getByRole('link',{name:'Attendance',exact:true}).click();
- await expect(page).toHaveURL(/#attendance/);await expect(page.locator('.suite-header')).toBeVisible();
+ await page.bringToFront();await audit.verify();
+ await expect(page.locator('.hub-nav').getByRole('link',{name:'Team Management',exact:true})).toHaveCount(0);
+ await page.screenshot({path:`test-results/exact-student-hub-${width}-${logout}.png`,fullPage:true,animations:'disabled'});
  await page.goto('https://team.frc4418.org/');
- // Reloading Hub would discard its opened-window registry, so the PO check uses
- // this fresh owner, and the other tabs are reopened for the logout check below.
+ // Reloading Hub discards its opened-window registry. The PO uses this fresh
+ // owner; the existing Pit tab reconnects through its browser-maintained opener.
  const opened=context.waitForEvent('page');await page.getByRole('link',{name:'PO #99 · Navigation test',exact:true}).click();
- const po=await opened;await expect(po.getByRole('dialog')).toBeVisible();expect(po.url()).toMatch(/#po\/00000000-0000-0000-0000-000000000099$/);
+ const po=await opened;await expect(po.getByRole('dialog')).toBeVisible();expect(po.url()).toMatch(/#po\/00000000-0000-4000-8000-000000000099$/);
  // Existing children must remain usable and receive logout even if Hub reloads.
  await pages[0].reload();await expect(pages[0].locator('.suite-header')).toBeVisible();
+ await audit.verify(true);
  await (logout==='hub'?page:pages[0]).getByRole('button',{name:'Sign out',exact:true}).click();
- for(const tab of [page,...pages,po]){await expect(tab).toHaveURL('https://team.frc4418.org/');await expect(tab.getByRole('heading',{name:'Team sign in',exact:true})).toBeVisible();await expect(tab.locator('.suite-header')).toHaveCount(0);}
- await context.close();
+ const signedOutTabs=[
+  [page,'https://team.frc4418.org','Team sign in'],
+  [pages[0],'https://pit.frc4418.org','Competition Operations sign in'],
+  [pages[1],'https://inventory.frc4418.org','Inventory sign in'],
+  [pages[2],'https://finance.frc4418.org','Finance sign in'],
+  [po,'https://finance.frc4418.org','Finance sign in'],
+ ] as const;
+ const assertSignedOut=async(tab:any,origin:string,title:string)=>{
+  expect(new URL(tab.url()).origin).toBe(origin);
+  await expect(tab.getByRole('heading',{name:title,exact:true})).toBeVisible();
+  await expect(tab.locator('.suite-header')).toHaveCount(0);
+  await expect(tab.getByRole('dialog')).toHaveCount(0);
+ };
+ // Released apps clear private state in place; they do not redirect to Hub.
+ for(const [tab,origin,title] of signedOutTabs)await assertSignedOut(tab,origin,title);
+ const protectedReads=()=>audit.calls.filter(call=>call.path.startsWith('/rest/v1/')).length;
+ const afterLogout=protectedReads();
+ // A fresh app bootstrap (including the old PO hash) cannot resurrect the
+ // shared session or issue protected reads. Do not pretend logout revokes JWTs.
+ for(const [tab,origin,title] of signedOutTabs){await tab.reload();await assertSignedOut(tab,origin,title);}
+ expect(protectedReads(),'Signed-out reloads must not fetch protected data using the previous session').toBe(afterLogout);
+ await audit.verify();await context.close();
 });
-test('genuinely signed-out destinations return to Hub login',async({browser})=>{
- const context=await browser.newContext();await setup(context);await isolate(context);
- for(const host of ['pit','inventory','finance']){const page=await context.newPage();await page.goto(`https://${host}.frc4418.org/`);await expect(page).toHaveURL('https://team.frc4418.org/');await expect(page.getByRole('heading',{name:'Team sign in',exact:true})).toBeVisible();await expect(page.locator('.suite-header')).toHaveCount(0);expect(await page.evaluate(()=>(window as any).__privateFlash)).toBe(false);await page.close();}
- await context.close();
+test('genuinely signed-out destinations show no private UI and link to Hub login',async({browser})=>{
+ const context=await browser.newContext({serviceWorkers:'block'});const audit=await setup(context);await isolate(context);
+ for(const [host,title] of [['pit','Competition Operations sign in'],['inventory','Inventory sign in'],['finance','Finance sign in']]){
+  const page=await context.newPage();await page.goto(`https://${host}.frc4418.org/`);
+  await expect(page.getByRole('heading',{name:title,exact:true})).toBeVisible();await expect(page.locator('.suite-header')).toHaveCount(0);expect(await page.evaluate(()=>(window as any).__privateFlash)).toBe(false);
+  const hub=page.locator('a[href="https://team.frc4418.org/"]');await expect(hub).toHaveCount(1);await hub.click();
+  await expect(page).toHaveURL('https://team.frc4418.org/');await expect(page.getByRole('heading',{name:'Team sign in',exact:true})).toBeVisible();await audit.verify();await page.close();
+ }
+ await audit.verify();await context.close();
 });
 
 test('broker rejects untrusted origins and unrelated frame sources',async({browser})=>{
- const context=await browser.newContext();await setup(context);const page=await context.newPage();await login(page);
+ const context=await browser.newContext({serviceWorkers:'block'});const audit=await setup(context);const page=await context.newPage();await login(page);
  await context.route('https://untrusted.frc4418.org/',r=>r.fulfill({contentType:'text/html',body:'<p>Untrusted test origin</p>'}));
  const opened=context.waitForEvent('page');await page.evaluate(()=>window.open('https://untrusted.frc4418.org/','_blank'));
  const untrusted=await opened;await untrusted.waitForLoadState();
@@ -160,5 +107,5 @@ test('broker rejects untrusted origins and unrelated frame sources',async({brows
  await expect(page.frameLocator('iframe[src$="source-check"]').getByText('Unrelated frame')).toBeVisible();
  const frame=page.frames().find(f=>f.url().endsWith('/source-check'))!;
  expect(await frame.evaluate(async()=>{let received=false;window.addEventListener('message',e=>{if(e.data?.id==='source-check')received=true;});parent.postMessage({protocol:'4418-suite-auth-v1',id:'source-check',method:'getSession',args:[]},'https://team.frc4418.org');await new Promise(r=>setTimeout(r,400));return received;})).toBe(false);
- await context.close();
+ await audit.verify();await context.close();
 });

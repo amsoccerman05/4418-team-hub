@@ -37,6 +37,11 @@ jobs:
           PG_BIN="$(find /usr/lib/postgresql -path '*/bin/postgres' -type f -printf '%h\n' | sort -V | tail -1)"
           test -n "$PG_BIN" || { echo 'No installed PostgreSQL server binary found'; exit 1; }
           ATTENDANCE_ABUSE_PG_BIN="$PG_BIN" node tests/native/attendance-abuse-concurrency.mjs
+      - name: Verify role revocation during blocked invitation and member writes
+        run: |
+          PG_BIN="$(find /usr/lib/postgresql -path '*/bin/postgres' -type f -printf '%h\n' | sort -V | tail -1)"
+          test -n "$PG_BIN" || { echo 'No installed PostgreSQL server binary found'; exit 1; }
+          STUDENT_ROLE_PG_BIN="$PG_BIN" node tests/native/student-role-concurrency.mjs
       - run: npm run build
         env:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
@@ -69,6 +74,8 @@ jobs:
           name: planning-recovery-review
           path: |
             test-results/planning-recovery-*.png
+            test-results/planning-role-*.png
+            test-results/student-role-*.png
             test-results/planning-ui-*/**/*
             test-results/auth-destination-ui-*/**/*
           if-no-files-found: ignore
