@@ -230,7 +230,7 @@ CREATE OR REPLACE FUNCTION public.team_invitation_finish(invitation_id uuid, inv
  SECURITY DEFINER
  SET search_path TO ''
 AS $function$
-declare i team_private.invitations; pr public.profiles; membership public.team_attendance_members; invited_area text;
+declare i team_private.invitations; pr public.profiles; membership public.team_attendance_members; invited_area text; audit_subject text;
 begin
  perform pg_advisory_xact_lock(4418);
  select * into i from team_private.invitations where id=invitation_id for update;
@@ -253,8 +253,19 @@ begin
   invited_area:=coalesce((select name from public.areas where id=i.area_id),'');
   -- Reconciliation may encounter an already-provisioned registration. Reuse only
   -- matching data; never overwrite an unrelated registration during an invite.
-  insert into public.team_attendance_members(student_id,member_status,team_area)
-  values(invited_user,i.member_status,invited_area) on conflict(student_id) do nothing;
+  -- Service-role completion has no user subject. Attribute only this membership
+  -- INSERT to the already validated, locked inviter; never accept a client actor.
+  -- Preserve the original request identity before reconciliation or other work.
+  audit_subject:=current_setting('request.jwt.claim.sub',true);
+  begin
+   perform set_config('request.jwt.claim.sub',i.actor_id::text,true);
+   insert into public.team_attendance_members(student_id,member_status,team_area)
+   values(invited_user,i.member_status,invited_area) on conflict(student_id) do nothing;
+   perform set_config('request.jwt.claim.sub',coalesce(audit_subject,''),true);
+  exception when others then
+   perform set_config('request.jwt.claim.sub',coalesce(audit_subject,''),true);
+   raise;
+  end;
   select * into membership from public.team_attendance_members where student_id=invited_user for update;
   if membership.member_status is distinct from i.member_status or membership.team_area is distinct from invited_area then
    raise exception 'Existing registration differs from invitation. Review membership before completing.';

@@ -950,7 +950,7 @@ for(const width of [390,1440])test(`policy lead personal requests and future con
  await page.clock.setFixedTime(new Date('2026-09-09T15:00:00Z'));
  data.attendance[0].student_id=lead;data.snapshots[0].student_id=lead;data.meetings[0].status='draft';data.meetings[0].check_in_open=false;
  await page.goto('/#attendance/calendar');await page.getByRole('button',{name:/Preseason build/}).click();const d=page.getByRole('dialog');
- await d.getByText('Meeting controls',{exact:true}).click();await expect(d.getByRole('button',{name:'Close check-in',exact:true})).toHaveCount(0);await expect(d.getByRole('button',{name:'Open check-in',exact:true})).toHaveCount(0);
+ await expect(d.getByText('Meeting controls',{exact:true})).toHaveCount(0);await expect(d.getByRole('button',{name:'Close check-in',exact:true})).toHaveCount(0);await expect(d.getByRole('button',{name:'Open check-in',exact:true})).toHaveCount(0);
  for(const kind of ['absent','late','early']){
   await d.getByText(calls.length?'Edit request':'Report attendance issue',{exact:true}).click();
   await d.getByLabel('How will your attendance be affected?').selectOption(kind);
@@ -1355,7 +1355,8 @@ for (const width of [390, 1440]) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });
 }
-for (const role of ["mentor", "admin"]) {
+// Assigned Mentor Coach retains review access; retired Admin is denied below.
+for (const role of ["mentor"]) {
   test(`personal attendance requests: ${role} retains review queue without a student request tab`, async ({ page }) => {
     const { calls } = await mock(page, role);
     await page.goto("/#attendance/my-requests");
@@ -1369,7 +1370,7 @@ for (const role of ["mentor", "admin"]) {
     expect(calls).toEqual([]);
   });
 }
-for (const account of [{ role: "lead", active: false }, { role: "student", active: false }, { role: "readonly", active: true }]) {
+for (const account of [{ role: "lead", active: false }, { role: "student", active: false }, { role: "readonly", active: true }, { role: "admin", active: true }]) {
   test(`personal attendance requests: ${account.active ? "active" : "inactive"} ${account.role} cannot access personal or review controls`, async ({ page }) => {
     const { calls } = await mock(page, account.role, { active: account.active });
     for (const route of ["my-requests", "notices"]) {
@@ -1386,7 +1387,7 @@ for (const account of [{ role: "lead", active: false }, { role: "student", activ
 
 test("personal attendance requests: empty own roster cannot borrow another member's meeting", async ({ page }) => {
   const { calls } = await mock(page, "lead");
-  await page.goto("/#attendance/my-requests");
+  await page.goto("/#attendance/notices");
   await expect(page.getByText("No upcoming or in-progress meetings on your roster. Contact leadership if a meeting is missing or has already ended.", { exact: true })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Meeting for my request", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Report my attendance issue", exact: true })).toHaveCount(0);

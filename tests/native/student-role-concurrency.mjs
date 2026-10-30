@@ -13,6 +13,9 @@ const args=['-X','-h',root,'-U','postgres','-d','postgres','-Atq','-v','ON_ERROR
 const sql=input=>execFileSync(join(bin,'psql'),args,{input,env,encoding:'utf8',timeout:30000,maxBuffer:8*1024*1024}).trim();
 const id=n=>`00000000-0000-0000-0000-${String(n).padStart(12,'0')}`;
 const actor=n=>`select set_config('test.uid','${id(n)}',false);set role authenticated;`;
+// Each psql call is a fresh session. Attribute synthetic setup to the fixture Mentor
+// without relaxing production audit constraints or changing tested caller identities.
+const setup=q=>sql(`select set_config('test.uid','${id(1)}',false);${q}`);
 const lit=x=>`'${String(x).replaceAll("'","''")}'`;
 const json=x=>`${lit(JSON.stringify(x))}::jsonb`;
 const children=new Set();let started=false;
@@ -33,7 +36,7 @@ try{
  const synthetic=sql(`select encode(sha256(convert_to(id::text||'|'||to_char(updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US'),'UTF8')),'hex') from profiles where role='admin'`);assert.match(synthetic,/^[0-9a-f]{64}$/);
  sql(canonical.replace(guard,synthetic));
  assert.equal(sql(`select role from profiles where id='${id(7)}'`),'admin_lead');
- sql(`update profiles set role='admin_lead' where id='${id(6)}';insert into team_attendance_members(student_id,member_status,team_area) values('${id(2)}','prospective','') on conflict(student_id) do update set member_status='prospective',team_area=''`);
+ setup(`update profiles set role='admin_lead' where id='${id(6)}';insert into team_attendance_members(student_id,member_status,team_area) values('${id(2)}','prospective','') on conflict(student_id) do update set member_status='prospective',team_area=''`);
  for(const kind of ['advisory','actor-row']){
   sql(`update profiles set role='admin_lead' where id='${id(6)}'`);const before=count();
   const g=await gate(kind==='advisory'?'select pg_advisory_xact_lock(4418)':`update profiles set role='readonly' where id='${id(6)}'`,'reserve-'+kind+'-gate');
@@ -52,13 +55,32 @@ try{
  const mentorGate=await gate(`update profiles set active=false where id='${id(8)}'`,'last-mentor-gate');
  const lastMentor=run(`update profiles set active=false where id='${id(1)}'`,'last-mentor-wait');await blocked('last-mentor-wait');await mentorGate.release();await assert.rejects(lastMentor,/at least one active Mentor/);assert.equal(sql("select count(*) from profiles where role='mentor' and active"),'1');console.log('PASS concurrent last-Mentor removal is rejected');
  // Authoritative review eligibility must be checked after the observed row wait.
- sql(`insert into team_member_positions(user_id,position_key,assigned_by,assignment_reason) values('${id(1)}','lead_coach_1','${id(1)}','Native synthetic coach')`);
- const revoke=()=>sql(`update team_member_positions set revoked_at=clock_timestamp(),revoked_by='${id(1)}',revoke_reason='Native revoked while blocked' where user_id='${id(1)}' and position_key='lead_coach_1' and revoked_at is null`);
+ setup(`insert into team_member_positions(user_id,position_key,assigned_by,assignment_reason) values('${id(1)}','lead_coach_1','${id(1)}','Native synthetic coach')`);
+ const revoke=()=>setup(`update team_member_positions set revoked_at=clock_timestamp(),revoked_by='${id(1)}',revoke_reason='Native revoked while blocked' where user_id='${id(1)}' and position_key='lead_coach_1' and revoked_at is null`);
  const a=JSON.parse(sql(`select row_to_json(a) from team_attendance a where id='${id(213)}'`));
  const reviewGate=await gate(`select id from team_meetings where id='${id(201)}' for update`,'review-meeting-gate');
  const review=run(`${actor(1)}select team_attendance_manage('attendance',${json({meeting_id:id(201),attendance_id:id(213),version:a.version,review_status:'excused',explanation:'Must not write'})});`,'review-meeting-wait');await blocked('review-meeting-wait');revoke();await reviewGate.release();await assert.rejects(review,/Lead Coach|Program Manager/);assert.equal(sql(`select row_to_json(a) from team_attendance a where id='${id(213)}'`),JSON.stringify(a));console.log('PASS request review rejects assignment revocation during meeting row wait');
- sql(`insert into team_member_positions(user_id,position_key,assigned_by,assignment_reason) values('${id(1)}','lead_coach_1','${id(1)}','Native reassigned coach')`);
+ setup(`insert into team_member_positions(user_id,position_key,assigned_by,assignment_reason) values('${id(1)}','lead_coach_1','${id(1)}','Native reassigned coach')`);
  const strike=JSON.parse(sql(`select row_to_json(s) from team_attendance_strikes s where attendance_id='${id(213)}' and rescinded_at is null limit 1`));
  const strikeGate=await gate(`select id from team_attendance_strikes where id='${strike.id}' for update`,'rescind-strike-gate');
  const rescind=run(`${actor(1)}select team_attendance_manage('rescind',${json({meeting_id:id(201),attendance_id:id(213),strike_id:strike.id,explanation:'Must not rescind'})});`,'rescind-strike-wait');await blocked('rescind-strike-wait');revoke();await strikeGate.release();await assert.rejects(rescind,/Lead Coach|Program Manager/);assert.equal(sql(`select row_to_json(s) from team_attendance_strikes s where id='${strike.id}'`),JSON.stringify(strike));console.log('PASS notice rescind rejects assignment revocation during strike row wait');
+
+ // Exact production subject semantics, not the earlier test.uid fixture. Real
+ // service completion has no user sub; attribution must not leak into its caller.
+ sql(`create or replace function auth.uid() returns uuid language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claim.sub',true),''),(nullif(current_setting('request.jwt.claims',true),'')::jsonb ->> 'sub'))::uuid$$`);
+ for(const n of [904,905])sql(`select set_config('request.jwt.claim.sub','${id(1)}',false);set role authenticated;select team_invitation_reserve(${json({...request(n),member_status:'prospective'})});reset role;insert into auth.users(id,email,invited_at,raw_user_meta_data) values('${id(n-300)}','synthetic${n}@example.test',clock_timestamp(),'{"team_invitation_id":"${id(n)}"}');insert into profiles(id,display_name,role,active) values('${id(n-300)}','Quarantined','readonly',false)`);
+ const claims=JSON.stringify({role:'service_role',marker:'unchanged native claims'});
+ sql(`begin;select set_config('request.jwt.claim.sub','',true);select set_config('request.jwt.claims',${lit(claims)},true);set local role service_role;select team_invitation_finish('${id(904)}','${id(604)}');do $$begin if coalesce(current_setting('request.jwt.claim.sub',true),'')<>'' or current_setting('request.jwt.claims',true)<>${lit(claims)} then raise exception 'Service identity changed after completion';end if;end$$;commit`);
+ assert.equal(sql(`select performed_by from team_attendance_history where student_id='${id(604)}'`),id(1));
+ const auditCount=sql(`select count(*) from team_attendance_history where student_id='${id(604)}'`);
+ sql(`set role service_role;select team_invitation_finish('${id(904)}','${id(604)}')`);
+ assert.equal(sql(`select count(*) from team_attendance_history where student_id='${id(604)}'`),auditCount);
+ console.log('PASS null-subject service completion audits validated inviter, restores claims and preserves replay');
+ sql(`create function public.synthetic_membership_failure() returns trigger language plpgsql as $$begin if new.student_id='${id(605)}' then if auth.uid()<>'${id(1)}'::uuid then raise exception 'Wrong native audit actor';end if;raise exception 'Synthetic membership failure' using errcode='23514';end if;return new;end$$;create trigger synthetic_membership_failure before insert on team_attendance_members for each row execute function public.synthetic_membership_failure()`);
+ const oldClaims=JSON.stringify({role:'service_role',sub:id(5),marker:'preserved on caught error'});
+ sql(`begin;select set_config('request.jwt.claim.sub','${id(2)}',true);select set_config('request.jwt.claims',${lit(oldClaims)},true);set local role service_role;do $$begin begin perform team_invitation_finish('${id(905)}','${id(605)}');raise exception 'Expected native membership failure';exception when check_violation then if sqlerrm<>'Synthetic membership failure' then raise;end if;end;if current_setting('request.jwt.claim.sub',true)<>'${id(2)}' or current_setting('request.jwt.claims',true)<>${lit(oldClaims)} then raise exception 'Service identity changed after caught failure';end if;end$$;commit`);
+ assert.equal(sql(`select role||':'||active from profiles where id='${id(605)}'`),'readonly:false');
+ assert.equal(sql(`select count(*) from team_attendance_members where student_id='${id(605)}'`),'0');
+ assert.equal(sql(`select count(*) from team_attendance_history where student_id='${id(605)}'`),'0');
+ console.log('PASS caught registration error restores original subject/claims and rolls back provisioning/audit');
 }finally{for(const p of children)p.kill('SIGTERM');if(started)execFileSync(join(bin,'pg_ctl'),['-D',data,'-m','immediate','-w','stop'],{env,stdio:'pipe',timeout:30000});rmSync(root,{recursive:true,force:true});}

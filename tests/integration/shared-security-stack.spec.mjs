@@ -113,6 +113,10 @@ export async function runSharedSecurityIntegration({ base, anonKey, serviceKey, 
   await json(await localFetch(base, '/rest/v1/rpc/team_invitation_finish', { method: 'POST', headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ invitation_id: invitationID, invited_user: invited.id }) }));
   assert.equal(profile(invited).role, 'student'); assert.equal(profile(invited).active, true);
   assert.equal(sql(`select actor_id from team_private.management_history where user_id=${lit(invited.id)} and action='member_invited'`), adminLead.id);
+  const membershipAudit=()=>query(`select coalesce(jsonb_agg(performed_by order by id),'[]'::jsonb) from public.team_attendance_history where student_id=${lit(invited.id)} and entity='team_attendance_members'`);
+  assert.deepEqual(membershipAudit(),[adminLead.id],'Actual service completion attributes membership to the validated inviter');
+  await json(await localFetch(base, '/rest/v1/rpc/team_invitation_finish', { method: 'POST', headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ invitation_id: invitationID, invited_user: invited.id }) }));
+  assert.deepEqual(membershipAudit(),[adminLead.id],'Provisioned service replay must not duplicate membership audit');
   pass('allowed Admin Lead student invitations remain quarantined until actual service-role completion; no client can finish its own elevation');
 
   assert.equal(profile(student).role,'student');assert.equal(profile(student).primary_area_id,null);
