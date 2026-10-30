@@ -140,7 +140,7 @@ export function AttendanceHub({
               if (e) throw e;
               if (
                 !p.active ||
-                !["student", "lead", "admin_lead", "admin", "mentor"].includes(p.role)
+                !["student", "lead", "admin_lead", "mentor"].includes(p.role)
               )
                 throw new Error(
                   "Attendance access requires an active student or leadership account.",
@@ -1174,7 +1174,7 @@ function Workspace({
     : ["calendar", "notices", "strikes", "history", "how-to"];
   tabs.splice(tabs.length-1,0,"stem-outreach");
   if (manager && canRequestForSelf) tabs.splice(tabs.indexOf("notices"), 0, "my-requests");
-  if (profile.active && ['mentor','admin'].includes(profile.role)) tabs.splice(tabs.length-1,0,'volunteer-hours');
+  if (profile.active && ['mentor'].includes(profile.role)) tabs.splice(tabs.length-1,0,'volunteer-hours');
   const linkedMeeting = tab === "meeting";
   const linkedMeetingId = attendanceMeetingId(route);
   const current = linkedMeeting ? "calendar" : tabs.includes(tab) ? tab : manager ? "dashboard" : "calendar";

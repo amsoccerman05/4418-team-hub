@@ -320,10 +320,10 @@ for (const width of [390, 1440])
       await db.close();
     }
   });
-test("admin totals and CSV contain aggregates, with no team edit controls", async ({
+test("approved Mentor totals and CSV contain aggregates, with no team edit controls", async ({
   page,
 }) => {
-  const { db } = await setup(page, "admin", true);
+  const { db } = await setup(page, "mentor", true, true);
   try {
     await page.goto("/#attendance/volunteer-hours");
     await page
@@ -343,7 +343,7 @@ test("admin totals and CSV contain aggregates, with no team edit controls", asyn
       "team-volunteer-totals.csv",
     );
     await page.screenshot({
-      path: "test-results/volunteer-hours-admin-totals.png",
+      path: "test-results/volunteer-hours-approved-mentor-totals.png",
       fullPage: true,
     });
   } finally {

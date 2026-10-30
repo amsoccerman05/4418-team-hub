@@ -28,7 +28,7 @@ export function InviteForm({areas,invite,actorRole='mentor',studentOnly=false,ex
  <label>Account role<select aria-label="Account role" name="role" value={studentOnly?'student':role} onChange={e=>setRole(e.target.value)}>{(studentOnly?['student']:inviteRoles(actorRole)).map(r=><option key={r} value={r}>{roleLabel(r)}</option>)}</select></label>
  <label>Invitation reason<input name="reason" required maxLength={2000} placeholder="Why is this person joining?"/></label>
  </div>
- <p className="team-form-hint">{studentOnly?'Admin Leads can invite students only. The reason is kept with your invitation activity.':'The reason is kept in team activity. Account role controls suite access; use mentor/admin only for authorized team managers.'}</p>
+ <p className="team-form-hint">{studentOnly?'Admin Leads can invite students only. The reason is kept with your invitation activity.':'The reason is kept in team activity. Account role controls suite access; use Mentor only for authorized suite administrators.'}</p>
  <details className="team-invite-options"><summary>Optional team details</summary><div className="team-fields">
  <label>Functional area<select aria-label="Functional area" name="area_id"><option value="">Unassigned</option>{areas.filter(a=>a.active).map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label>
  <label>Registration<select aria-label="Registration" name="member_status"><option value="">Not tracked</option>{['prospective','registered','inactive'].map(r=><option key={r}>{r}</option>)}</select></label>

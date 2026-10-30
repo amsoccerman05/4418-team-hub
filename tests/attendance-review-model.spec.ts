@@ -34,12 +34,12 @@ test('general reviewer permission is mandatory even when mentor-specific permiss
  delete value.policy;expect(canReview(value,record('student-pm'))).toBe(false);
 });
 
-for(const role of ['mentor','admin']) test(`${role} Program Manager participates without changing shared management role`,()=>{
+for(const role of ['mentor','admin_lead']) test(`${role} Program Manager participates without changing shared management role`,()=>{
  const profile={id:'pm',display_name:'Synthetic PM',role,active:true};
  const d=data();d.policy!.can_participate=true;
  expect(canParticipate(profile,d)).toBe(true);expect(isManager(profile)).toBe(true);expect(profile.role).toBe(role);
  d.policy!.can_participate=false;expect(canParticipate(profile,d)).toBe(false);expect(isManager(profile)).toBe(true);
- delete d.policy!.can_participate;expect(canParticipate(profile,d)).toBe(false);
+ delete d.policy!.can_participate;expect(canParticipate(profile,d)).toBe(role==='admin_lead');
 });
 test('participant capability honors inactive accounts and authoritative denial',()=>{
  const d=data();d.policy!.can_participate=true;

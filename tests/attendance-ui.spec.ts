@@ -173,8 +173,8 @@ async function mock(page: Page, role = "student", options: { active?: boolean; c
       else if (path === "/rest/v1/rpc/planning_my_work_context") result = {user_id:user.id,season_id:null,seasons:[],boards:[],tasks:[]};
       else if (path === "/rest/v1/pit_issues") return route.fulfill({json:[],headers:{"content-range":"*/0","access-control-expose-headers":"content-range"}});
       else if (path.endsWith("/team_dashboard_context")) result = {name:'Team member',role,admin:false,personal:{percent:null,strikes:0,pending:0},next_meeting:null,orders:[],finance:{allowed:false,approvals:0,school:0},attention:null,robot:null,inventory:null,announcements:[]};
-      else if (path.endsWith("/team_attendance_outreach_summary")) result={goal:{target_hours:10,version:1},available_years:[2026,2025],period:{start_year:body.period_start_year??2026,current_start_year:2026,start_date:`${body.period_start_year??2026}-05-01`,end_date:`${(body.period_start_year??2026)+1}-04-30`,time_zone:'America/Denver'},can_configure:['mentor','admin'].includes(role),members:(role==='student'?data.members.filter(m=>m.student_id===user.id):data.members).map(m=>({student_id:m.student_id,display_name:m.display_name,hours:2.5,missing_checkouts:1}))};
-      else if (path.endsWith("/team_attendance_policy_context")) result = data.policy || {user_id:user.id,can_review:role==="mentor",can_review_requests:role==="mentor",can_read_team:role!=="student",can_manage_meetings:role!=="student",can_start_year:role==="mentor",strike_year_start:null,people:[],warnings:[]};
+      else if (path.endsWith("/team_attendance_outreach_summary")) result={goal:{target_hours:10,version:1},available_years:[2026,2025],period:{start_year:body.period_start_year??2026,current_start_year:2026,start_date:`${body.period_start_year??2026}-05-01`,end_date:`${(body.period_start_year??2026)+1}-04-30`,time_zone:'America/Denver'},can_configure:role==='mentor',members:(role==='student'?data.members.filter(m=>m.student_id===user.id):data.members).map(m=>({student_id:m.student_id,display_name:m.display_name,hours:2.5,missing_checkouts:1}))};
+      else if (path.endsWith("/team_attendance_policy_context")) result = data.policy || {user_id:user.id,can_review:role==="mentor",can_review_requests:role==="mentor",can_read_team:["mentor","admin_lead"].includes(role),can_manage_meetings:["mentor","admin_lead"].includes(role),can_start_year:role==="mentor",strike_year_start:null,people:[],warnings:[]};
       else if (path.endsWith("/team_meetings")) result = data.meetings;
       else if (path.endsWith("/team_attendance")) result = data.attendance;
       else if (path.endsWith("/team_meeting_members")) result = data.snapshots;
@@ -225,7 +225,7 @@ async function mock(page: Page, role = "student", options: { active?: boolean; c
         }));
       } else if (path.endsWith("/team_attendance_edit_meeting")) {
         calls.push(body);
-        result = editMeetingFixture(data, body.p, (options.active ?? true) && ["lead", "mentor", "admin"].includes(role), await page.evaluate(() => Date.now()));
+        result = editMeetingFixture(data, body.p, (options.active ?? true) && ["admin_lead", "mentor"].includes(role), await page.evaluate(() => Date.now()));
       } else if (path.endsWith("/team_attendance_manage")) {
         calls.push(body);
         result = {};
@@ -468,7 +468,7 @@ for (const width of [390, 1440]) {
     page,
   }) => {
     await page.setViewportSize({ width, height: 900 });
-    const { calls, data } = await mock(page, "lead");
+    const { calls, data } = await mock(page, "admin_lead");
     await expect(page.locator(".attendance-stats")).toHaveCount(0);
     if (width < 761) await page.getByRole('button', { name: 'Hub menu' }).click();
     await page.locator('.hub-nav a[href="#attendance"]').click();
@@ -647,7 +647,7 @@ for (const width of [390, 1440])
     page,
   }) => {
     await page.setViewportSize({ width, height: 900 });
-    const { calls } = await mock(page, "lead");
+    const { calls } = await mock(page, "admin_lead");
     if (width < 761) await page.getByRole('button', { name: 'Hub menu' }).click();
     await page.locator('.hub-nav a[href="#attendance"]').click();
     await page.locator('.att-tabs a[href="#attendance/calendar"]').click();
@@ -777,7 +777,7 @@ test("leadership request filters separate pending, excused and denied", async ({
 });
 
 for(const width of [390,1440])test(`upcoming and in-progress roster sync and active default ${width}`,async({page})=>{
- const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));await mock(page,'lead');await page.setViewportSize({width,height:900});let synced=0;
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));await mock(page,'admin_lead');await page.setViewportSize({width,height:900});let synced=0;
  await page.route('**/rpc/team_attendance_sync_future_rosters',async r=>{synced++;await r.fulfill({json:{added:2,promoted:1,skipped:1}});});
  await page.goto('/#attendance/calendar');await expect(page.getByRole('button',{name:'Sync meeting rosters',exact:true})).not.toBeVisible();await page.getByText('Roster tools',{exact:true}).click();await page.getByRole('button',{name:'Sync meeting rosters',exact:true}).click();
  await expect(page.getByText('Added 2; newly required 1; preserved for review 1.',{exact:true})).toBeVisible();expect(synced).toBe(1);
@@ -911,8 +911,8 @@ for(const role of ['student','lead'])test(`checkout visible on calendar with clo
  page.once('dialog',d=>d.accept());await current.getByRole('button',{name:'Check out',exact:true}).click();await expect(current).toContainText('Checked out');await expect(current).toContainText('Duration: 10 min');await expect(current).toContainText('Left early');await expect(current.getByRole('button',{name:'Check out',exact:true})).toHaveCount(0);expect(calls.at(-1)).toEqual({meeting_id:'m1'});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
 
-test('expected lead explicitly checks self in without changing another attendee',async({page})=>{
- const {data,calls}=await mock(page,'lead');data.attendance[0].student_id=lead;data.snapshots[0].student_id=lead;data.members.push({student_id:lead,display_name:'Alex Lead',member_status:'registered',team_area:'Build'});
+test('expected Admin Lead explicitly checks self in without changing another attendee',async({page})=>{
+ const {data,calls}=await mock(page,'admin_lead');data.attendance[0].student_id=lead;data.snapshots[0].student_id=lead;data.members.push({student_id:lead,display_name:'Alex Lead',member_status:'registered',team_area:'Build'});
  data.attendance.push({...data.attendance[0],id:'other-attendance',student_id:student});data.meetings[0].check_in_open=false;data.meetings[0].status='draft';
  await page.goto('/#attendance/calendar');
  await page.getByRole('button',{name:/Preseason build/}).click();const dialog=page.getByRole('dialog');await dialog.getByRole('button',{name:'Open check-in',exact:true}).click();
@@ -921,9 +921,9 @@ test('expected lead explicitly checks self in without changing another attendee'
  page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'Check out',exact:true}).click();await expect(dialog.locator('.att-roster-counts')).toContainText('1 checked out');await dialog.getByRole('group',{name:'Live roster filter'}).getByRole('button',{name:'Checked out',exact:true}).click();await expect(dialog.locator('.att-record')).toHaveCount(1);await expect(dialog.locator('.att-record')).toContainText('Alex Lead');await expect(dialog.locator('.att-record')).toContainText('Duration: 7 min');await expect(dialog.locator('.att-record')).toContainText('Left early');
 });
 
-for(const width of [390,1440])test(`admin-role Operations Lead explicitly checks self in and retains meeting controls ${width}`,async({page})=>{
+for(const width of [390,1440])test(`Admin Lead Operations Lead explicitly checks self in and retains meeting controls ${width}`,async({page})=>{
  await page.setViewportSize({width,height:900});
- const {data,calls}=await mock(page,'admin',{configure:(data,id)=>{data.policy={user_id:id,can_participate:true,can_review:false,can_review_requests:false,can_read_team:true,can_manage_meetings:true,strike_year_start:null,people:[],warnings:[]};}});data.attendance[0].student_id=lead;data.snapshots[0].student_id=lead;data.members.push({student_id:lead,display_name:'Synthetic Operations Lead',member_status:'registered',team_area:'Build'});
+ const {data,calls}=await mock(page,'admin_lead',{configure:(data,id)=>{data.policy={user_id:id,can_participate:true,can_review:false,can_review_requests:false,can_read_team:true,can_manage_meetings:true,strike_year_start:null,people:[],warnings:[]};}});data.attendance[0].student_id=lead;data.snapshots[0].student_id=lead;data.members.push({student_id:lead,display_name:'Synthetic Operations Lead',member_status:'registered',team_area:'Build'});
  data.attendance.push({...data.attendance[0],id:'other-attendance',student_id:student});data.meetings[0].check_in_open=false;data.meetings[0].status='draft';
  await page.goto('/#attendance/calendar');
  await page.getByRole('button',{name:/Preseason build/}).click();const dialog=page.getByRole('dialog');await dialog.getByRole('button',{name:'Open check-in',exact:true}).click();
@@ -950,7 +950,7 @@ for(const width of [390,1440])test(`policy lead personal requests and future con
  await page.clock.setFixedTime(new Date('2026-09-09T15:00:00Z'));
  data.attendance[0].student_id=lead;data.snapshots[0].student_id=lead;data.meetings[0].status='draft';data.meetings[0].check_in_open=false;
  await page.goto('/#attendance/calendar');await page.getByRole('button',{name:/Preseason build/}).click();const d=page.getByRole('dialog');
- await d.getByText('Meeting controls',{exact:true}).click();await expect(d.getByRole('button',{name:'Close check-in',exact:true})).toHaveCount(0);await expect(d.getByRole('button',{name:'Open check-in',exact:true})).toHaveCount(0);
+ await expect(d.getByText('Meeting controls',{exact:true})).toHaveCount(0);await expect(d.getByRole('button',{name:'Close check-in',exact:true})).toHaveCount(0);await expect(d.getByRole('button',{name:'Open check-in',exact:true})).toHaveCount(0);
  for(const kind of ['absent','late','early']){
   await d.getByText(calls.length?'Edit request':'Report attendance issue',{exact:true}).click();
   await d.getByLabel('How will your attendance be affected?').selectOption(kind);
@@ -1065,7 +1065,7 @@ for (const width of [390, 1440]) {
 for(const width of [390,1440]) {
  test(`upcoming meeting editing and student how-to ${width}`,async({page})=>{
   await page.setViewportSize({width,height:900});
-  const {data,calls}=await mock(page,'lead');
+  const {data,calls}=await mock(page,'admin_lead');
   await page.clock.setFixedTime(new Date('2026-09-10T16:00:00Z'));
   await page.goto('/#attendance/calendar');
   await page.getByRole('button',{name:/Preseason build/}).click();
@@ -1106,7 +1106,7 @@ for(const width of [390,1440]) {
  });
 }
 test('meeting edit cancel, Escape and navigation discard the draft without sending',async({page})=>{
- const {calls}=await mock(page,'lead');await page.clock.setFixedTime(new Date('2026-09-10T16:00:00Z'));await page.goto('/#attendance/calendar');
+ const {calls}=await mock(page,'admin_lead');await page.clock.setFixedTime(new Date('2026-09-10T16:00:00Z'));await page.goto('/#attendance/calendar');
  const open=async()=>{await page.getByRole('button',{name:/Preseason build/}).click();await page.getByRole('button',{name:'Edit meeting',exact:true}).click();};
  await open();await page.getByLabel('Meeting title').fill('Discard me');await page.getByRole('button',{name:'Cancel',exact:true}).click();
  await expect(page.getByRole('form',{name:'Edit meeting'})).toHaveCount(0);await page.getByRole('button',{name:'Edit meeting',exact:true}).click();await expect(page.getByLabel('Meeting title')).toHaveValue('Preseason build');
@@ -1114,7 +1114,7 @@ test('meeting edit cancel, Escape and navigation discard the draft without sendi
  await open();await expect(page.getByLabel('Meeting title')).toHaveValue('Preseason build');expect(calls).toEqual([]);
 });
 test('meeting edit failure preserves draft and explicit refresh/reload resolves stale version',async({page})=>{
- const {data,calls,handleRequest}=await mock(page,'lead');await page.clock.setFixedTime(new Date('2026-09-10T16:00:00Z'));await page.goto('/#attendance/calendar');
+ const {data,calls,handleRequest}=await mock(page,'admin_lead');await page.clock.setFixedTime(new Date('2026-09-10T16:00:00Z'));await page.goto('/#attendance/calendar');
  await page.getByRole('button',{name:/Preseason build/}).click();await page.getByRole('button',{name:'Edit meeting',exact:true}).click();await page.getByLabel('Meeting title').fill('My draft');
  let first=true;
  await page.route('**/rpc/team_attendance_edit_meeting',async route=>{
@@ -1134,7 +1134,7 @@ test('students and student Program Managers get instructions without meeting-edi
  await expect(page.getByRole('heading',{name:'How to use Attendance',exact:true})).toBeVisible();await expect(page.getByRole('heading',{name:'For meeting leadership: edit an upcoming meeting'})).toHaveCount(0);
 });
 test('meeting edits stop when the meeting starts, including an editor already open',async({page})=>{
- const {calls}=await mock(page,'lead');await page.clock.setFixedTime(new Date('2026-09-10T16:59:59Z'));await page.goto('/#attendance/calendar');await page.getByRole('button',{name:/Preseason build/}).click();await page.getByRole('button',{name:'Edit meeting',exact:true}).click();
+ const {calls}=await mock(page,'admin_lead');await page.clock.setFixedTime(new Date('2026-09-10T16:59:59Z'));await page.goto('/#attendance/calendar');await page.getByRole('button',{name:/Preseason build/}).click();await page.getByRole('button',{name:'Edit meeting',exact:true}).click();
  await page.getByLabel('Meeting title').fill('Too late');await page.clock.setFixedTime(new Date('2026-09-10T17:00:00Z'));
  await expect(page.getByLabel('Meeting title')).toBeDisabled();await expect(page.getByRole('button',{name:'Save meeting',exact:true})).toBeDisabled();
  await expect(page.getByRole('group',{name:'Required participants',exact:true}).getByRole('checkbox',{name:'Alex Student',exact:true})).toBeDisabled();
@@ -1142,7 +1142,7 @@ test('meeting edits stop when the meeting starts, including an editor already op
  await page.getByRole('button',{name:'Cancel',exact:true}).click();await expect(page.getByRole('button',{name:'Edit meeting',exact:true})).toHaveCount(0);expect(calls).toEqual([]);
 });
 test('successful meeting edit with failed refresh keeps draft and identifies saved result',async({page})=>{
- const {data,handleRequest}=await mock(page,'lead');await page.clock.setFixedTime(new Date('2026-09-10T16:00:00Z'));await page.goto('/#attendance/calendar');
+ const {data,handleRequest}=await mock(page,'admin_lead');await page.clock.setFixedTime(new Date('2026-09-10T16:00:00Z'));await page.goto('/#attendance/calendar');
  await page.getByRole('button',{name:/Preseason build/}).click();await page.getByRole('button',{name:'Edit meeting',exact:true}).click();await page.getByLabel('Meeting title').fill('Saved despite refresh failure');
  let fail=true;await page.route('**/rest/v1/team_meetings?*',async route=>{if(fail){fail=false;await route.fulfill({status:500,json:{message:'Synthetic read failure'}});}else await handleRequest(route);});
  await page.getByRole('button',{name:'Save meeting',exact:true}).click();
@@ -1207,12 +1207,10 @@ async function openPersonalRequest(page: Page, meetingId = "m1") {
   return dialog;
 }
 const leadershipRequestPersonas = [
-  { name: "lead", role: "lead", reviewer: false },
-  { name: "student Program Manager", role: "student", reviewer: true },
-  { name: "lead Program Manager", role: "lead", reviewer: true },
+  { name: "Admin Lead", role: "admin_lead", reviewer: false },
   { name: "mentor-role Program Manager", role: "mentor", reviewer: true },
-  { name: "admin-role Program Manager", role: "admin", reviewer: true },
-  { name: "admin-role Operations Lead", role: "admin", reviewer: false },
+  { name: "Admin Lead Program Manager", role: "admin_lead", reviewer: true },
+  { name: "Admin Lead Operations Lead", role: "admin_lead", reviewer: false },
 ] as const;
 for (const width of [390, 1440]) {
   for (const persona of leadershipRequestPersonas) {
@@ -1357,7 +1355,8 @@ for (const width of [390, 1440]) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });
 }
-for (const role of ["mentor", "admin"]) {
+// Assigned Mentor Coach retains review access; retired Admin is denied below.
+for (const role of ["mentor"]) {
   test(`personal attendance requests: ${role} retains review queue without a student request tab`, async ({ page }) => {
     const { calls } = await mock(page, role);
     await page.goto("/#attendance/my-requests");
@@ -1371,7 +1370,7 @@ for (const role of ["mentor", "admin"]) {
     expect(calls).toEqual([]);
   });
 }
-for (const account of [{ role: "lead", active: false }, { role: "student", active: false }, { role: "readonly", active: true }]) {
+for (const account of [{ role: "lead", active: false }, { role: "student", active: false }, { role: "readonly", active: true }, { role: "admin", active: true }]) {
   test(`personal attendance requests: ${account.active ? "active" : "inactive"} ${account.role} cannot access personal or review controls`, async ({ page }) => {
     const { calls } = await mock(page, account.role, { active: account.active });
     for (const route of ["my-requests", "notices"]) {
@@ -1388,7 +1387,7 @@ for (const account of [{ role: "lead", active: false }, { role: "student", activ
 
 test("personal attendance requests: empty own roster cannot borrow another member's meeting", async ({ page }) => {
   const { calls } = await mock(page, "lead");
-  await page.goto("/#attendance/my-requests");
+  await page.goto("/#attendance/notices");
   await expect(page.getByText("No upcoming or in-progress meetings on your roster. Contact leadership if a meeting is missing or has already ended.", { exact: true })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Meeting for my request", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Report my attendance issue", exact: true })).toHaveCount(0);
@@ -1496,7 +1495,7 @@ for (const [index, persona] of leadershipRequestPersonas.entries()) {
   });
 }
 
-for (const reviewer of ['student','lead','mentor']) {
+for (const reviewer of ['admin_lead','mentor']) {
  test(`Program Manager requests show lead-coach-only review controls to ${reviewer} reviewer`,async({page})=>{
   const {data,calls}=await mock(page,reviewer,{configure:(data,id)=>{
    personalRequestFixture(data,id,true);
@@ -1600,10 +1599,10 @@ test('member-scoped roster sync rechecks scheduled end before submitting selecte
  expect(attempts).toEqual([]);
 });
 
-for (const width of [390,1440]) test(`ordinary mentor cannot decide requests but retains corrections and strikes ${width}`,async({page})=>{
+for (const role of ['mentor','admin_lead']) for (const width of [390,1440]) test(`ordinary ${role} retains physical corrections but cannot decide requests or notices ${width}`,async({page})=>{
  await page.setViewportSize({width,height:900});
- const {calls}=await mock(page,'mentor',{configure:(data,id)=>{
-  data.policy={user_id:id,can_review:true,can_review_requests:false,can_read_team:true,can_manage_meetings:true,can_review_program_manager_requests:false,mentor_review_required_for:[],strike_year_start:null,people:[],warnings:[]};
+ const {calls}=await mock(page,role,{configure:(data,id)=>{
+  data.policy={user_id:id,can_review:false,can_review_requests:false,can_read_team:true,can_manage_meetings:true,can_review_program_manager_requests:false,mentor_review_required_for:[],strike_year_start:null,people:[],warnings:[]};
   Object.assign(data.attendance[0],{notice_type:'absent',notice_at:'2026-09-09T17:00:00Z',notice_reason:'Synthetic ordinary member request',review_status:'pending'});
  }});
  await page.goto('/#attendance/notices');
@@ -1611,10 +1610,11 @@ for (const width of [390,1440]) test(`ordinary mentor cannot decide requests but
  for(const name of ['Excuse','Deny'])await expect(card.getByRole('button',{name,exact:true})).toHaveCount(0);
  await card.getByText('Attendance corrections & notices',{exact:true}).click();
  await expect(card.getByLabel('Excuse status',{exact:true})).toHaveCount(0);
- await expect(card.locator('summary').filter({hasText:/^Assign attendance notice$/})).toBeVisible();
+ await expect(card.locator('summary').filter({hasText:/^Assign attendance notice$/})).toHaveCount(0);
  await card.getByText('Review / correct attendance',{exact:true}).click();
  await card.getByRole('combobox',{name:/^Attendance/}).selectOption('late');
  await card.getByLabel('Review / correction explanation',{exact:true}).fill('Synthetic physical correction only');
+ await page.screenshot({path:`test-results/student-role-canonical-generic-${role}-${width}.png`,fullPage:true});
  await card.getByRole('button',{name:'Save attendance review',exact:true}).click();
  await expect.poll(()=>calls).toEqual([{action:'attendance',p:{meeting_id:'m1',attendance_id:'a1',version:1,physical_status:'late',left_at:null,explanation:'Synthetic physical correction only'}}]);
  expect(await page.evaluate(()=>document.body.scrollWidth<=innerWidth)).toBe(true);
@@ -1778,7 +1778,7 @@ async function openRequiredRosterEditor(page: Page) {
 for (const width of [390, 1440]) {
   test(`required-roster combined date save preserves requests and other occurrences ${width}`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
-    const { data, calls } = await mock(page, "lead", { configure: data => {
+    const { data, calls } = await mock(page, "admin_lead", { configure: data => {
       requiredRosterFixture(data);
       const requester = "00000000-0000-0000-0000-000000000023";
       data.members.push({ student_id: requester, display_name: "Dana Pending Request", member_status: "registered", team_area: "Build" });
@@ -1832,7 +1832,7 @@ for (const width of [390, 1440]) {
 
   test(`required-roster Clear all saves optional and All active restores selected ${width}`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
-    const { data, calls } = await mock(page, "lead", { configure: requiredRosterFixture });
+    const { data, calls } = await mock(page, "admin_lead", { configure: requiredRosterFixture });
     const attendance = structuredClone(data.attendance);
     let form = await openRequiredRosterEditor(page);
     await form.getByRole("button", { name: "Clear all", exact: true }).click();
@@ -1863,7 +1863,7 @@ for (const width of [390, 1440]) {
 
   test(`required-roster cancellation and Escape discard selection without sending ${width}`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
-    const { calls } = await mock(page, "lead", { configure: requiredRosterFixture });
+    const { calls } = await mock(page, "admin_lead", { configure: requiredRosterFixture });
     const form = await openRequiredRosterEditor(page);
     await form.getByRole("button", { name: "All active", exact: true }).click();
     await form.getByRole("checkbox", { name: rosterAcknowledgment, exact: true }).check();
@@ -1889,7 +1889,7 @@ for (const width of [390, 1440]) {
 
   test(`required-roster stale set at unchanged meeting version preserves draft until refresh and reload ${width}`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
-    const { data, calls } = await mock(page, "lead", { configure: requiredRosterFixture });
+    const { data, calls } = await mock(page, "admin_lead", { configure: requiredRosterFixture });
     const form = await openRequiredRosterEditor(page);
     await form.getByRole("checkbox", { name: "Alex Student", exact: true }).uncheck();
     await form.getByRole("checkbox", { name: "Blair Participant", exact: true }).check();
@@ -1929,7 +1929,7 @@ test("required-roster reviewed, physical, strike, inactive and unlisted rows sta
     { id: "00000000-0000-0000-0000-000000000036", name: "Review Actor Participant", required: true, change: { reviewed_by: lead } },
     { id: "00000000-0000-0000-0000-000000000037", name: "Pending Request Participant", required: true, change: { review_status: "pending", notice_at: "2026-09-09T15:00:00Z", notice_type: "late" as const, expected_at: "2026-09-10T17:30:00Z", notice_reason: "Synthetic request" } },
   ];
-  const { data, calls } = await mock(page, "lead", { configure: data => {
+  const { data, calls } = await mock(page, "admin_lead", { configure: data => {
     requiredRosterFixture(data);
     for (const row of locked) {
       if (row.name !== "Unlisted Participant") data.members.push({ student_id: row.id, display_name: row.name, member_status: row.name === "Inactive Participant" ? "inactive" : "registered", team_area: "Build" });
@@ -1986,7 +1986,7 @@ test("strict meeting-edit fixture rejects unsafe roster writes atomically and ac
 });
 
 for (const evidence of ["request", "check-in", "strike"] as const) test(`required-roster refresh locks a changed ${evidence} participant without version or roster changes`, async ({ page }) => {
-  const { data, calls } = await mock(page, "lead", { configure: requiredRosterFixture });
+  const { data, calls } = await mock(page, "admin_lead", { configure: requiredRosterFixture });
   const form = await openRequiredRosterEditor(page);
   await form.getByRole("checkbox", { name: "Alex Student", exact: true }).uncheck();
   await form.getByRole("checkbox", { name: rosterAcknowledgment, exact: true }).check();
@@ -2066,4 +2066,24 @@ for (const width of [390, 1440]) test(`proposed attendance policy terminology an
  expect(calls).toEqual([]);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await page.screenshot({path:`test-results/attendance-policy-${width}.png`,fullPage:true});
+});
+
+for(const width of [390,1440])for(const role of ['student','lead'])test(`canonical ${role} PM has own Attendance only, no issue approval or administration ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});
+ const {calls}=await mock(page,role,{configure:(data,id)=>{data.policy={user_id:id,can_participate:true,can_review:false,can_review_requests:false,can_read_team:false,can_manage_meetings:false,can_review_program_manager_requests:false,mentor_review_required_for:[id],strike_year_start:null,people:[],warnings:[]};data.attendance[0].student_id=id;data.snapshots[0].student_id=id;data.members[0].student_id=id;}});
+ await page.goto('/#attendance/calendar');await expect(page.getByRole('button',{name:'New meeting',exact:true})).toHaveCount(0);
+ await page.getByRole('button',{name:/Preseason build/}).click();const dialog=page.getByRole('dialog',{name:'Meeting details'});await expect(dialog).toBeVisible();
+ for(const name of ['Excuse','Deny','Edit meeting','Assign attendance notice'])await expect(dialog.getByRole('button',{name,exact:true})).toHaveCount(0);
+ await expect(dialog.getByText('Report attendance issue',{exact:true})).toBeVisible();expect(calls).toEqual([]);
+ await page.screenshot({path:`test-results/student-role-canonical-${role}-pm-${width}.png`,fullPage:true});
+});
+
+for(const role of ['mentor','admin_lead'])for(const width of [390,1440])test(`assigned ${role==='mentor'?'Lead Coach':'eligible PM'} can review ordinary member requests ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});const {calls}=await mock(page,role,{configure:(data,id)=>{
+  personalRequestFixture(data,id,true);data.policy!.can_review_program_manager_requests=role==='mentor';data.policy!.can_manage_meetings=true;
+ }});await page.goto('/#attendance/notices');const card=page.locator('.att-request-card').filter({hasText:'Another member private request'});
+ await expect(card.getByRole('button',{name:'Excuse',exact:true})).toBeVisible();await expect(card.getByRole('button',{name:'Deny',exact:true})).toBeVisible();
+ await card.getByLabel('Review reason',{exact:true}).fill('Assigned reviewer checked this request');
+ await page.screenshot({path:`test-results/student-role-canonical-assigned-${role}-${width}.png`,fullPage:true});
+ await card.getByRole('button',{name:'Excuse',exact:true}).click();await expect.poll(()=>calls.at(-1)?.p.review_status).toBe('excused');
 });
