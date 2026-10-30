@@ -4,7 +4,7 @@ import {mkdtempSync,readFileSync,rmSync} from 'node:fs';
 import {execFileSync,spawn} from 'node:child_process';
 import {join,isAbsolute} from 'node:path';
 import {tmpdir} from 'node:os';
-import {installCoreBaseline} from '../fixtures/student-role-core.ts';
+import {canonicalBaseline} from '../fixtures/canonical-role-core.ts';
 for(const key of ['DATABASE_URL','SUPABASE_DB_URL','PGSERVICE','PGHOST','PGDATABASE','PGUSER','PGPASSWORD'])assert(!process.env[key],`Refusing ${key}`);
 const bin=process.env.STUDENT_ROLE_PG_BIN;assert(bin&&isAbsolute(bin),'Set STUDENT_ROLE_PG_BIN to installed local server binaries');
 const root=mkdtempSync(join(tmpdir(),'student-role-native-')),data=join(root,'db');
@@ -26,9 +26,14 @@ const count=()=>sql('select count(*) from team_private.invitations');
 try{
  execFileSync(join(bin,'initdb'),['-D',data,'-A','trust','-U','postgres','--no-locale','--encoding=UTF8'],{env,stdio:'pipe',timeout:30000});
  execFileSync(join(bin,'pg_ctl'),['-D',data,'-l',join(root,'server.log'),'-o',`-k ${root} -c listen_addresses='' -c unix_socket_permissions=0700`,'-w','start'],{env,stdio:'pipe',timeout:30000});started=true;
- await installCoreBaseline({exec:async q=>{sql(q);return [];}});
- sql(readFileSync('supabase/migrations/20261028160322_student_admin_lead_roles.sql','utf8'));
- sql(`insert into profiles(id,display_name,role,active) values('${id(6)}','Operations','admin_lead',true)`);
+ await canonicalBaseline({exec:async q=>{sql(q);return [];}});
+ const canonical=readFileSync('supabase/migrations/20261029190339_canonical_roles_mentor_administration.sql','utf8');
+ const guard=canonical.match(/'([0-9a-f]{64})' then raise exception 'Confirmed legacy account/)?.[1];assert(guard,'Missing production identity/version guard');
+ // Exact candidate, with only the deliberately synthetic fixture identity digest.
+ const synthetic=sql(`select encode(sha256(convert_to(id::text||'|'||to_char(updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US'),'UTF8')),'hex') from profiles where role='admin'`);assert.match(synthetic,/^[0-9a-f]{64}$/);
+ sql(canonical.replace(guard,synthetic));
+ assert.equal(sql(`select role from profiles where id='${id(7)}'`),'admin_lead');
+ sql(`update profiles set role='admin_lead' where id='${id(6)}';insert into team_attendance_members(student_id,member_status,team_area) values('${id(2)}','prospective','') on conflict(student_id) do update set member_status='prospective',team_area=''`);
  for(const kind of ['advisory','actor-row']){
   sql(`update profiles set role='admin_lead' where id='${id(6)}'`);const before=count();
   const g=await gate(kind==='advisory'?'select pg_advisory_xact_lock(4418)':`update profiles set role='readonly' where id='${id(6)}'`,'reserve-'+kind+'-gate');
@@ -41,4 +46,19 @@ try{
  const g=await gate(`update profiles set role='readonly' where id='${id(6)}'`,'operations-demotion');const pending=run(`${actor(6)}select team_operations_manage(${json(patch)});`,'operations-wait');await blocked('operations-wait');await g.release();await assert.rejects(pending,/Admin Lead/);assert.equal(sql(`select display_name from profiles where id='${id(2)}'`),old.display_name);console.log('PASS operations rechecks after actor row wait');
  sql(`update profiles set role='admin_lead' where id='${id(6)}';${actor(6)}select team_invitation_reserve(${json(request(903))});reset role;insert into auth.users(id,email,invited_at,raw_user_meta_data) values('${id(603)}','synthetic903@example.test',clock_timestamp(),'{"team_invitation_id":"${id(903)}"}');insert into profiles(id,display_name,role,active) values('${id(603)}','Quarantined','readonly',true)`);
  const finishGate=await gate(`update profiles set role='lead' where id='${id(6)}'`,'finish-demotion');const finish=run(`set role service_role;select team_invitation_finish('${id(903)}','${id(603)}');`,'finish-wait');await blocked('finish-wait');await finishGate.release();await assert.rejects(finish,/no longer authorized/);assert.equal(sql(`select role||':'||active from profiles where id='${id(603)}'`),'readonly:false');console.log('PASS finish retains quarantine after actor demotion while waiting');
+
+ // A committed concurrent Mentor removal cannot leave the suite without one.
+ sql(`update profiles set active=false where role='mentor' and id not in ('${id(1)}','${id(8)}');update profiles set active=true where id='${id(8)}'`);
+ const mentorGate=await gate(`update profiles set active=false where id='${id(8)}'`,'last-mentor-gate');
+ const lastMentor=run(`update profiles set active=false where id='${id(1)}'`,'last-mentor-wait');await blocked('last-mentor-wait');await mentorGate.release();await assert.rejects(lastMentor,/at least one active Mentor/);assert.equal(sql("select count(*) from profiles where role='mentor' and active"),'1');console.log('PASS concurrent last-Mentor removal is rejected');
+ // Authoritative review eligibility must be checked after the observed row wait.
+ sql(`insert into team_member_positions(user_id,position_key,assigned_by,assignment_reason) values('${id(1)}','lead_coach_1','${id(1)}','Native synthetic coach')`);
+ const revoke=()=>sql(`update team_member_positions set revoked_at=clock_timestamp(),revoked_by='${id(1)}',revoke_reason='Native revoked while blocked' where user_id='${id(1)}' and position_key='lead_coach_1' and revoked_at is null`);
+ const a=JSON.parse(sql(`select row_to_json(a) from team_attendance a where id='${id(213)}'`));
+ const reviewGate=await gate(`select id from team_meetings where id='${id(201)}' for update`,'review-meeting-gate');
+ const review=run(`${actor(1)}select team_attendance_manage('attendance',${json({meeting_id:id(201),attendance_id:id(213),version:a.version,review_status:'excused',explanation:'Must not write'})});`,'review-meeting-wait');await blocked('review-meeting-wait');revoke();await reviewGate.release();await assert.rejects(review,/Lead Coach|Program Manager/);assert.equal(sql(`select row_to_json(a) from team_attendance a where id='${id(213)}'`),JSON.stringify(a));console.log('PASS request review rejects assignment revocation during meeting row wait');
+ sql(`insert into team_member_positions(user_id,position_key,assigned_by,assignment_reason) values('${id(1)}','lead_coach_1','${id(1)}','Native reassigned coach')`);
+ const strike=JSON.parse(sql(`select row_to_json(s) from team_attendance_strikes s where attendance_id='${id(213)}' and rescinded_at is null limit 1`));
+ const strikeGate=await gate(`select id from team_attendance_strikes where id='${strike.id}' for update`,'rescind-strike-gate');
+ const rescind=run(`${actor(1)}select team_attendance_manage('rescind',${json({meeting_id:id(201),attendance_id:id(213),strike_id:strike.id,explanation:'Must not rescind'})});`,'rescind-strike-wait');await blocked('rescind-strike-wait');revoke();await strikeGate.release();await assert.rejects(rescind,/Lead Coach|Program Manager/);assert.equal(sql(`select row_to_json(s) from team_attendance_strikes s where id='${strike.id}'`),JSON.stringify(strike));console.log('PASS notice rescind rejects assignment revocation during strike row wait');
 }finally{for(const p of children)p.kill('SIGTERM');if(started)execFileSync(join(bin,'pg_ctl'),['-D',data,'-m','immediate','-w','stop'],{env,stdio:'pipe',timeout:30000});rmSync(root,{recursive:true,force:true});}

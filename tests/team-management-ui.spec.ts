@@ -7,7 +7,7 @@ async function setup(page:Page,role='mentor',own=true) {
  await page.addInitScript(({id})=>localStorage.setItem('4418-team-hub-auth',JSON.stringify({access_token:'fixture-token',refresh_token:'fixture-refresh',expires_at:4000000000,token_type:'bearer',user:{id,aud:'authenticated',app_metadata:{},user_metadata:{},created_at:'2026-01-01T00:00:00Z'}})),{id});
  await page.route('**/rest/v1/**',async r=>{
   const path=new URL(r.request().url()).pathname;
-  if(path.endsWith('/team_dashboard_context'))return r.fulfill({json:{name:'Aiden',role,admin:['mentor','admin'].includes(role),personal:{percent:null,strikes:0,pending:0},next_meeting:null,orders:[],finance:{allowed:false,approvals:0,school:0},attention:null,robot:null,inventory:null,announcements:[]}});
+  if(path.endsWith('/team_dashboard_context'))return r.fulfill({json:{name:'Aiden',role,admin:role==='mentor',personal:{percent:null,strikes:0,pending:0},next_meeting:null,orders:[],finance:{allowed:false,approvals:0,school:0},attention:null,robot:null,inventory:null,announcements:[]}});
   if(path.endsWith('/profiles'))return r.fulfill({json:member});
   if(path.endsWith('/team_management_context_v2'))return r.fulfill({json:{...data,positions:data.positions.map((p:any)=>({...p,version:p.version||1,category:p.category||(['lead_coach_1','lead_coach_2'].includes(p.key)?'Coaching':['program_manager','product_technical_manager'].includes(p.key)?'Program':'Functional Leads')}))}});
   if(path.endsWith('/team_manage_v2')){
@@ -40,7 +40,7 @@ for(const width of [390,1440])test(`member editor and position add/remove at ${w
  await expect(editor.getByRole('button',{name:'Remove position'})).toHaveCount(0);expect(calls.map(c=>c.action)).toEqual(['member','assign_position','revoke_position']);
 });
 test('student cannot open management controls via a direct route',async({page})=>{
- const calls=await setup(page,'student');await page.goto('/#team-management');await expect(page.getByText('Active mentors and admins can manage the team.',{exact:false})).toBeVisible();await expect(page.getByRole('button',{name:/Manage/})).toHaveCount(0);expect(calls).toHaveLength(0);
+ const calls=await setup(page,'student');await page.goto('/#team-management');await expect(page.getByText('Active Mentors can administer the team.',{exact:false})).toBeVisible();await expect(page.getByRole('button',{name:/Manage/})).toHaveCount(0);expect(calls).toHaveLength(0);
 });
 
 test('mentor creates a shared area through the audited RPC',async({page})=>{
@@ -60,7 +60,7 @@ for(const width of [390,1440])test(`focused management views and keyboard dismis
  await expect(page.getByRole('button',{name:'Manage'})).toBeFocused();
 });
 
-for(const role of ['mentor','admin','student'])test(`homepage administration visibility for ${role}`,async({page})=>{
+for(const role of ['mentor','admin_lead','student'])test(`homepage administration visibility for ${role}`,async({page})=>{
  await setup(page,role);await page.goto('/');
  if(role==='student')await expect(page.locator('.hub-nav a[href="#team-management"]')).toHaveCount(0);
  else await expect(page.locator('.hub-nav a[href="#team-management"]')).toBeVisible();
