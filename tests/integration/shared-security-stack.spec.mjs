@@ -169,7 +169,8 @@ export async function runSharedSecurityIntegration({ base, anonKey, serviceKey, 
   await rejected(await rpc('inventory_action',{p_action:'create_trip',p_data:{name:'Denied'}},adminLead),/mentor/i);
   pass('Lead and Admin Lead create cross-area locations without a named position; Students cannot create locations and Admin Lead cannot administer trips');
 
-  await json(await rpc('team_manage_v2',{action:'position_save',p:{create:true,key:'software_lead',name:'Software Lead',description:'Synthetic functional role',category:'Functional Leads',display_order:10,reason:'Synthetic named-position prerequisite'}},manager));
+  // The complete released foundations already seed this exact recognized key.
+  assert.deepEqual(query("select jsonb_build_object('key',key,'active',active,'category',category) from team_positions where key='software_lead'"),{key:'software_lead',active:true,category:'Functional Leads'});
   await json(await rpc('team_manage',{action:'assign_position',p:{user_id:adminLead.id,position_key:'software_lead',reason:'Synthetic assignment'}},manager));
   assert.equal((await json(await rpc('inventory_location_creation_context',{},adminLead))).assigned_lead,true);
   const storage=await json(await rpc('inventory_action',{p_action:'create_location',p_data:{name:'Synthetic assigned Admin Lead storage',classification:'permanent',kind:'Box',areaId:software}},adminLead));
