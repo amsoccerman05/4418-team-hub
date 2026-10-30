@@ -18,11 +18,12 @@ export function classifyInvitationResponse(id:string,data:unknown,status:number|
   if(body?.code==='inactive_area')return notSent('inactive_area','Not sent. Choose an active area or leave it unassigned, then review again.');
   if(body?.code==='existing_account')return notSent('existing_account','Not sent. This account already exists; find the member instead of inviting again.');
  }
- if(status===403&&body?.code==='inviter_required')return notSent('inviter_required','Not sent. Active Admin Lead, mentor or admin access is required. Refresh before continuing.');
- if(status===403&&body?.code==='admin_only')return notSent('admin_only','Not sent. Only an active owner Admin can invite a new Admin. Choose an allowed role and review again.');
+ if(status===403&&body?.code==='inviter_required')return notSent('inviter_required','Not sent. Active Admin Lead or Mentor access is required. Refresh before continuing.');
+ if(status===403&&body?.code==='retired_role')return notSent('retired_role','Not sent. Owner Admin is retired; choose Admin Lead and review the request again.');
+ if(status===403&&body?.code==='admin_only')return notSent('admin_only','Not sent. Owner Admin is retired. Choose a canonical role and review again.');
  if(status===403&&body?.code==='student_only')return notSent('student_only','Not sent. Admin Leads can invite students only. Review the account role before continuing.');
  if(status===403&&body?.code==='invitation_not_owned')return notSent('invitation_not_owned','Not sent. This invitation is not available to this account. Ask a mentor to review it.');
- if(status===403&&body?.code==='manager_required')return notSent('manager_required','Not sent. Active mentor or admin access is required. Refresh the team list before continuing.');
+ if(status===403&&body?.code==='manager_required')return notSent('manager_required','Not sent. Active Mentor access is required. Refresh the team list before continuing.');
  if(status===403&&body?.error==='Origin not allowed')return notSent('origin_not_allowed','Not sent. Open Team Hub at its official address before continuing.');
  if(status===401&&body?.error==='Sign in required')return notSent('sign_in_required','Not sent. Sign in again before continuing.');
  if(status===400&&body?.error==='Valid invitation request required')return notSent('invalid_request','Not sent. This request could not be validated. Review the recipient again.');

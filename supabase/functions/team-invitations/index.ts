@@ -9,12 +9,13 @@ async function api(path:string,token:string,key:string,body?:unknown){
   if(path==='/rest/v1/rpc/team_invitation_reserve'){
    const allowed:Record<string,string>={
     'Account already exists. Manage the existing member.':'existing_account',
-    'Active mentor or admin required':'manager_required',
+    'Active Mentor required':'manager_required',
     'Active lead, mentor or admin required':'inviter_required',
     'Leads can invite students only':'student_only',
-    'Active Admin Lead, mentor or admin required':'inviter_required',
+    'Active Admin Lead or Mentor required':'inviter_required',
     'Admin Leads can invite students only':'student_only',
-    'Only an active Admin can invite a new Admin':'admin_only',
+    'Owner Admin is retired; choose Admin Lead':'retired_role',
+    'Retired Admin invitation requires Mentor review; do not resend':'already_reserved',
     'Invitation request unavailable for this account':'invitation_not_owned',
     'Invitation details changed. Review the recorded invitation; do not resend.':'already_reserved',
     'Valid invitation role and registration required':'invalid_details',
@@ -22,7 +23,7 @@ async function api(path:string,token:string,key:string,body?:unknown){
     'Choose an active area':'inactive_area',
    };
    const code=allowed[error.message];
-   if(code)throw new InvitationError(code,['admin_only','manager_required','inviter_required','student_only','invitation_not_owned'].includes(code)?403:409,error.message);
+   if(code)throw new InvitationError(code,['retired_role','manager_required','inviter_required','student_only','invitation_not_owned'].includes(code)?403:409,error.message);
    if(error.code==='23505')throw new InvitationError('already_reserved',409,'An invitation is already recorded. Reload the member list and check its status; do not resend.');
   }
   throw Error('Request rejected');
