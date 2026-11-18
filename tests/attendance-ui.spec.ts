@@ -850,7 +850,7 @@ for(const width of [390,1440]) test(`same-account auth preserves modal and check
  });
  await expect(page.getByRole('dialog')).toBeVisible();await expect(page.getByLabel('Reason',{exact:true})).toHaveValue('Keep this unsent request');expect(reads).toBe(baseline);expect(page.url()).toContain('#attendance/calendar');
  await expect(page.getByRole('dialog').getByText('In progress',{exact:true})).toBeVisible();
- page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'Check out',exact:true}).click();
+ await page.getByRole('button',{name:'Check out',exact:true}).click();await page.getByRole('button',{name:'Confirm check-out',exact:true}).click();
  await expect(page.getByText('Checked out',{exact:true})).toBeVisible();await expect(page.getByText('Left early',{exact:true})).toBeVisible();await expect(page.getByText('Duration: 10 min',{exact:false})).toBeVisible();await expect(page.getByRole('button',{name:'Check out',exact:true})).toHaveCount(0);expect(calls.at(-1)).toEqual({meeting_id:'m1'});expect(data.attendance[0].review_status).toBe('none');expect(data.strikes).toHaveLength(0);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.getByRole('dialog').screenshot({path:`test-results/checkout-${width}.png`});
  await page.evaluate(async()=>{const {supabase}=await import(/* @vite-ignore */ '/src/attendance/' + 'service.ts');await supabase.auth._notifyAllSubscribers('SIGNED_OUT',null,false);});
@@ -908,7 +908,7 @@ for(const role of ['student','lead'])test(`checkout visible on calendar with clo
  await page.goto('/#attendance/calendar');const current=page.getByRole('region',{name:'Your current attendance'});await expect(current.getByRole('button',{name:'Check out',exact:true})).toBeVisible();await expect(current).toContainText('Arrived');await expect(current).toContainText('Here for 10 min');
  if(role==='lead'){await page.getByRole('button',{name:/Preseason build/}).click();await expect(page.getByRole('dialog').getByRole('button',{name:'Check out',exact:true})).toBeVisible();await page.getByRole('dialog').getByRole('button',{name:'Close',exact:true}).click();}
  await current.screenshot({path:`test-results/checkout-calendar-${role}.png`});
- page.once('dialog',d=>d.accept());await current.getByRole('button',{name:'Check out',exact:true}).click();await expect(current).toContainText('Checked out');await expect(current).toContainText('Duration: 10 min');await expect(current).toContainText('Left early');await expect(current.getByRole('button',{name:'Check out',exact:true})).toHaveCount(0);expect(calls.at(-1)).toEqual({meeting_id:'m1'});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await current.getByRole('button',{name:'Check out',exact:true}).click();await current.getByRole('button',{name:'Confirm check-out',exact:true}).click();await expect(current).toContainText('Checked out');await expect(current).toContainText('Duration: 10 min');await expect(current).toContainText('Left early');await expect(current.getByRole('button',{name:'Check out',exact:true})).toHaveCount(0);expect(calls.at(-1)).toEqual({meeting_id:'m1'});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
 
 test('expected lead explicitly checks self in without changing another attendee',async({page})=>{
@@ -918,7 +918,7 @@ test('expected lead explicitly checks self in without changing another attendee'
  await page.getByRole('button',{name:/Preseason build/}).click();const dialog=page.getByRole('dialog');await dialog.getByRole('button',{name:'Open check-in',exact:true}).click();
  expect(data.attendance[0].checked_in_at).toBeNull();expect(calls).toHaveLength(1);
  await dialog.getByRole('button',{name:'Check myself in',exact:true}).click();await expect.poll(()=>calls.at(-1)).toEqual({meeting_id:'m1',code:'123456'});expect(data.attendance[1].checked_in_at).toBeNull();await expect(dialog.getByRole('button',{name:'Close check-in',exact:true})).toBeVisible();
- page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'Check out',exact:true}).click();await expect(dialog.locator('.att-roster-counts')).toContainText('1 checked out');await dialog.getByRole('group',{name:'Live roster filter'}).getByRole('button',{name:'Checked out',exact:true}).click();await expect(dialog.locator('.att-record')).toHaveCount(1);await expect(dialog.locator('.att-record')).toContainText('Alex Lead');await expect(dialog.locator('.att-record')).toContainText('Duration: 7 min');await expect(dialog.locator('.att-record')).toContainText('Left early');
+ await dialog.getByRole('button',{name:'Check out',exact:true}).click();await dialog.getByRole('button',{name:'Confirm check-out',exact:true}).click();await expect(dialog.locator('.att-roster-counts')).toContainText('1 checked out');await dialog.getByRole('group',{name:'Live roster filter'}).getByRole('button',{name:'Checked out',exact:true}).click();await expect(dialog.locator('.att-record')).toHaveCount(1);await expect(dialog.locator('.att-record')).toContainText('Alex Lead');await expect(dialog.locator('.att-record')).toContainText('Duration: 7 min');await expect(dialog.locator('.att-record')).toContainText('Left early');
 });
 
 for(const width of [390,1440])test(`admin-role Operations Lead explicitly checks self in and retains meeting controls ${width}`,async({page})=>{
@@ -929,7 +929,7 @@ for(const width of [390,1440])test(`admin-role Operations Lead explicitly checks
  await page.getByRole('button',{name:/Preseason build/}).click();const dialog=page.getByRole('dialog');await dialog.getByRole('button',{name:'Open check-in',exact:true}).click();
  expect(data.attendance[0].checked_in_at).toBeNull();expect(calls).toHaveLength(1);
  await dialog.getByRole('button',{name:'Check myself in',exact:true}).click();await expect.poll(()=>calls.at(-1)).toEqual({meeting_id:'m1',code:'123456'});expect(data.attendance[1].checked_in_at).toBeNull();await expect(dialog.getByRole('button',{name:'Close check-in',exact:true})).toBeVisible();
- page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'Check out',exact:true}).click();await expect(dialog.locator('.att-roster-counts')).toContainText('1 checked out');await dialog.getByRole('group',{name:'Live roster filter'}).getByRole('button',{name:'Checked out',exact:true}).click();await expect(dialog.locator('.att-record')).toHaveCount(1);await expect(dialog.locator('.att-record')).toContainText('Synthetic Operations Lead');await expect(dialog.locator('.att-record')).toContainText('Duration: 7 min');await expect(dialog.locator('.att-record')).toContainText('Left early');
+ await dialog.getByRole('button',{name:'Check out',exact:true}).click();await dialog.getByRole('button',{name:'Confirm check-out',exact:true}).click();await expect(dialog.locator('.att-roster-counts')).toContainText('1 checked out');await dialog.getByRole('group',{name:'Live roster filter'}).getByRole('button',{name:'Checked out',exact:true}).click();await expect(dialog.locator('.att-record')).toHaveCount(1);await expect(dialog.locator('.att-record')).toContainText('Synthetic Operations Lead');await expect(dialog.locator('.att-record')).toContainText('Duration: 7 min');await expect(dialog.locator('.att-record')).toContainText('Left early');
 });
 
 test('policy check-in controls and notice thresholds share exact boundaries',()=>{
@@ -1319,8 +1319,8 @@ for (const width of [390, 1440]) {
       await page.locator('.att-tabs a[href="#attendance/calendar"]').click();
       const current = page.getByRole("region", { name: "Your current attendance" });
       await expect(current.getByRole("button", { name: "Check out", exact: true })).toBeVisible();
-      page.once("dialog", dialog => dialog.accept());
       await current.getByRole("button", { name: "Check out", exact: true }).click();
+      await current.getByRole("button", { name: "Confirm check-out", exact: true }).click();
       await expect(current.getByText("Checked out", { exact: true })).toBeVisible();
       expect(calls.at(-1)).toEqual({ meeting_id: "m1" });
       expect(data.attendance.find(a => a.id === "a-own")).toMatchObject({ physical_status: "left_early", review_status: "pending" });
@@ -2016,8 +2016,8 @@ for(const width of [390,1440])test(`checkout grace after attendance completion $
  const current=page.getByRole('region',{name:'Your current attendance'});
  await expect(current.getByRole('button',{name:'Check out',exact:true})).toBeVisible();
  await expect(current).toContainText('including after attendance is completed');
- page.once('dialog',d=>d.dismiss());await current.getByRole('button',{name:'Check out',exact:true}).click();expect(calls).toHaveLength(0);
- page.once('dialog',d=>d.accept());await current.getByRole('button',{name:'Check out',exact:true}).click();
+ await current.getByRole('button',{name:'Check out',exact:true}).click();await current.getByRole('button',{name:'Cancel check-out',exact:true}).click();expect(calls).toHaveLength(0);
+ await current.getByRole('button',{name:'Check out',exact:true}).click();await current.getByRole('button',{name:'Confirm check-out',exact:true}).click();
  await expect(current).toContainText('Duration: 2h 5m');await expect(current).toContainText('Checked out');
  expect(data.attendance[0].physical_status).toBe('late');expect(data.strikes).toHaveLength(0);
  await expect(current.getByRole('button',{name:'Check out',exact:true})).toHaveCount(0);
