@@ -196,7 +196,7 @@ test('checkout acknowledgment remains visible when the attendance refresh fails'
  await d.getByRole('button',{name:'Check out',exact:true}).click();
  s.syncFailures=1;
  await d.getByRole('button',{name:'Confirm check-out',exact:true}).click();
- await expect(d.getByRole('status')).toContainText('Check-out recorded. Refresh attendance to see your departure time.');
+ await expect(d.getByRole('status').filter({hasText:'Check-out recorded.'})).toHaveText('Check-out recorded. Refresh attendance to see your departure time.');
  await expect(d.getByRole('alert')).toContainText('Meeting roster sync temporarily unavailable');
  await expect(d.getByRole('button',{name:'Check out',exact:true})).toHaveCount(0);
  expect(s.writes).toHaveLength(1);expect(s.a.left_at).not.toBeNull();
