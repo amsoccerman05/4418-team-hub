@@ -51,7 +51,7 @@ test('mentor creates a shared area through the audited RPC',async({page})=>{
 
 for(const width of [390,1440])test(`focused management views and keyboard dismissal ${width}`,async({page})=>{
  await page.setViewportSize({width,height:900});await setup(page);await page.goto('/#team-management');
- await page.getByRole('button',{name:'Positions',exact:true}).click();await expect(page.getByText('Unassigned',{exact:true})).toHaveCount(2);
+ await page.getByRole('button',{name:'Positions',exact:true}).click();await expect(page.getByText('Unassigned',{exact:true})).toHaveCount(3);
  await page.screenshot({path:`test-results/positions-${width}.png`,fullPage:true});
  await page.getByRole('button',{name:'Activity',exact:true}).click();await expect(page.getByText('No changes recorded yet.',{exact:false})).toBeVisible();
  await page.getByRole('button',{name:'Members',exact:true}).click();await page.getByLabel('Find a member').fill('missing');await page.getByRole('button',{name:'Clear search'}).click();
