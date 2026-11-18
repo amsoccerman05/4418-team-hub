@@ -15,7 +15,7 @@ create function planning_private.project_lead() returns boolean language sql sta
  select exists(select 1 from public.profiles p
  join public.team_member_positions mp on mp.user_id=p.id and mp.revoked_at is null
  join public.team_positions tp on tp.key=mp.position_key and tp.active
- where p.id=auth.uid() and p.active and p.role::text in ('student','lead','admin_lead','mentor','admin')
+ where p.id=auth.uid() and p.active and p.role::text in ('student','lead','admin_lead','mentor')
  and tp.key='project_lead')
 $$;
 revoke all on function planning_private.project_lead() from public,anon,authenticated;
@@ -29,7 +29,7 @@ begin
  -- Retained assignments never grant write access after a role demotion.
  -- Keep member() unchanged so active readonly accounts retain their read access.
  if not exists(select 1 from public.profiles where id=auth.uid() and active
-  and role::text in ('student','lead','admin_lead','mentor','admin')) then
+  and role::text in ('student','lead','admin_lead','mentor')) then
   raise exception 'Active Planning writer account required' using errcode='42501';
  end if;
  manager:=planning_private.manager();
@@ -126,7 +126,7 @@ begin
  ), assignment_sets as (
  select a.task_id,jsonb_agg(jsonb_build_object('id',p.id,'name',p.display_name,'active',p.active) order by p.id) owners,
  jsonb_agg(p.id order by p.id) owner_ids from public.planning_task_assignees a join visible_tasks t on t.id=a.task_id join public.profiles p on p.id=a.user_id group by a.task_id
- ) select jsonb_build_object('user_id',auth.uid(),'can_manage',manager,'can_manage_tasks',manager or planning_private.project_lead(),'can_write',exists(select 1 from public.profiles where id=auth.uid() and active and role::text in ('student','lead','admin_lead','mentor','admin')),'season_id',sid,
+ ) select jsonb_build_object('user_id',auth.uid(),'can_manage',manager,'can_manage_tasks',manager or planning_private.project_lead(),'can_write',exists(select 1 from public.profiles where id=auth.uid() and active and role::text in ('student','lead','admin_lead','mentor')),'season_id',sid,
  'seasons',(select coalesce(jsonb_agg(to_jsonb(s) order by created_at desc),'[]') from public.planning_seasons s where manager or status='active'),
  'members',(select coalesce(jsonb_agg(jsonb_build_object('id',id,'name',display_name) order by display_name),'[]') from public.profiles where active),
  'areas',(select coalesce(jsonb_agg(jsonb_build_object('id',id,'name',name) order by name),'[]') from public.areas where active),

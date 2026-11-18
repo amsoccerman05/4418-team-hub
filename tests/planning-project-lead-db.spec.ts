@@ -53,3 +53,7 @@ test('archived or draft seasons and inactive boards remain protected',async()=>{
 test('private helper and direct writes remain inaccessible; project category grants no generic Pit leadership',async()=>{
  await denies(()=>db.query('select planning_private.project_lead()'));await denies(()=>db.exec('insert into planning_tasks default values'));await db.exec('reset role');expect((await db.query<any>("select category from team_positions where key='project_lead'")).rows[0].category).toBe('Project Leads');
 });
+
+test('legacy admin role does not regain production Planning write access',async()=>{
+ await db.exec("reset role;update profiles set role='admin' where id='"+id(2)+"'");await as(2);expect((await context()).can_write).toBe(false);await denies(()=>save('task',{board_id:board,title:'Forbidden',status:'todo',priority:'normal'}));
+});
