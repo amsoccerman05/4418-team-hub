@@ -21,10 +21,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: node --test tests/suite-auth.test.mjs
-      - name: Verify fail-closed dependency audit policy
-        run: node --test tests/dependency-audit.test.mjs
-      - name: Reject high and critical advisories except approved expiring build-only case
-        run: node scripts/dependency-audit.mjs
+      - name: Reject high and critical dependency advisories (including build tools)
+        run: npm audit --audit-level=high
       - name: Verify design-decision concurrent transactions
         run: |
           PG_BIN="$(find /usr/lib/postgresql -path '*/bin/postgres' -type f -printf '%h\n' | sort -V | tail -1)"

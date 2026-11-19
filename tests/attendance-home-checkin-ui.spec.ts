@@ -63,8 +63,8 @@ for(const width of [390,1440])test(`home opens correct guarded check-in and refl
  await page.screenshot({path:`test-results/home-meeting-checked-in-${width}.png`,fullPage:true});expect(await d.evaluate(e=>e.scrollWidth<=e.clientWidth)).toBe(true);
  await d.getByRole('button',{name:'Close',exact:true}).click();await home(page);
  await expect(page.locator('.my-next')).toContainText('You’re checked in');await page.locator('.my-next').getByRole('link',{name:'Check out',exact:true}).click();
- page.once('dialog',d=>d.dismiss());await dialog(page).getByRole('button',{name:'Check out',exact:true}).click();expect(s.writes).toHaveLength(2);
- page.once('dialog',d=>d.accept());await dialog(page).getByRole('button',{name:'Check out',exact:true}).click();await expect(dialog(page).getByRole('heading',{name:'Checked out',exact:true})).toBeVisible();expect(s.writes).toHaveLength(3);
+ await dialog(page).getByRole('button',{name:'Check out',exact:true}).click();await dialog(page).getByRole('button',{name:'Cancel check-out',exact:true}).click();expect(s.writes).toHaveLength(2);
+ await dialog(page).getByRole('button',{name:'Check out',exact:true}).click();await dialog(page).getByRole('button',{name:'Confirm check-out',exact:true}).click();await expect(dialog(page).getByRole('heading',{name:'Checked out',exact:true})).toBeVisible();expect(s.writes).toHaveLength(3);
  await dialog(page).getByRole('button',{name:'Close',exact:true}).click();await home(page);await expect(page.locator('.my-next')).toContainText('Checked out');await expect(page.locator('.my-next').getByRole('link',{name:'View meeting',exact:true})).toBeVisible();
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
@@ -160,3 +160,80 @@ test('optional meeting fallback never promotes a future optional meeting into Ho
  const s=await setup(page,{optional:true});s.m.starts_at='2026-10-27T18:00:00Z';s.m.ends_at='2026-10-27T20:00:00Z';
  await page.goto('/');await expect(page.locator('.my-next')).toContainText('No required meetings scheduled.');expect(s.writes).toEqual([]);
 });
+
+for(const width of [390,1440])test(`checkout confirmation works without native dialogs and supports cancel, retry, and repeated taps ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});
+ const s=await setup(page);
+ s.m.ends_at='2026-10-27T17:07:00Z';
+ s.m.status='finalized';s.a.checked_in_at='2026-10-27T17:00:00Z';s.a.physical_status='present';
+ // Reproduce the environment constraint: native confirmation cannot open.
+ await page.addInitScript(()=>{window.confirm=()=>{throw new Error('Native dialogs unavailable');};});
+ await page.goto('/'+target);
+ const d=dialog(page),trigger=d.getByRole('button',{name:'Check out',exact:true});
+ await trigger.click();
+ const confirmation=d.getByRole('group',{name:'Confirm check-out',exact:true});
+ await expect(confirmation).toBeVisible();
+ await expect(confirmation.getByRole('button',{name:'Confirm check-out',exact:true})).toBeFocused();
+ expect(s.writes).toHaveLength(0);
+ await page.keyboard.press('Escape');await expect(confirmation).toHaveCount(0);await expect(d).toBeVisible();await expect(trigger).toBeFocused();
+ await trigger.click();await d.getByRole('button',{name:'Cancel check-out',exact:true}).click();expect(s.writes).toHaveLength(0);
+ // A backend rejection stays visible and permits an intentional retry.
+ await page.route('**/rest/v1/rpc/team_attendance_check_out',r=>r.fulfill({status:503,json:{message:'Temporary checkout failure'}}),{times:1});
+ await trigger.click();await d.getByRole('button',{name:'Confirm check-out',exact:true}).click();
+ await expect(d.getByRole('alert')).toContainText('Temporary checkout failure');
+ s.delay=250;
+ await d.getByRole('button',{name:'Confirm check-out',exact:true}).evaluate((b:HTMLButtonElement)=>{b.click();b.click();});
+ await expect(d.getByRole('button',{name:'Checking out…',exact:true})).toBeDisabled();
+ await expect(d.getByText('Recording your departure…',{exact:true})).toBeVisible();
+ await expect(d.getByRole('heading',{name:'Checked out',exact:true})).toBeVisible();expect(s.writes).toHaveLength(1);
+ expect(await d.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+});
+
+test('checkout acknowledgment remains visible when the attendance refresh fails',async({page})=>{
+ const s=await setup(page);s.a.checked_in_at='2026-10-27T17:00:00Z';s.a.physical_status='present';
+ await page.goto('/'+target);
+ const d=dialog(page);
+ await d.getByRole('button',{name:'Check out',exact:true}).click();
+ s.syncFailures=1;
+ await d.getByRole('button',{name:'Confirm check-out',exact:true}).click();
+ await expect(d.getByRole('status').filter({hasText:'Check-out recorded.'})).toHaveText('Check-out recorded. Refresh attendance to see your departure time.');
+ await expect(d.getByRole('alert')).toContainText('Meeting roster sync temporarily unavailable');
+ await expect(d.getByRole('button',{name:'Check out',exact:true})).toHaveCount(0);
+ expect(s.writes).toHaveLength(1);expect(s.a.left_at).not.toBeNull();
+});
+
+for(const width of [390,1440]) {
+ test(`closing an unsubmitted checkout clears confirmation without recording departure ${width}`,async({page})=>{
+  await page.setViewportSize({width,height:900});const s=await setup(page);
+  s.a.checked_in_at='2026-10-27T17:00:00Z';s.a.physical_status='present';
+  await page.goto('/'+target);await dialog(page).getByRole('button',{name:'Check out',exact:true}).click();
+  await expect(dialog(page).getByRole('group',{name:'Confirm check-out'})).toBeVisible();
+  await dialog(page).getByRole('button',{name:'Close',exact:true}).click();
+  await expect(dialog(page)).toHaveCount(0);expect(s.writes).toEqual([]);
+  await page.goto('/'+target);
+  await expect(dialog(page).getByRole('button',{name:'Check out',exact:true})).toBeVisible();
+  await expect(dialog(page).getByRole('group',{name:'Confirm check-out'})).toHaveCount(0);expect(s.writes).toEqual([]);
+ });
+ test(`interrupted session clears checkout confirmation and never submits on sign-in ${width}`,async({page})=>{
+  await page.setViewportSize({width,height:900});const s=await setup(page);
+  s.a.checked_in_at='2026-10-27T17:00:00Z';s.a.physical_status='present';
+  await page.goto('/'+target);await dialog(page).getByRole('button',{name:'Check out',exact:true}).click();
+  await expect(dialog(page).getByRole('group',{name:'Confirm check-out'})).toBeVisible();
+  await page.evaluate(()=>{localStorage.removeItem('4418-team-hub-auth');const channel=new BroadcastChannel('4418-team-hub-auth');channel.postMessage({event:'SIGNED_OUT',session:null});channel.close();});
+  await expect(page.getByRole('heading',{name:'Team sign in'})).toBeVisible();await expect(dialog(page)).toHaveCount(0);
+  await page.getByLabel('Email',{exact:true}).fill('student@example.invalid');await page.getByLabel('Password',{exact:true}).fill('fixture-password');await page.getByRole('button',{name:'Sign in',exact:true}).click();
+  await expect(dialog(page).getByRole('button',{name:'Check out',exact:true})).toBeVisible();
+  await expect(dialog(page).getByRole('group',{name:'Confirm check-out'})).toHaveCount(0);expect(s.writes).toEqual([]);
+ });
+ test(`navigation during pending checkout cannot restore the old modal or duplicate departure ${width}`,async({page})=>{
+  await page.setViewportSize({width,height:900});const s=await setup(page);
+  s.a.checked_in_at='2026-10-27T17:00:00Z';s.a.physical_status='present';s.delay=500;
+  await page.goto('/'+target);await dialog(page).getByRole('button',{name:'Check out',exact:true}).click();
+  await dialog(page).getByRole('button',{name:'Confirm check-out',exact:true}).click();await expect.poll(()=>s.writes.length).toBe(1);
+  await page.evaluate(()=>{location.hash='#attendance/how-to';});
+  await expect(dialog(page)).toHaveCount(0);await expect(page.getByRole('heading',{name:'How to use Attendance',exact:true})).toBeVisible();
+  await expect.poll(()=>s.a.left_at).toBe(now);await expect(page.locator('.att-success')).toHaveCount(0);
+  expect(new URL(page.url()).hash).toBe('#attendance/how-to');
+  await page.goBack();await expect(dialog(page).getByRole('heading',{name:'Checked out',exact:true})).toBeVisible();expect(s.writes).toHaveLength(1);
+ });
+}
