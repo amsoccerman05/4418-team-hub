@@ -1,14 +1,14 @@
 import {test,expect,type Page} from '@playwright/test';
-async function setup(page:Page,role='mentor',own=true) {
+async function setup(page:Page,role='mentor',own=true,memberRole=role) {
  const id='00000000-0000-0000-0000-000000000001';
- const member={id:own?id:'00000000-0000-0000-0000-000000000002',email:'mentor@example.test',display_name:'Aiden',role,active:true,primary_area_id:null,updated_at:'2026-09-12T00:00:00Z',member_status:null,team_area:null};
+ const member={id:own?id:'00000000-0000-0000-0000-000000000002',email:'mentor@example.test',display_name:'Aiden',role:memberRole,active:true,primary_area_id:null,updated_at:'2026-09-12T00:00:00Z',member_status:null,team_area:null};
  const data:any={members:[member],areas:[{id:'area',name:'Finance',active:true}],positions:[{key:'project_lead',name:'Project Lead',active:true,category:'Project Leads'},{key:'lead_coach_2',name:'Lead Coach 2',active:true},{key:'finance_lead',name:'Finance Lead',active:true}],invitations:[{id:'pending',display_name:'New member',email:'invited@example.test',status:'pending'},{id:'active',display_name:'Existing member',email:'active@example.test',status:'account_active'},{id:'review',display_name:'Review member',email:'review@example.test',status:'review',review_reason:'identity_unmatched'}],assignments:[] as any[],history:[]};
  const calls:any[]=[];
  await page.addInitScript(({id})=>localStorage.setItem('4418-team-hub-auth',JSON.stringify({access_token:'fixture-token',refresh_token:'fixture-refresh',expires_at:4000000000,token_type:'bearer',user:{id,aud:'authenticated',app_metadata:{},user_metadata:{},created_at:'2026-01-01T00:00:00Z'}})),{id});
  await page.route('**/rest/v1/**',async r=>{
   const path=new URL(r.request().url()).pathname;
   if(path.endsWith('/team_dashboard_context'))return r.fulfill({json:{name:'Aiden',role,admin:['mentor','admin'].includes(role),personal:{percent:null,strikes:0,pending:0},next_meeting:null,orders:[],finance:{allowed:false,approvals:0,school:0},attention:null,robot:null,inventory:null,announcements:[]}});
-  if(path.endsWith('/profiles'))return r.fulfill({json:member});
+  if(path.endsWith('/profiles'))return r.fulfill({json:own?member:{...member,id,role}});
   if(path.endsWith('/team_management_context_v2'))return r.fulfill({json:{...data,positions:data.positions.map((p:any)=>({...p,version:p.version||1,category:p.category||(['lead_coach_1','lead_coach_2'].includes(p.key)?'Coaching':['program_manager','product_technical_manager'].includes(p.key)?'Program':'Functional Leads')}))}});
   if(path.endsWith('/team_manage_v2')){
    const body=r.request().postDataJSON();calls.push(body);
@@ -51,7 +51,7 @@ test('mentor creates a shared area through the audited RPC',async({page})=>{
 
 for(const width of [390,1440])test(`focused management views and keyboard dismissal ${width}`,async({page})=>{
  await page.setViewportSize({width,height:900});await setup(page);await page.goto('/#team-management');
- await page.getByRole('button',{name:'Positions',exact:true}).click();await expect(page.getByText('Unassigned',{exact:true})).toHaveCount(3);
+ await page.getByRole('button',{name:'Positions',exact:true}).click();await expect(page.getByText('Unassigned',{exact:true})).toHaveCount(2);
  await page.screenshot({path:`test-results/positions-${width}.png`,fullPage:true});
  await page.getByRole('button',{name:'Activity',exact:true}).click();await expect(page.getByText('No changes recorded yet.',{exact:false})).toBeVisible();
  await page.getByRole('button',{name:'Members',exact:true}).click();await page.getByLabel('Find a member').fill('missing');await page.getByRole('button',{name:'Clear search'}).click();
@@ -190,6 +190,32 @@ test('double submit and dismissal during an access change do not send another mu
  await page.goto('/#team-management');await page.getByRole('button',{name:'Manage',exact:true}).click();await page.getByRole('button',{name:'Deactivate member',exact:true}).click();const d=page.getByRole('dialog',{name:'Deactivate member',exact:true});await d.getByLabel('Reason for access change').fill('Departed');await d.getByRole('checkbox').check();await d.locator('form').evaluate(f=>{(f as HTMLFormElement).requestSubmit();(f as HTMLFormElement).requestSubmit();});await expect.poll(()=>calls).toBe(1);await expect(d.getByRole('button',{name:'Saving…',exact:true})).toBeDisabled();await page.keyboard.press('Escape');await expect(d).toBeVisible();await expect(d.getByRole('button',{name:'Cancel',exact:true})).toBeDisabled();finish();await expect(d).toHaveCount(0);expect(calls).toBe(1);
 });
 
-test('Project Lead assignment explains task-only capability and can be revoked',async({page})=>{
- const calls=await setup(page);await page.goto('/#team-management');await page.getByRole('button',{name:'Manage',exact:true}).click();const editor=page.getByRole('region',{name:'Member editor'});await editor.getByText('Team positions',{exact:true}).click();await editor.getByRole('combobox',{name:'Position',exact:true}).selectOption('project_lead');await expect(editor.getByText(/Active holders can create, assign and edit cards/)).toBeVisible();await expect(editor.getByText(/does not grant category-based competition/)).toBeVisible();await editor.getByLabel('Assignment reason').fill('Project card lead');await editor.getByRole('checkbox',{name:'I reviewed the access this assignment gives this member.'}).check();await editor.getByRole('button',{name:'Assign position',exact:true}).click();expect(calls[0].p.position_key).toBe('project_lead');await editor.getByLabel('Removal reason').fill('Term ended');await editor.getByRole('button',{name:'Remove position'}).click();expect(calls.map(c=>c.action)).toEqual(['assign_position','revoke_position']);
+test('Project Lead is an account role, not an assignable position',async({page})=>{
+ const calls=await setup(page,'mentor',false,'student');
+ await page.goto('/#team-management');
+ await page.getByRole('button',{name:'Manage',exact:true}).click();
+ const editor=page.getByRole('region',{name:'Member editor'});
+ await editor.getByText('Team positions',{exact:true}).click();
+ await expect(editor.getByRole('combobox',{name:'Position',exact:true}).locator('option[value=project_lead]')).toHaveCount(0);
+ await expect(editor.getByText(/Project Lead keeps Student access/)).toBeVisible();
+ const role=editor.getByRole('combobox',{name:'Account role',exact:true});
+ await role.selectOption('project_lead');
+ await editor.getByLabel('Reason for change').fill('Project card lead');
+ await editor.getByRole('button',{name:'Save member',exact:true}).click();
+ await expect.poll(()=>calls[0]?.p.role).toBe('project_lead');
+ expect(calls.map(c=>c.action)).toEqual(['member']);
+ await expect(editor.getByRole('status')).toContainText('updated');
+ await expect(role).toHaveValue('project_lead');
+ await editor.getByRole('button',{name:'Close editor',exact:true}).click();
+ await page.getByLabel('Account role filter').selectOption('project_lead');
+ await expect(page.locator('.team-member-grid').getByText('Project Lead',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Positions',exact:true}).click();
+ await expect(page.getByRole('heading',{name:'Project Lead',exact:true})).toHaveCount(0);
+});
+test('Project Lead cannot manage accounts or invite students',async({page})=>{
+ const calls=await setup(page,'project_lead');
+ await page.goto('/#team-management');
+ await expect(page.getByText('Active mentors and admins can manage the team.',{exact:false})).toBeVisible();
+ await expect(page.getByRole('button',{name:/Manage|Invite/})).toHaveCount(0);
+ expect(calls).toEqual([]);
 });

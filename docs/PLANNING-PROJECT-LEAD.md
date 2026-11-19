@@ -1,3 +1,5 @@
+> Historical position-based release. The replacement account-role implementation and rollout are documented in [Project Lead account role](PROJECT-LEAD-ACCOUNT-ROLE.md).
+
 # Project Lead — local review draft
 
 Assign the **Project Lead** position through Team Management → member → Team positions. Existing mentor/Admin assignment and revocation controls, reason capture and audit history are reused. No one is assigned automatically and the member's account role remains unchanged.

@@ -75,3 +75,14 @@ test('ordinary mentors retain strikes but have no request decision capability',(
  expect(canReview(d)).toBe(true);expect(d.policy!.can_manage_meetings).toBe(true);
  delete d.policy!.can_review_requests;expect(canReview(d,record('student'))).toBe(false);
 });
+
+test('Project Lead keeps Student attendance participation without meeting management',()=>{
+ const p={id:'p',display_name:'Synthetic Project Lead',role:'project_lead',active:true};
+ const d=data();
+ expect(canParticipate(p,d)).toBe(true);
+ expect(isManager(p)).toBe(false);
+ d.policy!.can_participate=false;
+ expect(canParticipate(p,d)).toBe(false);
+ d.policy!.can_participate=true;
+ expect(canParticipate({...p,active:false},d)).toBe(false);
+});
