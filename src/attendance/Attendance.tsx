@@ -338,6 +338,41 @@ function AttendanceTimes({a,m,now}:{a:Attendance;m:Meeting;now:number}) {
   {a.checked_in_at&&!a.left_at&&(now>=Date.parse(m.ends_at)||m.status==='finalized')&&<span>Departure not recorded · duration unavailable</span>}
  </span>;
 }
+// Keep confirmation in the page: embedded browsers can suppress native confirm().
+function CheckoutControl({ meetingId, run }: { meetingId: string; run: Run }) {
+ const [confirming,setConfirming]=useState(false);
+ const [pending,setPending]=useState(false);
+ const [recorded,setRecorded]=useState(false);
+ const submitting=useRef(false);
+ const trigger=useRef<HTMLButtonElement>(null);
+ const confirmButton=useRef<HTMLButtonElement>(null);
+ useEffect(()=>{if(confirming)confirmButton.current?.focus();},[confirming]);
+ function cancel(){setConfirming(false);trigger.current?.focus();}
+ async function submit(){
+  if(submitting.current)return;
+  submitting.current=true;setPending(true);
+  try {
+   await run(async()=>{
+    const result=await rpc('team_attendance_check_out',{meeting_id:meetingId});
+    // A slow/failed refresh must not hide a successful server acknowledgment.
+    setRecorded(true);
+    return result;
+   },'Check-out recorded');
+  } finally {submitting.current=false;setPending(false);}
+ }
+ if(recorded)return <p role="status">Check-out recorded. {pending?'Refreshing attendance…':'Refresh attendance to see your departure time.'}</p>;
+ return <div className="att-checkout-control">
+  <button type="button" ref={trigger} className="att-checkout" aria-expanded={confirming} disabled={pending} onClick={()=>setConfirming(true)}>Check out</button>
+  {confirming&&<div role="group" aria-label="Confirm check-out" className="att-checkout-confirm" onKeyDown={e=>{if(e.key==='Escape'&&!pending){e.preventDefault();e.stopPropagation();cancel();}}}>
+   <p>Check out now? Leaving before the scheduled end records Left Early. It does not submit an excuse request.</p>
+   <div className="att-inline">
+    <button type="button" ref={confirmButton} disabled={pending} onClick={()=>void submit()}>{pending?'Checking out…':'Confirm check-out'}</button>
+    <button type="button" className="att-secondary" disabled={pending} onClick={cancel}>Cancel check-out</button>
+   </div>
+   {pending&&<p role="status">Recording your departure…</p>}
+  </div>}
+ </div>;
+}
 function Student({ data, id, run, presenceOnly=false, selfCheckIn=false, meetingCode }: { data: Data; id: string; run: Run; presenceOnly?: boolean; selfCheckIn?:boolean; meetingCode?:string }) {
  const [now,setNow]=useState(Date.now());
  useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer);},[]);
@@ -362,7 +397,7 @@ function Student({ data, id, run, presenceOnly=false, selfCheckIn=false, meeting
     </form>}
     {!ended&&!checkedIn&&!a.left_at&&!checkInOpen&&<p className="att-muted">{now<Date.parse(m.starts_at)-1800000?`Leadership can open check-in from ${time(new Date(Date.parse(m.starts_at)-1800000).toISOString())}.`:'Check-in is not open. Ask leadership for a current code.'}</p>}
     {canCheckOut&&ended&&<p className="att-muted">Check out when you leave. Check-out remains available until {time(new Date(Date.parse(m.ends_at)+30*60_000).toISOString())}, including after attendance is completed.</p>}
-    {canCheckOut&&<button className="att-checkout" onClick={()=>{if(window.confirm('Check out now? Leaving before the scheduled end records Left Early. It does not submit an excuse request.'))void run(()=>rpc('team_attendance_check_out',{meeting_id:m.id}),'Check-out recorded');}}>Check out</button>}
+    {canCheckOut&&<CheckoutControl meetingId={m.id} run={run}/>}
    </section>
    {!presenceOnly&&<>
    {a.notice_at&&<section className="att-request-summary"><h4>{a.notice_type==='late'?'Late arrival':a.notice_type==='early'?'Early departure':'Absence'} requested · {a.review_status==='pending'?'Pending':label(a.review_status)}</h4><p>{noticeTiming(a,m)} · Submitted {Math.abs((Date.parse(m.starts_at)-Date.parse(a.notice_at))/3600000).toFixed(1)} hours {Date.parse(a.notice_at)<=Date.parse(m.starts_at)?'before the meeting':'after start'}</p>{a.expected_at&&<p>Expected {a.notice_type==='early'?'departure':'arrival'}: {time(a.expected_at)}</p>}<p className="att-request-reason">{a.notice_reason}</p>{a.review_reason&&<p>Leadership review: {a.review_reason}</p>}</section>}

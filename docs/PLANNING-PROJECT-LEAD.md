@@ -1,3 +1,5 @@
+> Historical position-based release. The replacement account-role implementation and rollout are documented in [Project Lead account role](PROJECT-LEAD-ACCOUNT-ROLE.md).
+
 # Project Lead — local review draft
 
 Assign the **Project Lead** position through Team Management → member → Team positions. Existing mentor/Admin assignment and revocation controls, reason capture and audit history are reused. No one is assigned automatically and the member's account role remains unchanged.
@@ -27,3 +29,7 @@ Live deployment preflight: production Planning writer guards exclude the legacy 
 The owner explicitly approved a temporary exception for GHSA-fc5q-39xc-vjpf to release Project Lead on 2026-11-18. `scripts/dependency-audit.mjs` retains the high/critical audit gate except this exact advisory and its transitive propagation at the currently pinned, dev-only versions. It expires **2026-11-25 02:55 UTC**; failures, unexpected graphs/versions, other advisories and production dependencies fail closed. A clean future audit does not require the exception. Remove the exception after a safe upstream update; do not extend it without approval.
 
 Evidence: production-only audit reports zero vulnerabilities; the affected packages are Vite's build/dev tools, not the static Pages runtime. No application/Edge code consumes user-controlled globs. A sourcemap build inspected 241 runtime source modules without this toolchain. Vite's build now rejects affected toolchain modules in output chunks. Browser test dev servers remain loopback-only. CI build has a 45-minute cap. Residual risk is CPU denial of service during builds/local development with malicious glob patterns. All other tests and deployment gates remain unchanged; this is not a claim that the dependency itself is patched.
+
+## Exception retirement (2026-11-19)
+
+GitHub withdrew GHSA-fc5q-39xc-vjpf on 2026-11-18; a fresh, unfiltered npm audit now reports zero vulnerabilities. No patched package release is claimed. The owner authorized finishing Team Hub deployments on this basis. The temporary exception wrapper and its tests are removed, and CI again runs unconditional `npm audit --audit-level=high`, including build tools. The previous Project Lead-only exception is not reused or extended for Attendance. Existing build output, loopback and timeout protections remain.
