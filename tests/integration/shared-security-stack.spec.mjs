@@ -3,7 +3,8 @@
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { localFetch, localURL, ORIGIN, API_PORT } from './fabrication-safety.mjs';
-import { installSharedSecurityFixture } from './shared-security-fixture.mjs';
+import { installSharedSecurityFixture, applySharedCanonicalFixture, sharedCanonicalCatalog } from './shared-security-fixture.mjs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 const lit = value => `'${String(value).replaceAll("'", "''")}'`;
 
 export async function runSharedSecurityIntegration({ base, anonKey, serviceKey, sql, gate, waitFor, registerSecret }) {
@@ -42,21 +43,34 @@ export async function runSharedSecurityIntegration({ base, anonKey, serviceKey, 
     return actor;
   }
   const manager = await signup('mentor', 'mentor'), student = await signup('student', 'student');
+  await signup('second-mentor','mentor'); // Keep last-Mentor and self-role guards independently testable.
+  const legacy=await signup('legacy-admin','admin');
   const adminLead=await signup('admin-lead','admin_lead');
   const lead = await signup('lead', 'lead'), reader = await signup('reader'), inactive = await signup('inactive', 'student', false);
+  const assignmentsBefore=table('team_member_positions');
+  await applySharedCanonicalFixture(sql);
+  assert.equal(profile(legacy).role,'admin_lead');
+  assert.equal(profile(manager).role,'mentor');
+  assert.equal(table('team_member_positions'),assignmentsBefore);
+  assert.equal(sql("select count(*) from public.profiles where role='admin'"),'0');
+  // PostgreSQL-normalized schema only. No fixture identity, Auth or business rows.
+  const catalog=JSON.parse(sharedCanonicalCatalog(sql));
+  mkdirSync(new URL('../../test-results/',import.meta.url),{recursive:true});
+  writeFileSync(new URL('../../test-results/shared-canonical-catalog.json',import.meta.url),JSON.stringify(catalog,null,2)+'\n');
+  pass('all five exact canonical migrations apply; only the guarded synthetic legacy account becomes Admin Lead');
   const fabrication = '44180000-0000-4000-8000-000000000001', software = '44180000-0000-4000-8000-000000000003';
   sql(`update public.profiles set primary_area_id=${lit(fabrication)} where id in (${lit(lead.id)},${lit(adminLead.id)});`);
   pass('actual Inventory signup trigger ignores role/active/admin claims in user-controlled Auth metadata');
 
   const beforeRoles = profilesState();
-  for (const actor of [student, lead, adminLead, reader, inactive, manager]) {
+  for (const actor of [student, lead, adminLead, legacy, reader, inactive, manager]) {
     await rejected(await request(`/rest/v1/profiles?id=eq.${actor.id}`, { role: 'admin', active: true }, actor, 'PATCH'));
     await rejected(await rpc('team_invitation_finish', { invitation_id: randomUUID(), invited_user: actor.id }, actor));
   }
   await rejected(await rpc('team_invitation_finish', { invitation_id: randomUUID(), invited_user: student.id }, null), /permission/i, 401);
-  for (const actor of [student, lead, adminLead, reader, inactive]) {
-    await rejected(await rpc('team_manage', { action: 'member', p: { user_id: actor.id, role: 'admin', reason: 'Synthetic escalation attempt' } }, actor), /mentor or admin/);
-    await rejected(await rpc('team_manage_v2', { action: 'member_state', p: { user_id: actor.id, active: true, reason: 'Synthetic escalation attempt' } }, actor), /mentor or admin/);
+  for (const actor of [student, lead, adminLead, legacy, reader, inactive]) {
+    await rejected(await rpc('team_manage', { action: 'member', p: { user_id: actor.id, role: 'admin', reason: 'Synthetic escalation attempt' } }, actor), /Mentor/i);
+    await rejected(await rpc('team_manage_v2', { action: 'member_state', p: { user_id: actor.id, active: true, reason: 'Synthetic escalation attempt' } }, actor), /Mentor/i);
   }
   assert.equal(profilesState(), beforeRoles);
   for (const role of ['anon', 'authenticated']) assert.equal(sql(`select has_function_privilege(${lit(role)},'public.team_invitation_finish(uuid,uuid)','EXECUTE')`), 'f');
@@ -64,18 +78,27 @@ export async function runSharedSecurityIntegration({ base, anonKey, serviceKey, 
   pass('direct profile escalation and Team Hub management bypasses fail; invitation completion is service-only even for a mentor session');
 
   await json(await request('/auth/v1/user', { data: { role: 'admin', active: true, permissions: ['*'] } }, student, 'PUT'));
-  await rejected(await rpc('team_manage_v2', { action: 'create_area', p: { name: 'Synthetic forbidden', slug: 'forbidden', reason: 'Test' } }, student), /mentor or admin/);
+  await rejected(await rpc('team_manage_v2', { action: 'create_area', p: { name: 'Synthetic forbidden', slug: 'forbidden', reason: 'Test' } }, student), /Mentor/i);
   assert.equal(profilesState(), beforeRoles);
   const self = profile(manager);
-  await rejected(await rpc('team_manage', { action: 'member', p: { user_id: manager.id, display_name: self.display_name, role: 'admin', active: true, primary_area_id: null,
+  await rejected(await rpc('team_manage', { action: 'member', p: { user_id: manager.id, display_name: self.display_name, role: 'admin_lead', active: true, primary_area_id: null,
     expected_updated_at: self.updated_at, expected_member_status: null, expected_team_area: null, member_status: null, reason: 'Synthetic self escalation' } }, manager), /another mentor/);
   assert.equal(profilesState(), beforeRoles);
   pass('editing Auth metadata does not change shared authorization; mentor self-role changes retain their existing guard');
 
+  for(const actor of [student,lead,adminLead,legacy]){
+    const finance=await json(await rpc('finance_context',{},actor));
+    assert.equal(finance.profile.role,profile(actor).role);assert.equal(finance.can_create,true);assert.equal(finance.is_admin,false);
+    assert.deepEqual(finance.capabilities,actor===adminLead||actor===legacy?['school_submitter']:[]);
+  }
+  const readOnlyFinance=await json(await rpc('finance_context',{},reader));
+  assert.equal(readOnlyFinance.can_create,false);assert.deepEqual(readOnlyFinance.capabilities,[]);
+  pass('Finance accepts genuine student requests; Admin Lead/converted account gets school-submit capability, not approval or administration; Readonly gets no write capability');
+
   const invitationID = randomUUID(), inviteeName = `invited-${randomUUID()}`;
   const inviteEmail = `shared-security-${inviteeName}@example.invalid`;
   const invite = { id: invitationID, email: inviteEmail, display_name: 'Synthetic invited student', role: 'student', member_status: 'prospective', reason: 'Synthetic authorized onboarding' };
-  await rejected(await rpc('team_invitation_reserve', { p: { ...invite, role: 'admin' } }, adminLead), /students only/);
+  await rejected(await rpc('team_invitation_reserve', { p: { ...invite, role: 'admin' } }, adminLead), /retired|students only/i);
   await rejected(await rpc('team_invitation_reserve', { p: invite }, student), /Active Admin Lead/);
   assert.equal((await json(await rpc('team_invitation_reserve', { p: invite }, adminLead))).send, true);
   await rejected(await rpc('team_invitation_reserve',{p:{...invite,id:randomUUID(),email:'denied-lead@example.invalid'}},lead),/Active Admin Lead/);
@@ -90,6 +113,10 @@ export async function runSharedSecurityIntegration({ base, anonKey, serviceKey, 
   await json(await localFetch(base, '/rest/v1/rpc/team_invitation_finish', { method: 'POST', headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ invitation_id: invitationID, invited_user: invited.id }) }));
   assert.equal(profile(invited).role, 'student'); assert.equal(profile(invited).active, true);
   assert.equal(sql(`select actor_id from team_private.management_history where user_id=${lit(invited.id)} and action='member_invited'`), adminLead.id);
+  const membershipAudit=()=>query(`select coalesce(jsonb_agg(performed_by order by id),'[]'::jsonb) from public.team_attendance_history where student_id=${lit(invited.id)} and entity='team_attendance_members'`);
+  assert.deepEqual(membershipAudit(),[adminLead.id],'Actual service completion attributes membership to the validated inviter');
+  await json(await localFetch(base, '/rest/v1/rpc/team_invitation_finish', { method: 'POST', headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ invitation_id: invitationID, invited_user: invited.id }) }));
+  assert.deepEqual(membershipAudit(),[adminLead.id],'Provisioned service replay must not duplicate membership audit');
   pass('allowed Admin Lead student invitations remain quarantined until actual service-role completion; no client can finish its own elevation');
 
   assert.equal(profile(student).role,'student');assert.equal(profile(student).primary_area_id,null);
@@ -102,30 +129,48 @@ export async function runSharedSecurityIntegration({ base, anonKey, serviceKey, 
   for (const [id, area_id] of [[itemA, fabrication], [itemB, software]]) await json(await request('/rest/v1/inventory_items', { id, name: 'Synthetic security item', area_id, category: 'Test', quantity: 10 }, manager));
   const inventoryTables = ['inventory_items', 'inventory_events', 'inventory_balances', 'inventory_movements', 'trips'];
   const inventoryBefore = fingerprint(inventoryTables);
-  await rejected(await request(`/rest/v1/inventory_items?id=eq.${itemA}`, { name: 'Unauthorized metadata' }, student, 'PATCH'), /assigned lead|metadata/);
-  await rejected(await request(`/rest/v1/inventory_items?id=eq.${itemB}`, { name: 'Wrong-area edit' }, lead, 'PATCH'), /assigned lead|metadata/);
-  for (const actor of [student, lead, adminLead, reader, inactive]) {
+  for(const actor of [reader,inactive]){
+    const response=await request(`/rest/v1/inventory_items?id=eq.${itemA}`, { name: 'Denied metadata' }, actor, 'PATCH');
+    if(response.status===200)assert.deepEqual(await response.json(),[],'RLS-filtered UPDATE changes no rows');
+    else await rejected(response,/permission|metadata|read/i);
+  }
+  const noStudentDelete=await request(`/rest/v1/inventory_items?id=eq.${itemA}`,undefined,student,'DELETE');
+  if(noStudentDelete.status===200)assert.deepEqual(await noStudentDelete.json(),[],'Student editing never grants unrestricted deletion');
+  else await rejected(noStudentDelete);
+  for (const actor of [student, lead, adminLead, legacy, reader, inactive]) {
     await rejected(await request('/rest/v1/inventory_events', { inventory_item_id: itemA, item_name: 'Forged event', user_id: manager.id, event_type: 'item_updated' }, actor));
     await rejected(await request(`/rest/v1/inventory_balances?inventory_item_id=eq.${itemA}`, { quantity: 999 }, actor, 'PATCH'));
-    await rejected(await rpc('inventory_action', { p_action: 'create_trip', p_data: { name: 'Forbidden trip' } }, actor), /permission|admins and mentors/i);
+    await rejected(await rpc('inventory_action', { p_action: 'create_trip', p_data: { name: 'Forbidden trip' } }, actor), /permission|mentor/i);
   }
   await rejected(await rpc('change_inventory_quantity', { p_id: itemA, p_delta: 1 }, null), /permission/i, 401);
   assert.equal(fingerprint(inventoryTables), inventoryBefore);
-  pass('Inventory rejects student metadata changes, wrong-area lead edits, forged audit/balance writes, anonymous counting, and unauthorized trip administration');
+  pass('Inventory rejects Readonly/inactive metadata writes, forged audit/balance writes, anonymous counting, and unauthorized trip administration');
 
   const counted = await json(await rpc('change_inventory_quantity', { p_id: itemA, p_delta: 1 }, student));
   assert.equal(counted.item.quantity, 11); assert.equal(counted.item.updated_by, student.id);
-  await json(await request(`/rest/v1/inventory_items?id=eq.${itemA}`, { name: 'Synthetic own-area lead edit' }, lead, 'PATCH'));
+  for(const actor of [student,lead,adminLead,legacy])for(const item of [itemA,itemB]){
+    await json(await request(`/rest/v1/inventory_items?id=eq.${item}`, { name: `Synthetic cross-area edit ${actor.id}` }, actor, 'PATCH'));
+    assert.equal((await read('inventory_items',`id=eq.${item}`,actor))[0].updated_by,actor.id);
+  }
+  const rpcRecord=(await read('inventory_items',`id=eq.${itemB}`,student))[0];
+  await json(await rpc('apply_inventory_changes',{p_changes:{items:[{record:{...rpcRecord,notes:'Synthetic Student RPC metadata'},expected_updated_at:rpcRecord.updated_at}]}},student));
+  assert.equal((await read('inventory_items',`id=eq.${itemB}`,student))[0].notes,'Synthetic Student RPC metadata');
   const trip = await json(await rpc('inventory_action', { p_action: 'create_trip', p_data: { name: 'Synthetic authorized trip' } }, manager));
   assert(trip.id);
-  pass('existing student quantity counting, assigned-lead metadata edits, and mentor trip creation still work with authentic attribution');
+  pass('genuine Student, Lead, Admin Lead and converted account edit both areas with authentic attribution; Mentor alone administers trips');
 
   await json(await request(`/rest/v1/inventory_items?id=eq.${itemA}`, {name:'Synthetic Admin Lead own-area edit'},adminLead,'PATCH'));
-  await rejected(await request(`/rest/v1/inventory_items?id=eq.${itemB}`,{name:'Denied cross-area edit'},adminLead,'PATCH'),/assigned lead|metadata/);
-  await rejected(await rpc('inventory_action',{p_action:'create_trip',p_data:{name:'Denied'}},adminLead),/admins and mentors/);
-  pass('Admin Lead retains own-area metadata but no cross-area or trip administration');
+  for(const actor of [student,reader,inactive])await rejected(await rpc('inventory_action',{p_action:'create_location',p_data:{name:'Denied non-lead location',classification:'permanent',kind:'Box',areaId:software}},actor),/permission|lead/i);
+  for(const actor of [lead,adminLead,legacy]){
+    assert.equal((await json(await rpc('inventory_location_creation_context',{},actor))).can_create,true);
+    assert.equal(sql(`select count(*) from team_member_positions where user_id=${lit(actor.id)}`),'0');
+    await json(await rpc('inventory_action',{p_action:'create_location',p_data:{name:`Synthetic cross-area lead location ${actor.id}`,classification:'permanent',kind:'Box',areaId:software}},actor));
+  }
+  await rejected(await rpc('inventory_action',{p_action:'create_trip',p_data:{name:'Denied'}},adminLead),/mentor/i);
+  pass('Lead and Admin Lead create cross-area locations without a named position; Students cannot create locations and Admin Lead cannot administer trips');
 
-  await json(await rpc('team_manage_v2',{action:'position_save',p:{create:true,key:'software_lead',name:'Software Lead',description:'Synthetic functional role',category:'Functional Leads',display_order:10,reason:'Synthetic named-position prerequisite'}},manager));
+  // The complete released foundations already seed this exact recognized key.
+  assert.deepEqual(query("select jsonb_build_object('key',key,'active',active,'category',category) from team_positions where key='software_lead'"),{key:'software_lead',active:true,category:'Functional Leads'});
   await json(await rpc('team_manage',{action:'assign_position',p:{user_id:adminLead.id,position_key:'software_lead',reason:'Synthetic assignment'}},manager));
   assert.equal((await json(await rpc('inventory_location_creation_context',{},adminLead))).assigned_lead,true);
   const storage=await json(await rpc('inventory_action',{p_action:'create_location',p_data:{name:'Synthetic assigned Admin Lead storage',classification:'permanent',kind:'Box',areaId:software}},adminLead));
@@ -144,7 +189,7 @@ export async function runSharedSecurityIntegration({ base, anonKey, serviceKey, 
   const eventID = await json(await rpc('pit_save_event', { p: eventPayload }, manager));
   await json(await rpc('pit_activate_event', { p: { id: eventID } }, manager));
   const pitBefore = fingerprint(['pit_events', 'pit_issues', 'pit_batteries', 'pit_issue_events', 'pit_battery_events']);
-  for (const actor of [student, lead, adminLead, reader, inactive]) {
+  for (const actor of [student, lead, adminLead, legacy, reader, inactive]) {
     await rejected(await rpc('pit_save_event', { p: eventPayload }, actor), /Insufficient Pit/);
     await rejected(await rpc('pit_save_battery', { p: { battery_number: 'B999' } }, actor), /Insufficient Pit/);
     await rejected(await request(`/rest/v1/pit_events?id=eq.${eventID}`, { status: 'completed' }, actor, 'PATCH'));
@@ -189,6 +234,22 @@ export async function runSharedSecurityIntegration({ base, anonKey, serviceKey, 
   try{await waitFor(()=>sql("select count(*) from pg_stat_activity where wait_event_type='Lock' and cardinality(pg_blocking_pids(pid))>0 and query like '%change_inventory_quantity%'")!=='0','positive control blocked');}finally{await release();}
   assert.equal((await json(await positive)).item.quantity,11);pass('authorized native stock write still succeeds after the same real lock wait');
 
+  // Additional metadata RPC regression: a permitted save cannot report success
+  // after a real lock wait downgrades the same token to Readonly/inactive.
+  for(const change of ['readonly','inactive']){
+    sql(`update public.profiles set role='student',active=true where id=${lit(student.id)}`);
+    const record=(await read('inventory_items',`id=eq.${itemA}`,student))[0];
+    const stable=fingerprint(inventoryTables);const releaseMetadata=await gate({inventoryItem:itemA});let pendingMetadata;
+    try{
+      pendingMetadata=rpc('apply_inventory_changes',{p_changes:{items:[{record:{...record,notes:'Must not falsely succeed'},expected_updated_at:record.updated_at}]}},student);
+      await waitFor(()=>sql("select count(*) from pg_stat_activity where wait_event_type='Lock' and cardinality(pg_blocking_pids(pid))>0 and query like '%apply_inventory_changes%'")!=='0','real metadata RPC row wait');
+      sql(`update public.profiles set ${change==='readonly'?"role='readonly'":'active=false'} where id=${lit(student.id)}`);
+    }finally{await releaseMetadata();}
+    await rejected(await pendingMetadata,/cannot change inventory/i);assert.equal(fingerprint(inventoryTables),stable);
+    pass(`metadata RPC rejects ${change} after real row wait without false success or writes`);
+  }
+  sql(`update public.profiles set role='student',active=true where id=${lit(student.id)}`);
+
   await json(await rpc('change_inventory_quantity', { p_id: itemA, p_delta: 0 }, lead));
   await json(await rpc('pit_report_issue', { p: issue }, lead));
   assert.equal((await json(await rpc('team_invitation_reserve', { p: invite }, adminLead))).send, false);
@@ -196,10 +257,11 @@ export async function runSharedSecurityIntegration({ base, anonKey, serviceKey, 
   sql(`update public.profiles set active=false where id=${lit(lead.id)};`);
   await rejected(await rpc('change_inventory_quantity', { p_id: itemA, p_delta: 1 }, lead), /permission/i);
   await rejected(await rpc('pit_report_issue', { p: issue }, lead), /Insufficient Pit/);
+  await rejected(await rpc('finance_context',{},lead),/Active team account/);
   await rejected(await rpc('team_invitation_reserve', { p: { ...invite, id: randomUUID(), email: `disabled-${randomUUID()}@example.invalid` } }, lead), /Active Admin Lead/);
   assert.equal(fingerprint(inventoryTables), inventoryStable); assert.equal(fingerprint(['pit_events', 'pit_issues', 'pit_batteries', 'pit_issue_events', 'pit_battery_events']), pitStable);
   assert.equal(sql("select pg_get_functiondef('auth.uid()'::regprocedure)"), authFunction);
   assert.equal(sql("select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and not c.relrowsecurity"), '0');
-  pass('one shared-profile deactivation immediately revokes all three apps with the SAME JWT; exposed fixture tables keep RLS enabled');
+  pass('one shared-profile deactivation immediately revokes all four apps with the SAME JWT; exposed fixture tables keep RLS enabled');
   return checks;
 }

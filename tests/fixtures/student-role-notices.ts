@@ -1,8 +1,8 @@
 import {PGlite} from '@electric-sql/pglite';
 import {readFileSync} from 'node:fs';
 const id=(n:number)=>`00000000-0000-0000-0000-${String(n).padStart(12,'0')}`;
-export async function noticesBaseline(fullFinance=false){
- const db=new PGlite();await db.exec(`create role anon;create role authenticated;create role service_role;create schema auth;create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('test.uid',true),'')::uuid$$;grant usage on schema auth to authenticated;grant execute on function auth.uid() to authenticated;
+export async function noticesBaseline(fullFinance=false, installedDb?:PGlite){
+ const db=installedDb??new PGlite();await db.exec(`create role anon;create role authenticated;create role service_role;create schema auth;create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('test.uid',true),'')::uuid$$;grant usage on schema auth to authenticated;grant execute on function auth.uid() to authenticated;
  create table profiles(id uuid primary key,display_name text,role text constraint profiles_role_check check(role in ('readonly','student','lead','admin','mentor')),active boolean,primary_area_id uuid,updated_at timestamptz default now(),email text,created_at timestamptz default now());
  create table areas(id uuid primary key default gen_random_uuid(),name text,active boolean default true,slug text unique default gen_random_uuid()::text);
  insert into areas(id,name) values('${id(101)}','Fabrication'),('${id(102)}','Electrical');

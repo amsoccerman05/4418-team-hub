@@ -1,0 +1,392 @@
+[
+  {
+    "schema": "public",
+    "signature": "change_inventory_quantity(uuid,numeric,numeric,timestamp with time zone,boolean)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "fabrication_private",
+    "signature": "fabrication_private.manager(uuid)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres}"
+  },
+  {
+    "schema": "fabrication_private",
+    "signature": "fabrication_private.supervisor(uuid)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres}"
+  },
+  {
+    "schema": "fabrication_private",
+    "signature": "fabrication_private.writer(uuid)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres}"
+  },
+  {
+    "schema": "public",
+    "signature": "finance_attach_repair_po(uuid,uuid,timestamp with time zone,text)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "public",
+    "signature": "finance_budget_approval(uuid)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "public",
+    "signature": "finance_budget_context(uuid)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "public",
+    "signature": "finance_budget_manage(text,jsonb)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "public",
+    "signature": "finance_mutate(text,jsonb)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "public",
+    "signature": "finance_notification_delivery_allowed(uuid,uuid)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,service_role=X/postgres}"
+  },
+  {
+    "schema": "finance_private",
+    "signature": "finance_private.admin()",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "finance_private",
+    "signature": "finance_private.can_manage_budget()",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "finance_private",
+    "signature": "finance_private.cap(text)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "finance_private",
+    "signature": "finance_private.coach_self_approval_context(uuid)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres}"
+  },
+  {
+    "schema": "finance_private",
+    "signature": "finance_private.mutate_v1(text,jsonb)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres}"
+  },
+  {
+    "schema": "finance_private",
+    "signature": "finance_private.role()",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "public",
+    "signature": "finance_repair_context(uuid)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "public",
+    "signature": "finance_repair_po_candidate(uuid,uuid)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "public",
+    "signature": "inventory_action(text,jsonb)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "public",
+    "signature": "inventory_location_creation_context()",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "notifications_private",
+    "signature": "notifications_private.enqueue(finance_private.history)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres}"
+  },
+  {
+    "schema": "outreach_private",
+    "signature": "outreach_private.can_add_contact(uuid,uuid)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres}"
+  },
+  {
+    "schema": "outreach_private",
+    "signature": "outreach_private.can_edit_record(text,uuid,uuid)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres}"
+  },
+  {
+    "schema": "outreach_private",
+    "signature": "outreach_private.can_work_engagement(uuid,uuid)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres}"
+  },
+  {
+    "schema": "outreach_private",
+    "signature": "outreach_private.context(uuid)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "outreach_private",
+    "signature": "outreach_private.manager(uuid)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres}"
+  },
+  {
+    "schema": "outreach_private",
+    "signature": "outreach_private.require_manager(uuid)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres}"
+  },
+  {
+    "schema": "outreach_private",
+    "signature": "outreach_private.require_participant(uuid)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres}"
+  },
+  {
+    "schema": "outreach_private",
+    "signature": "outreach_private.save(text,jsonb,uuid,uuid)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "public",
+    "signature": "pit_activate_event(jsonb)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "public",
+    "signature": "pit_competition_manage(text,jsonb)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "pit_private",
+    "signature": "pit_private.competition_manager()",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres}"
+  },
+  {
+    "schema": "pit_private",
+    "signature": "pit_private.scouting_context(uuid)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "pit_private",
+    "signature": "pit_private.scouting_manage(text,jsonb)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "pit_private",
+    "signature": "pit_private.scouting_submit(jsonb)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "public",
+    "signature": "pit_report_issue(jsonb)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "public",
+    "signature": "pit_save_battery(jsonb)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "public",
+    "signature": "pit_save_event(jsonb)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "public",
+    "signature": "pit_transition_battery(jsonb)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "public",
+    "signature": "pit_update_issue(jsonb)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "planning_goals_private",
+    "signature": "planning_goals_private.goal_contributor(uuid)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres}"
+  },
+  {
+    "schema": "planning_goals_private",
+    "signature": "planning_goals_private.goals_context(uuid)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "planning_private",
+    "signature": "planning_private.context(uuid,boolean)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres}"
+  },
+  {
+    "schema": "planning_private",
+    "signature": "planning_private.manager()",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres}"
+  },
+  {
+    "schema": "planning_review_private",
+    "signature": "planning_review_private.person(uuid)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres}"
+  },
+  {
+    "schema": "planning_review_private",
+    "signature": "planning_review_private.writer()",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres}"
+  },
+  {
+    "schema": "public",
+    "signature": "planning_save(text,jsonb)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "private",
+    "signature": "private.can_count()",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "private",
+    "signature": "private.can_edit(uuid)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "private",
+    "signature": "private.can_manage_media_path(text)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "private",
+    "signature": "private.can_manage_media(text,uuid)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "private",
+    "signature": "private.configure_inventory_location(jsonb)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres}"
+  },
+  {
+    "schema": "private",
+    "signature": "private.create_assigned_lead_location(jsonb)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres}"
+  },
+  {
+    "schema": "private",
+    "signature": "private.guard_item()",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres}"
+  },
+  {
+    "schema": "private",
+    "signature": "private.is_admin()",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "private",
+    "signature": "private.rename_inventory_location(jsonb)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres}"
+  },
+  {
+    "schema": "public",
+    "signature": "sprint_review_save(text,uuid,uuid,jsonb)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "public",
+    "signature": "verify_balance_location(uuid,jsonb)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "volunteer_private",
+    "signature": "volunteer_private.can_report()",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "volunteer_private",
+    "signature": "volunteer_private.context()",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "volunteer_private",
+    "signature": "volunteer_private.eligible()",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "volunteer_private",
+    "signature": "volunteer_private.history(uuid,bigint)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "volunteer_private",
+    "signature": "volunteer_private.save(text,jsonb)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "volunteer_private",
+    "signature": "volunteer_private.summary(uuid)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  },
+  {
+    "schema": "public",
+    "signature": "apply_inventory_changes(jsonb)",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres}"
+  }
+]

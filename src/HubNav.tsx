@@ -7,7 +7,7 @@ import './hub-shell.css';
 export function HubNav({route}:{route:string}){
  const [open,setOpen]=useState(false),[manager,setManager]=useState(false),[inviter,setInviter]=useState(false),[outreach,setOutreach]=useState(false),button=useRef<HTMLButtonElement>(null);
  useEffect(()=>{if(!supabase)return;let alive=true,version=0;const clear=()=>{setManager(false);setInviter(false);setOutreach(false);};
- const update=(uid?:string)=>{const current=++version;clear();if(!uid)return;setTimeout(()=>{void Promise.resolve(supabase!.from('profiles').select('role,active').eq('id',uid).single()).then(result=>{if(!alive||version!==current)return;const p=result.data;if(result.error||!p?.active)return;setManager(['mentor','admin'].includes(p.role));setInviter(['admin_lead','mentor','admin'].includes(p.role));setOutreach(['student','lead','admin_lead','mentor','admin'].includes(p.role));}).catch(()=>{});},0);};
+ const update=(uid?:string)=>{const current=++version;clear();if(!uid)return;setTimeout(()=>{void Promise.resolve(supabase!.from('profiles').select('role,active').eq('id',uid).single()).then(result=>{if(!alive||version!==current)return;const p=result.data;if(result.error||!p?.active)return;setManager(['mentor'].includes(p.role));setInviter(['admin_lead','mentor'].includes(p.role));setOutreach(['student','lead','admin_lead','mentor'].includes(p.role));}).catch(()=>{});},0);};
  const sub=supabase.auth.onAuthStateChange((_e,session)=>update(session?.user.id));
  // Initial getSession is guarded against a newer auth notification.
  const initial=version;void supabase.auth.getSession().then(({data})=>{if(alive&&version===initial)update(data.session?.user.id);}).catch(()=>{});

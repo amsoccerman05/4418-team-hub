@@ -88,5 +88,77 @@
     "source_path": "supabase/migrations/20261028170803_inventory_post_lock_authority.sql",
     "sha256": "07691889094176abd36358ca88476d643145000f228e1a0acdb0be2cf6c5013b",
     "phase": "role"
+  },
+  {
+    "file": "tests/fixtures/shared-security/pit-202610010001_competition_operations.sql",
+    "repository": "https://github.com/amsoccerman05/4418-pit-app.git",
+    "commit": "b45b157d2baaa8e09126398ccfbeb5f72e1094f3",
+    "source_path": "supabase/migrations/202610010001_competition_operations.sql",
+    "sha256": "aa688b1a3f761a35e36297809b66d8017e635eefa0e984915b65c0951f938729",
+    "phase": "pit-current"
+  },
+  {
+    "file": "tests/fixtures/shared-security/pit-20261009042627_manual_practice_matches.sql",
+    "repository": "https://github.com/amsoccerman05/4418-pit-app.git",
+    "commit": "b45b157d2baaa8e09126398ccfbeb5f72e1094f3",
+    "source_path": "supabase/migrations/20261009042627_manual_practice_matches.sql",
+    "sha256": "bd507bd4913c2b4052b00f6de6479cb2d8293769a3035ba8bcae33fad8d7708c",
+    "phase": "pit-current"
+  },
+  {
+    "file": "tests/fixtures/shared-security/pit-20261010013034_competition_scouting.sql",
+    "repository": "https://github.com/amsoccerman05/4418-pit-app.git",
+    "commit": "b45b157d2baaa8e09126398ccfbeb5f72e1094f3",
+    "source_path": "supabase/migrations/20261010013034_competition_scouting.sql",
+    "sha256": "27cd2147438906d8419c6d734e3e25059fa4d52f0f1b963ac0ebadaa148d1a80",
+    "phase": "pit-current"
+  },
+  {
+    "file": "tests/fixtures/shared-security/pit-20261010142916_scouting_driver_station_assignments.sql",
+    "repository": "https://github.com/amsoccerman05/4418-pit-app.git",
+    "commit": "b45b157d2baaa8e09126398ccfbeb5f72e1094f3",
+    "source_path": "supabase/migrations/20261010142916_scouting_driver_station_assignments.sql",
+    "sha256": "0719847d722b30c0fe03bbe2da7efe048085d5e4d6073cb1f04d6c68a8a503a8",
+    "phase": "pit-current"
+  },
+  {
+    "file": "tests/fixtures/shared-security/pit-20261010172105_match13_shared_prediction_cache.sql",
+    "repository": "https://github.com/amsoccerman05/4418-pit-app.git",
+    "commit": "b45b157d2baaa8e09126398ccfbeb5f72e1094f3",
+    "source_path": "supabase/migrations/20261010172105_match13_shared_prediction_cache.sql",
+    "sha256": "2d61acfa7406f8602c1e4dc1d0ed9783e7b3ab7b5ca501d3737b4acca12383e0",
+    "phase": "pit-current"
+  },
+  {
+    "file": "tests/fixtures/shared-security/pit-20261028160506_pit_admin_lead_role_adapter.sql",
+    "repository": "https://github.com/amsoccerman05/4418-pit-app.git",
+    "commit": "b45b157d2baaa8e09126398ccfbeb5f72e1094f3",
+    "source_path": "supabase/migrations/20261028160506_pit_admin_lead_role_adapter.sql",
+    "sha256": "ae1a056224cfcd8e1c475135fb8d966f29ebfa35c78e48663e8b10df3fa9b155",
+    "phase": "pit-current"
+  },
+  {
+    "file": "tests/fixtures/shared-security/finance-20261029190421_finance_canonical_roles.sql",
+    "repository": "https://github.com/amsoccerman05/4418-finance.git",
+    "commit": "ba21655ab91c580407f4a27d81a87dec692fff66",
+    "source_path": "supabase/migrations/20261029190421_finance_canonical_roles.sql",
+    "sha256": "f1aed877ea7275761329688f5098cacd519830a45bb01dc3853684d6834e3633",
+    "phase": "canonical"
+  },
+  {
+    "file": "tests/fixtures/shared-security/inventory-20261029190425_inventory_canonical_roles.sql",
+    "repository": "https://github.com/amsoccerman05/4418-inventory.git",
+    "commit": "9993dd0516e303ad03f7b028b03783bfafa747d9",
+    "source_path": "supabase/migrations/20261029190425_inventory_canonical_roles.sql",
+    "sha256": "d9016e8ce12b1bc6c3622278f334a25fb3e451663c5a6d44c4b34d93d6910083",
+    "phase": "canonical"
+  },
+  {
+    "file": "tests/fixtures/shared-security/pit-20261029190427_pit_canonical_roles.sql",
+    "repository": "https://github.com/amsoccerman05/4418-pit-app.git",
+    "commit": "b45b157d2baaa8e09126398ccfbeb5f72e1094f3",
+    "source_path": "supabase/migrations/20261029190427_pit_canonical_roles.sql",
+    "sha256": "53c1f8f1edd80d22f3f0200f3ae1d525c30c433dffb8299febb96dcbc30967d6",
+    "phase": "canonical"
   }
 ]

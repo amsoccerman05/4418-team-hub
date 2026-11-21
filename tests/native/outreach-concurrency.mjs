@@ -5,6 +5,7 @@ import {join} from 'node:path';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:net';
 import {baseline,id,migration} from '../fixtures/outreach-baseline.mjs';
+import {outreachCanonicalNative} from '../fixtures/outreach-canonical-native.mjs';
 const bin=process.env.OUTREACH_PG_BIN||'/opt/homebrew/opt/postgresql@17/bin';
 const dir=mkdtempSync('/tmp/impulse-outreach-native-'),data=join(dir,'db');
 const env={...process.env};for(const key of Object.keys(env))if(key.startsWith('PG'))delete env[key];
@@ -24,7 +25,10 @@ try{
  execFileSync(join(bin,'initdb'),['-D',data,'--auth-local=reject','--auth-host=trust','-U','outreach_fixture','--no-locale','--encoding=UTF8'],{env,stdio:'ignore'});
  try{execFileSync(join(bin,'pg_ctl'),['-D',data,'-l',join(dir,'server.log'),'-o',`-p ${port} -c listen_addresses='127.0.0.1' -c unix_socket_directories='' -c max_connections=20 -c shared_buffers=16MB -c timezone=UTC`,'-w','start'],{env,stdio:'ignore'});started=true;}
  catch(error){console.error(readFileSync(join(dir,'server.log'),'utf8'));throw error;}
- sql(baseline());sql(readFileSync(migration,'utf8'));
+ // Genuine Mentor fixture manager; never disguise a Student with staff rights.
+ sql(baseline().replace("'Synthetic Admin','admin'","'Synthetic Mentor manager','mentor'"));sql(readFileSync(migration,'utf8'));
+ sql(outreachCanonicalNative());
+ sql("alter table profiles add constraint profiles_role_check check(role in ('readonly','student','lead','admin_lead','mentor'))");
  const request=save('organization',org(),900);
  const first=asyncSQL(`begin;${user(1)}${request}select pg_sleep(1.0) /* duplicate_gate */;commit;`);await sleeping('duplicate_gate');
  const second=asyncSQL(`${user(1)}${request}`);assert.equal((await first).code,0);assert.equal((await second).code,0);
@@ -42,7 +46,7 @@ try{
  console.log('PASS live actor revocation during advisory-lock wait rejects the write');
  const row=asyncSQL(`begin;select 1 from outreach_private.organizations where id='${id(300)}' for update;select pg_sleep(1.0) /* row_gate */;commit;`);await sleeping('row_gate');
  const lateRow=asyncSQL(`${user(1)}/* revoke_row */ ${save('organization',{...org(300,2),name:'Forbidden after row wait'},904)}`);await blocked('revoke_row');
- sql(`update profiles set role='readonly' where id='${id(1)}'`);await row;const rowRejected=await lateRow;assert.notEqual(rowRejected.code,0);assert.match(rowRejected.err,/Active outreach account/);assert.equal(sql(`select version from outreach_private.organizations where id='${id(300)}'`),'2');sql(`update profiles set role='admin' where id='${id(1)}'`);
+ sql(`update profiles set role='readonly' where id='${id(1)}'`);await row;const rowRejected=await lateRow;assert.notEqual(rowRejected.code,0);assert.match(rowRejected.err,/Active outreach account/);assert.equal(sql(`select version from outreach_private.organizations where id='${id(300)}'`),'2');sql(`update profiles set role='mentor' where id='${id(1)}'`);
  console.log('PASS live actor revocation during record-lock wait rejects the write');
  sql(`${user(1)}${save('engagement',{id:id(310),version:0,organization_id:id(300),season_id:id(100),stage:'committed',owner_id:id(2),notes:''},905)}${save('pledge',{id:id(330),version:0,engagement_id:id(310),kind:'cash',amount:500,description:'Synthetic pledge',promised_on:'2026-10-05',status:'pledged'},906)}`);
  // Test-only gate models a future tightening of Finance's existing authority.
@@ -106,14 +110,14 @@ try{
  const beforeAssignment=JSON.parse(sql(`select to_jsonb(e) from outreach_private.engagements e where id='${id(310)}'`));
  const ownerGate=asyncSQL(`begin;select 1 from profiles where id='${id(3)}' for update;select pg_sleep(1.0) /* manager_downgrade_gate */;commit;`);await sleeping('manager_downgrade_gate');
  const downgradeWrite=asyncSQL(`${user(1)}/* manager_downgrade_write */ ${save('engagement',{...beforeAssignment,owner_id:id(3)},948)}`);await blocked('manager_downgrade_write');sql(`update profiles set role='student' where id='${id(1)}'`);await ownerGate;const downgradeDenied=await downgradeWrite;
- assert.notEqual(downgradeDenied.code,0);assert.match(downgradeDenied.err,/Only mentors can assign/);assert.equal(sql(`select owner_id from outreach_private.engagements where id='${id(310)}'`),id(2));sql(`update profiles set role='admin' where id='${id(1)}'`);
+ assert.notEqual(downgradeDenied.code,0);assert.match(downgradeDenied.err,/Only mentors can assign/);assert.equal(sql(`select owner_id from outreach_private.engagements where id='${id(310)}'`),id(2));sql(`update profiles set role='mentor' where id='${id(1)}'`);
  console.log('PASS manager downgraded during owner-row wait cannot retain assignment authority through creator rights');
  const hiddenPayload={id:id(330),version:999,engagement_id:id(310),kind:'cash',amount:999,description:'Must not disclose a stale hidden row',promised_on:'2026-10-06',status:'pledged'};
  const hiddenAdvisory=asyncSQL('begin;select pg_advisory_xact_lock(4418,80);select pg_sleep(1.0) /* hidden_finance_advisory_gate */;commit;');await sleeping('hidden_finance_advisory_gate');
- const hiddenAdvisoryWrite=asyncSQL(`${user(1)}/* hidden_finance_advisory_write */ ${save('pledge',hiddenPayload,949)}`);await blocked('hidden_finance_advisory_write');sql(`update profiles set role='student' where id='${id(1)}'`);await hiddenAdvisory;const hiddenAdvisoryDenied=await hiddenAdvisoryWrite;assert.notEqual(hiddenAdvisoryDenied.code,0);assert.match(hiddenAdvisoryDenied.err,/Mentor oversight required/);assert.doesNotMatch(hiddenAdvisoryDenied.err,/Changed by another/);sql(`update profiles set role='admin' where id='${id(1)}'`);
+ const hiddenAdvisoryWrite=asyncSQL(`${user(1)}/* hidden_finance_advisory_write */ ${save('pledge',hiddenPayload,949)}`);await blocked('hidden_finance_advisory_write');sql(`update profiles set role='student' where id='${id(1)}'`);await hiddenAdvisory;const hiddenAdvisoryDenied=await hiddenAdvisoryWrite;assert.notEqual(hiddenAdvisoryDenied.code,0);assert.match(hiddenAdvisoryDenied.err,/Mentor oversight required/);assert.doesNotMatch(hiddenAdvisoryDenied.err,/Changed by another/);sql(`update profiles set role='mentor' where id='${id(1)}'`);
  console.log('PASS downgrade during advisory wait denies hidden financial entity before row/version lookup');
  const hiddenRow=asyncSQL(`begin;select 1 from outreach_private.pledges where id='${id(330)}' for update;select pg_sleep(1.0) /* hidden_finance_row_gate */;commit;`);await sleeping('hidden_finance_row_gate');
- const hiddenRowWrite=asyncSQL(`${user(1)}/* hidden_finance_row_write */ ${save('pledge',hiddenPayload,950)}`);await blocked('hidden_finance_row_write');sql(`update profiles set role='student' where id='${id(1)}'`);await hiddenRow;const hiddenRowDenied=await hiddenRowWrite;assert.notEqual(hiddenRowDenied.code,0);assert.match(hiddenRowDenied.err,/Mentor oversight required/);assert.doesNotMatch(hiddenRowDenied.err,/Changed by another/);assert.equal(sql(`select count(*) from outreach_private.requests where request_id in ('${id(949)}','${id(950)}')`),'0');sql(`update profiles set role='admin' where id='${id(1)}'`);
+ const hiddenRowWrite=asyncSQL(`${user(1)}/* hidden_finance_row_write */ ${save('pledge',hiddenPayload,950)}`);await blocked('hidden_finance_row_write');sql(`update profiles set role='student' where id='${id(1)}'`);await hiddenRow;const hiddenRowDenied=await hiddenRowWrite;assert.notEqual(hiddenRowDenied.code,0);assert.match(hiddenRowDenied.err,/Mentor oversight required/);assert.doesNotMatch(hiddenRowDenied.err,/Changed by another/);assert.equal(sql(`select count(*) from outreach_private.requests where request_id in ('${id(949)}','${id(950)}')`),'0');sql(`update profiles set role='mentor' where id='${id(1)}'`);
  console.log('PASS downgrade during hidden-row wait denies before returning a stale-version result');
  sql(`${user(3)}${save('contact',{id:id(520),version:0,organization_id:id(500),name:'Synthetic diagnostic contact'},951,3)}`);
  sql(`update outreach_private.contacts set notes='SYNTHETIC_HIDDEN_CONTACT_NOTE' where id='${id(520)}';update outreach_private.engagements set notes='SYNTHETIC_HIDDEN_ENGAGEMENT_NOTE' where id='${id(510)}'`);
