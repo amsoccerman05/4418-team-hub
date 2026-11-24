@@ -135,3 +135,9 @@
 .my-assignment-source small.is-urgent { color: #874019; font-weight: 550; }
 .my-assignment-state, .my-assignment-more { color: var(--suite-muted); font-size: 13px; line-height: 1.6; margin: 0; padding: 12px 20px 16px; }
 .my-attention .my-assignment-state a, .my-attention .my-assignment-more a { display: inline; padding: 0; min-height: auto; font-weight: 600; }
+
+/* Keep the requested empty destination and form guidance consistent with the cards. */
+.my-announcement-section:focus-visible { outline: 3px solid var(--suite-primary); outline-offset: 4px; }
+.my-quiet { padding: 16px 20px; border: 1px solid var(--suite-border); border-radius: var(--radius-card); background: var(--suite-surface); color: var(--suite-muted); }
+.my-dialog > .announcement-hint, .my-dialog #announcement-message-hint { margin: 8px 0 16px; }
+@media (max-width: 760px) { .my-dialog input, .my-dialog select, .my-dialog textarea { font-size: 16px; } }

@@ -43,7 +43,7 @@ function App() {
       <div className={`hub-shell${planning?' planning-shell':''}`}>{planning?<PlanningNav route={route}/>:<HubNav route={route}/>}<main id="main" tabIndex={-1}>
         {auth.error&&<p role="alert">{auth.error}</p>}
         <InventoryLocationReturn/>
-        {auth.signed && !workspace && !management && !outreach && !fabrication && !planning && !notifications && !events && <My4418 management={announcements} />}
+        {auth.signed && !workspace && !management && !outreach && !fabrication && !planning && !notifications && !events && <My4418 management={announcements} announcementsRequested={route==='#home-announcements'} />}
         {events&&<EventOverview route={route}/>}
         {notifications&&<Notifications/>}
         {auth.signed && workspace && <AttendanceHub
