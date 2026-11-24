@@ -60,3 +60,11 @@ hub-theme-control select:focus-visible { outline: 3px solid light-dark(#006bb3, 
 @media print { hub-theme-control { display: none; } }
 
 :root[data-theme="dark"] select:not([multiple]) { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23b3c2d1' stroke-width='2'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E"); }
+/* The public privacy header keeps its dark brand plate in either theme. */
+header.brand hub-theme-control label { color: #fff; }
+:root[data-theme="dark"] select:not([multiple]) { appearance: none; background-repeat: no-repeat; background-position: right 10px center; }
+:root[data-theme="dark"] dialog { background-color: var(--suite-surface); color: var(--suite-text); }
+:root[data-theme="dark"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), textarea) { background-color: var(--suite-secondary); }
+@media print {
+  :root[data-theme] { color-scheme: light !important; --ink: #171717; --text: #333; --blue: #006bb3; --muted: #606060; }
+}

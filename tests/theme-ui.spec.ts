@@ -18,6 +18,14 @@ async function synthetic(page:Page, mentor=false) {
  });
  return writes;
 }
+async function themeLabelContrast(page:Page) {
+ const ratio=await page.locator('hub-theme-control label').evaluate(label=>{
+  const luminance=(value:string)=>{const rgb=value.match(/[\d.]+/g)!.slice(0,3).map(Number).map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return .2126*rgb[0]+.7152*rgb[1]+.0722*rgb[2];};
+  let node:Element|null=label,bg='rgb(255,255,255)';
+  while(node){const candidate=getComputedStyle(node).backgroundColor;if(candidate!=='rgba(0, 0, 0, 0)'&&candidate!=='transparent'){bg=candidate;break;}node=node.parentElement;}
+  const fg=luminance(getComputedStyle(label).color),back=luminance(bg);return (Math.max(fg,back)+.05)/(Math.min(fg,back)+.05);
+ });expect(ratio).toBeGreaterThanOrEqual(4.5);
+}
 async function fit(page:Page){expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}
 for(const width of [390,1440]) {
  test(`theme follows system, keyboard override persists, and System resumes at ${width}`,async({page})=>{
@@ -31,7 +39,8 @@ for(const width of [390,1440]) {
   test(`public pages and sign-in are readable in ${mode} at ${width}`,async({page})=>{
    await page.setViewportSize({width,height:900});await page.emulateMedia({colorScheme:mode});
    for(const path of ['/','/privacy.html','/event.html#unavailable']) {
-    await page.goto(path);await expect(page.getByRole('combobox',{name:'Theme',exact:true})).toBeVisible();await expect(page.locator('html')).toHaveAttribute('data-theme',mode);await fit(page);
+    await page.goto(path);await expect(page.getByRole('combobox',{name:'Theme',exact:true})).toBeVisible();await expect(page.locator('html')).toHaveAttribute('data-theme',mode);await fit(page);await themeLabelContrast(page);
+    if(mode==='dark')expect(await page.getByRole('combobox',{name:'Theme',exact:true}).evaluate(e=>getComputedStyle(e).backgroundRepeat)).toBe('no-repeat');
     await page.screenshot({path:`test-results/theme-public-${path.includes('privacy')?'privacy':path.includes('event')?'event':'signin'}-${mode}-${width}.png`,fullPage:true});
    }
   });
