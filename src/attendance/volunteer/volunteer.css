@@ -36,8 +36,8 @@
   padding: 0.65rem;
   border: 1px solid var(--border, #cbd5cd);
   border-radius: 8px;
-  background: #fff;
-  color: #142f24;
+  background: light-dark(#fff, #1b2735);
+  color: light-dark(#142f24, #e0e9f2);
   font: inherit;
 }
 .volunteer-wide {
@@ -55,11 +55,11 @@
   font-size: 1.7rem;
   font-weight: 700;
   margin: 0.5rem 0;
-  color: #224d3e;
+  color: light-dark(#224d3e, #a0ddb1);
 }
 .volunteer-attention {
-  border-color: #bb842a !important;
-  background: #fffaf0 !important;
+  border-color: light-dark(#bb842a, #7b91a8) !important;
+  background: light-dark(#fffaf0, #1b2735) !important;
 }
 .volunteer-mode {
   margin: 1rem 0;
@@ -92,7 +92,7 @@
   padding: 0;
 }
 .volunteer-activity-totals li {
-  background: #edf3ef;
+  background: light-dark(#edf3ef, #1b2735);
   padding: 0.6rem 0.8rem;
   border-radius: 8px;
 }
@@ -113,17 +113,17 @@
   justify-content: space-between;
   gap: 1rem;
   padding: 0.8rem 0;
-  border-bottom: 1px solid #d8e0da;
+  border-bottom: 1px solid light-dark(#d8e0da, #7b91a8);
   overflow-wrap: anywhere;
 }
 .volunteer-dialog {
   width: min(760px, calc(100vw - 2rem));
   max-height: calc(100dvh - 2rem);
   overflow: auto;
-  border: 1px solid #bdcdbf;
+  border: 1px solid light-dark(#bdcdbf, #7b91a8);
   border-radius: 14px;
   padding: 1.3rem;
-  color: #19392b;
+  color: light-dark(#19392b, #e0e9f2);
   box-sizing: border-box;
 }
 .volunteer-dialog::backdrop {
@@ -145,7 +145,7 @@
   padding-left: 1.2rem;
 }
 .volunteer-audit li {
-  border-bottom: 1px solid #d8e0da;
+  border-bottom: 1px solid light-dark(#d8e0da, #7b91a8);
   margin-bottom: 1rem;
   overflow-wrap: anywhere;
 }
