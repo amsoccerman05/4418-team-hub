@@ -1,3 +1,4 @@
+import {ParentHomePreview} from './parents/ParentHome';
 import {InventoryLocationReturn} from './inventory-return';
 import {NotificationProvider,NotificationBell,Notifications} from './notifications/Notifications';
 import { HubNav } from './HubNav';
@@ -23,6 +24,7 @@ function App() {
     window.addEventListener("hashchange", update);
     return () => window.removeEventListener("hashchange", update);
   }, []);
+  const parentPreview = route === "#parents-preview";
   const events = route === "#events" || route.startsWith("#events/");
   const planning = route === '#planning' || route.startsWith('#planning/');
   const reviews = route === '#planning/reviews' || route.startsWith('#planning/reviews/');
@@ -38,12 +40,13 @@ function App() {
       <a className="skip-link" href="#main" onClick={event => {event.preventDefault();document.getElementById("main")?.focus();}}>
         Skip to content
       </a>
-      <SuiteHeader app={planning?'Planning':workspace?'Attendance':'Team Hub'} context={fabrication?'Fabrication':events?'Events':notifications?'Notifications':planning?({'plan':'Season Plan','goals':'Season Goals','reviews':'Sprint Review','boards':'Boards','my-work':'My Work'}[route.split('/')[1]]||'Dashboard'):management?'Team Management':outreach?'Sponsor & Outreach':announcements?'Announcements':workspace?'Attendance':'My 4418'} notifications={!planning?<NotificationBell/>:undefined} name={auth.name} onSignOut={auth.signOut} busy={auth.busy}/>
+      <SuiteHeader app={planning?'Planning':workspace?'Attendance':'Team Hub'} context={parentPreview?'Parent preview':fabrication?'Fabrication':events?'Events':notifications?'Notifications':planning?({'plan':'Season Plan','goals':'Season Goals','reviews':'Sprint Review','boards':'Boards','my-work':'My Work'}[route.split('/')[1]]||'Dashboard'):management?'Team Management':outreach?'Sponsor & Outreach':announcements?'Announcements':workspace?'Attendance':'My 4418'} notifications={!planning?<NotificationBell/>:undefined} name={auth.name} onSignOut={auth.signOut} busy={auth.busy}/>
 
       <div className={`hub-shell${planning?' planning-shell':''}`}>{planning?<PlanningNav route={route}/>:<HubNav route={route}/>}<main id="main" tabIndex={-1}>
         {auth.error&&<p role="alert">{auth.error}</p>}
         <InventoryLocationReturn/>
-        {auth.signed && !workspace && !management && !outreach && !fabrication && !planning && !notifications && !events && <My4418 management={announcements} />}
+        {auth.signed && !workspace && !management && !outreach && !fabrication && !planning && !notifications && !events && !parentPreview && <My4418 management={announcements} />}
+        {parentPreview&&<ParentHomePreview/>}
         {events&&<EventOverview route={route}/>}
         {notifications&&<Notifications/>}
         {auth.signed && workspace && <AttendanceHub
