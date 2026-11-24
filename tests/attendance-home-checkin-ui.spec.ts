@@ -237,3 +237,33 @@ for(const width of [390,1440]) {
   await page.goBack();await expect(dialog(page).getByRole('heading',{name:'Checked out',exact:true})).toBeVisible();expect(s.writes).toHaveLength(1);
  });
 }
+
+for (const linked of [true, false]) test(`checkout acknowledgment survives grace expiry while the accepted request is pending (linked=${linked})`, async ({page}) => {
+ const s=await setup(page);
+ s.a.checked_in_at='2026-10-27T17:00:00Z';s.a.physical_status='present';
+ await page.clock.setFixedTime(new Date('2026-10-27T19:29:59Z'));
+ await page.goto(linked ? '/'+target : '/#attendance/calendar');
+ let release!:()=>void;
+ const response=new Promise<void>(resolve=>{release=resolve;});
+ let accepted=false;
+ await page.route('**/rpc/team_attendance_check_out',async route=>{
+  expect(route.request().postDataJSON()).toEqual({meeting_id:mid});
+  // The server accepts before its deadline; only delivery of the response is slow.
+  s.a.left_at='2026-10-27T19:29:59Z';accepted=true;
+  await response;
+  await route.fulfill({json:{message:'Check-out recorded'}});
+ });
+ const d=linked ? dialog(page) : page.getByRole('region',{name:'Your current attendance'});
+ await d.getByRole('button',{name:'Check out',exact:true}).click();
+ await d.getByRole('button',{name:'Confirm check-out',exact:true}).click();
+ await expect.poll(()=>accepted).toBe(true);
+ await page.clock.setFixedTime(new Date('2026-10-27T19:30:01Z'));
+ // Wait for the component's clock tick, without advancing the network response.
+ await expect(d.getByText('Recording your departure…',{exact:true})).toBeVisible();
+ await page.waitForTimeout(1100);
+ await expect(d.getByText('Recording your departure…',{exact:true})).toBeVisible();
+ s.syncFailures=1;release();
+ await expect(page.locator('#attendance > .att-success, #attendance .att-success').first()).toContainText('Check-out recorded');
+ if(linked) await expect(d.getByRole('status').filter({hasText:'Check-out recorded.'})).toContainText('Refresh attendance to see your departure time.');
+ await expect(d.getByRole('button',{name:'Check out',exact:true})).toHaveCount(0);
+});

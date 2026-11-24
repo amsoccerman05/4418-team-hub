@@ -179,6 +179,9 @@ export function AttendanceHub({
       const result = await work();
       const successMessage = typeof success === "function" ? success(result) : success;
       workCompleted = true;
+      // A clock tick can remove the current-meeting card at the grace deadline.
+      // Keep the server acknowledgment at workspace level as well as in the card.
+      if (successMessage === "Check-out recorded" && gen === generation.current && actionRoute === currentRoute.current) setMessage(successMessage);
       if (profile) {
         const d = await loadData(isManager(profile));
         if (gen === generation.current) setData(d);
@@ -339,7 +342,7 @@ function AttendanceTimes({a,m,now}:{a:Attendance;m:Meeting;now:number}) {
  </span>;
 }
 // Keep confirmation in the page: embedded browsers can suppress native confirm().
-function CheckoutControl({ meetingId, run }: { meetingId: string; run: Run }) {
+function CheckoutControl({ meetingId, allowed, run }: { meetingId: string; allowed: boolean; run: Run }) {
  const [confirming,setConfirming]=useState(false);
  const [pending,setPending]=useState(false);
  const [recorded,setRecorded]=useState(false);
@@ -349,7 +352,7 @@ function CheckoutControl({ meetingId, run }: { meetingId: string; run: Run }) {
  useEffect(()=>{if(confirming)confirmButton.current?.focus();},[confirming]);
  function cancel(){setConfirming(false);trigger.current?.focus();}
  async function submit(){
-  if(submitting.current)return;
+  if(submitting.current||!allowed)return;
   submitting.current=true;setPending(true);
   try {
    await run(async()=>{
@@ -360,13 +363,14 @@ function CheckoutControl({ meetingId, run }: { meetingId: string; run: Run }) {
    },'Check-out recorded');
   } finally {submitting.current=false;setPending(false);}
  }
+ if(!allowed&&!pending&&!recorded)return null;
  if(recorded)return <p role="status">Check-out recorded. {pending?'Refreshing attendance…':'Refresh attendance to see your departure time.'}</p>;
  return <div className="att-checkout-control">
-  <button type="button" ref={trigger} className="att-checkout" aria-expanded={confirming} disabled={pending} onClick={()=>setConfirming(true)}>Check out</button>
+  <button type="button" ref={trigger} className="att-checkout" aria-expanded={confirming} disabled={pending||!allowed} onClick={()=>setConfirming(true)}>Check out</button>
   {confirming&&<div role="group" aria-label="Confirm check-out" className="att-checkout-confirm" onKeyDown={e=>{if(e.key==='Escape'&&!pending){e.preventDefault();e.stopPropagation();cancel();}}}>
    <p>Check out now? Leaving before the scheduled end records Left Early. It does not submit an excuse request.</p>
    <div className="att-inline">
-    <button type="button" ref={confirmButton} disabled={pending} onClick={()=>void submit()}>{pending?'Checking out…':'Confirm check-out'}</button>
+    <button type="button" ref={confirmButton} disabled={pending||!allowed} onClick={()=>void submit()}>{pending?'Checking out…':'Confirm check-out'}</button>
     <button type="button" className="att-secondary" disabled={pending} onClick={cancel}>Cancel check-out</button>
    </div>
    {pending&&<p role="status">Recording your departure…</p>}
@@ -397,7 +401,7 @@ function Student({ data, id, run, presenceOnly=false, selfCheckIn=false, meeting
     </form>}
     {!ended&&!checkedIn&&!a.left_at&&!checkInOpen&&<p className="att-muted">{now<Date.parse(m.starts_at)-1800000?`Leadership can open check-in from ${time(new Date(Date.parse(m.starts_at)-1800000).toISOString())}.`:'Check-in is not open. Ask leadership for a current code.'}</p>}
     {canCheckOut&&ended&&<p className="att-muted">Check out when you leave. Check-out remains available until {time(new Date(Date.parse(m.ends_at)+30*60_000).toISOString())}, including after attendance is completed.</p>}
-    {canCheckOut&&<CheckoutControl meetingId={m.id} run={run}/>}
+    {a.checked_in_at&&!a.left_at&&<CheckoutControl meetingId={m.id} allowed={canCheckOut} run={run}/>}
    </section>
    {!presenceOnly&&<>
    {a.notice_at&&<section className="att-request-summary"><h4>{a.notice_type==='late'?'Late arrival':a.notice_type==='early'?'Early departure':'Absence'} requested · {a.review_status==='pending'?'Pending':label(a.review_status)}</h4><p>{noticeTiming(a,m)} · Submitted {Math.abs((Date.parse(m.starts_at)-Date.parse(a.notice_at))/3600000).toFixed(1)} hours {Date.parse(a.notice_at)<=Date.parse(m.starts_at)?'before the meeting':'after start'}</p>{a.expected_at&&<p>Expected {a.notice_type==='early'?'departure':'arrival'}: {time(a.expected_at)}</p>}<p className="att-request-reason">{a.notice_reason}</p>{a.review_reason&&<p>Leadership review: {a.review_reason}</p>}</section>}
@@ -481,36 +485,47 @@ function Management({data,run,selected,selfId,busy}:{data:Data;run:Run;selected:
   {history&&<HistoryList members={data.members} history={history}/>}</>;
 }
 function MemberForm({ member: m, run }: { member: Member; run: Run }) {
+  const values = { member_status: m.member_status, team_area: m.team_area };
+  const [base, setBase] = useState(values);
+  const [draft, setDraft] = useState(values);
+  const [saved, setSaved] = useState(false);
+  const savedAgainst = useRef<Member | null>(null);
+  const changed = base.member_status !== m.member_status || base.team_area !== m.team_area;
+  // Keep an acknowledged save locked until the refreshed roster confirms it.
+  // A failed refresh must not invite another write from stale values.
+  useEffect(() => {
+    if (saved && m !== savedAgainst.current) {
+      const refreshed = { member_status: m.member_status, team_area: m.team_area };
+      setBase(refreshed); setDraft(refreshed); setSaved(false);
+    }
+  }, [saved, m]);
+  const unchanged = draft.member_status === base.member_status && draft.team_area === base.team_area;
   return (
-    <form
-      className="att-member"
-      onSubmit={(e) => {
-        const f = fields(e);
-        void run(() =>
-          manage("member", {
-            student_id: m.student_id,
-            member_status: text(f, "status"),
-            team_area: text(f, "area"),
-          }),
-        );
-      }}
-    >
+    <form className="att-member" onSubmit={e => {
+      e.preventDefault();
+      if (changed || saved || unchanged) return;
+      const next = { ...draft, team_area: draft.team_area.trim() };
+      void run(async () => {
+        await manage("member", { student_id: m.student_id, ...next });
+        savedAgainst.current = m;
+        setSaved(true);
+      }, "Member saved");
+    }}>
       <strong>{m.display_name}</strong>
+      {changed && !saved && <p role="alert">Member details changed. Your draft is kept. Reload the latest member before saving.</p>}
+      {changed && !saved && <button type="button" onClick={() => { setBase(values); setDraft(values); }}>Reload latest member</button>}
+      {saved && <p role="status">Member saved. Refresh attendance to verify the updated roster before making further changes.</p>}
       <label>
         Member status
-        <select name="status" defaultValue={m.member_status}>
-          {["prospective", "registered", "inactive"].map((s) => (
-            <option key={s} value={s}>
-              {label(s)}
-            </option>
-          ))}
+        <select name="status" value={draft.member_status} disabled={!!saved} onChange={e => setDraft({ ...draft, member_status: e.target.value as Member["member_status"] })}>
+          {["prospective", "registered", "inactive"].map(s => <option key={s} value={s}>{label(s)}</option>)}
         </select>
       </label>
       <label>
         Team area
-        <input name="area" maxLength={100} defaultValue={m.team_area} />
+        <input name="area" maxLength={100} value={draft.team_area} disabled={!!saved} onChange={e => setDraft({ ...draft, team_area: e.target.value })}/>
       </label>
-      <button>Save member</button>
+      <button disabled={changed || !!saved || unchanged}>Save member</button>
     </form>
   );
 }

@@ -2067,3 +2067,61 @@ for (const width of [390, 1440]) test(`proposed attendance policy terminology an
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await page.screenshot({path:`test-results/attendance-policy-${width}.png`,fullPage:true});
 });
+
+test('roster refresh blocks a stale member draft until latest values are loaded', async ({page}) => {
+ const {data,calls}=await mock(page,'mentor');
+ await page.goto('/#attendance/roster');
+ await page.locator('.att-record > summary').filter({hasText:'Alex Student'}).click();
+ const form=page.locator('.att-member');
+ await form.getByLabel('Team area').fill('Local draft area');
+ // Another authorized editor changes enrollment while this form is open.
+ data.members[0].member_status='prospective';data.members[0].team_area='Remote area';
+ await page.getByRole('button',{name:'Refresh',exact:true}).click();
+ await expect(form.getByRole('alert')).toContainText('Member details changed');
+ await expect(form.getByLabel('Team area')).toHaveValue('Local draft area');
+ await expect(form.getByRole('button',{name:'Save member',exact:true})).toBeDisabled();
+ expect(calls).toHaveLength(0);
+ await form.getByRole('button',{name:'Reload latest member',exact:true}).click();
+ await expect(form.getByLabel('Member status')).toHaveValue('prospective');
+ await expect(form.getByLabel('Team area')).toHaveValue('Remote area');
+ await expect(form.getByRole('alert')).toHaveCount(0);
+});
+
+test('member save preserves a rejected draft, prevents duplicate writes, and survives failed refresh', async ({page}) => {
+ const {data}=await mock(page,'mentor');
+ let attempts=0, writes=0;
+ let release!:()=>void;
+ const response=new Promise<void>(resolve=>{release=resolve;});
+ await page.route('**/rpc/team_attendance_manage',async route=>{
+  const body=route.request().postDataJSON();expect(body.action).toBe('member');attempts++;
+  if(attempts===1)return route.fulfill({status:503,json:{message:'Synthetic save unavailable'}});
+  expect(body.p).toEqual({student_id:student,member_status:'prospective',team_area:'New area'});
+  writes++;Object.assign(data.members[0],body.p);
+  await response;await route.fulfill({json:{}});
+ });
+ await page.goto('/#attendance/roster');
+ await page.locator('.att-record > summary').filter({hasText:'Alex Student'}).click();
+ const form=page.locator('.att-member');
+ await form.getByLabel('Member status').selectOption('prospective');
+ await form.getByLabel('Team area').fill('New area');
+ await form.getByRole('button',{name:'Save member',exact:true}).click();
+ await expect(page.getByRole('alert')).toContainText('Synthetic save unavailable');
+ await expect(form.getByLabel('Team area')).toHaveValue('New area');
+ await page.route('**/rpc/team_attendance_sync_my_rosters',r=>r.fulfill({status:503,json:{message:'Synthetic refresh unavailable'}}),{times:1});
+ await form.getByRole('button',{name:'Save member',exact:true}).click();
+ await expect.poll(()=>writes).toBe(1);
+ await expect(form.getByRole('button',{name:'Save member',exact:true})).toBeDisabled();
+ // Even a repeated programmatic form submission must not duplicate the in-flight save.
+ await form.evaluate(el=>(el as HTMLFormElement).requestSubmit());
+ release();
+ await expect(page.getByRole('alert')).toContainText('Synthetic refresh unavailable');
+ await expect(form.getByRole('status')).toContainText('Member saved');
+ await expect(form.getByRole('button',{name:'Save member',exact:true})).toBeDisabled();
+ expect(attempts).toBe(2);expect(writes).toBe(1);
+ await page.getByRole('button',{name:'Refresh',exact:true}).click();
+ await expect(form.getByRole('status')).toHaveCount(0);
+ await expect(form.getByLabel('Member status')).toHaveValue('prospective');
+ await expect(form.getByLabel('Team area')).toHaveValue('New area');
+ await expect(form.getByRole('button',{name:'Save member',exact:true})).toBeDisabled();
+ expect(writes).toBe(1);
+});
