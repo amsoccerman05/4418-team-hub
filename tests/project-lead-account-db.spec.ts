@@ -50,3 +50,107 @@ test('mentor assigns actual account role through existing audited member editor'
 test('retired position cannot be recreated or reactivated by management RPC',async()=>{await as(1);await denies(()=>db.query('select team_manage_v2($1,$2)',['position_save',JSON.stringify({key:'project_lead',reason:'Attempt',create:false,active:true})]),/account role|retired/);});
 
 test('unexpected Pit policy drift fails closed',async()=>{const d=await baseline();try{await d.exec('alter policy pit_member_read on pit_batteries using(false)');await expect(d.exec(migration)).rejects.toThrow(/policy drift/);await d.exec('rollback');expect((await d.query<any>("select count(*)::int n from profiles where role='project_lead'")).rows[0].n).toBe(0);}finally{await d.close();}});
+
+// These exercise the account-role migration, not the retired position baseline.
+const context=async()=>(await db.query<any>('select planning_context($1) c',[season])).rows[0].c;
+const current=async(taskId=task)=>(await context()).tasks.find((t:any)=>t.id===taskId);
+async function memberPayload(n:number,role:string){
+ await db.exec('reset role');
+ const profile=(await db.query<any>('select * from profiles where id=$1',[id(n)])).rows[0];
+ const membership=(await db.query<any>('select * from team_attendance_members where student_id=$1',[id(n)])).rows[0];
+ return {user_id:id(n),display_name:profile.display_name,role,active:profile.active,
+  expected_updated_at:profile.updated_at,expected_member_status:membership?.member_status??null,
+  expected_team_area:membership?.team_area??null,member_status:membership?.member_status??null,
+  primary_area_id:profile.primary_area_id,reason:'Synthetic account-role review'};
+}
+test('audited assignment and removal revoke unowned writes but preserve owned Student work',async()=>{
+ const assignment=await memberPayload(2,'project_lead');await as(1);
+ await db.query('select team_manage_v2($1,$2)',['member',JSON.stringify(assignment)]);
+ await as(2);
+ const unowned=await save('task',{board_id:board,title:'Another member owns this',status:'todo',priority:'normal',owner_ids:[id(6)]});
+ const stale=await current(unowned);
+ const step=await save('step',{task_id:unowned,text:'Created while Project Lead'});
+ const removal=await memberPayload(2,'student');await as(1);
+ await db.query('select team_manage_v2($1,$2)',['member',JSON.stringify(removal)]);
+ // The same identity/session now has only ordinary Student permissions.
+ await as(2);expect((await context()).can_manage_tasks).toBe(false);expect((await context()).can_write).toBe(true);
+ await denies(()=>save('task',{...stale,title:'Stale privileged draft'}));
+ await denies(()=>save('step',{id:step,version:1,task_id:unowned,text:'Stale checklist',done:true}));
+ await denies(()=>save('task',{board_id:board,title:'New after removal',status:'todo',priority:'normal'}));
+ await save('task',{...await current(),description:'Still my assigned Student work'});
+ await save('step',{task_id:task,text:'Student checklist'});
+ await save('comment',{task_id:unowned,text:'Ordinary Student comment'});
+ await denies(async()=>save('task',{...await current(),owner_ids:[id(6)]}),/reassign/);
+ await db.exec('reset role');
+ const audit=(await db.query<any>("select before_data->'profile'->>'role' before_role,after_data->'profile'->>'role' after_role,actor_id,reason from team_private.management_history where user_id=$1 and action='member' order by created_at,id",[id(2)])).rows;
+ expect(audit).toEqual(expect.arrayContaining([
+  expect.objectContaining({before_role:'student',after_role:'project_lead',actor_id:id(1),reason:assignment.reason}),
+  expect.objectContaining({before_role:'project_lead',after_role:'student',actor_id:id(1),reason:removal.reason})]));
+ expect(audit).toHaveLength(2);
+});
+test('only authorized active mentor can assign Account role; stale member versions fail closed',async()=>{
+ const payload=await memberPayload(2,'project_lead');
+ for(const actor of [2,3,4,5,6,7]){await as(actor);await denies(()=>db.query('select team_manage_v2($1,$2)',['member',JSON.stringify(payload)]));}
+ await as(1);await db.query('select team_manage_v2($1,$2)',['member',JSON.stringify(payload)]);
+ await denies(()=>db.query('select team_manage_v2($1,$2)',['member',JSON.stringify({...payload,role:'student'})]),/changed/i);
+ await db.exec('reset role');expect((await db.query<any>('select role from profiles where id=$1',[id(2)])).rows[0].role).toBe('project_lead');
+});
+test('account-role task and checklist rights span active project and area boards only',async()=>{
+ await as(1);
+ const second=await save('board',{season_id:season,kind:'project',name:'Second project'});
+ const area=await save('board',{kind:'area',name:'Functional board',area_id:id(101)});
+ for(const target of [board,second,area]){
+  await as(6);const created=await save('task',{board_id:target,title:'Cross-board card',status:'todo',priority:'normal',owner_ids:[id(2)]});
+  await save('task',{...await current(created),title:'Edited cross-board card',owner_ids:[id(2),id(6)]});
+  const step=await save('step',{task_id:created,text:'Check this'});
+  await save('step',{id:step,task_id:created,version:1,text:'Checked',done:true});
+  const detail=(await db.query<any>('select planning_task_detail($1) d',[created])).rows[0].d;
+  expect(detail.steps[0]).toMatchObject({text:'Checked',done:true,version:2});
+ }
+ for(const status of ['draft','archived']){
+  await db.exec(`reset role;update planning_seasons set status='${status}' where id='${season}'`);await as(6);
+  await denies(()=>save('task',{board_id:second,title:'Unavailable',status:'todo',priority:'normal'}),/Season/);
+  await save('task',{board_id:area,title:'Area remains available',status:'todo',priority:'normal'});
+ }
+ await db.exec(`reset role;update planning_seasons set status='active';update planning_boards set active=false where id='${second}'`);await as(6);
+ await denies(()=>save('task',{board_id:second,title:'Inactive board',status:'todo',priority:'normal'}),/Active board/);
+ await denies(()=>db.query('select planning_private.project_lead()'));
+ await denies(()=>db.exec('insert into planning_tasks default values'));
+});
+
+test('Student and Project Lead match shared-suite predicates and Finance compatibility response',async()=>{
+ const snapshots:any[]=[];
+ for(const role of ['student','project_lead']){
+  await db.exec(`reset role;update profiles set role='${role}' where id='${id(6)}'`);
+  const flags=(await db.query<any>(`select team_attendance_private.is_participant(auth.uid()) attendance,
+   team_attendance_private.is_program_manager(auth.uid()) attendance_manage,
+   planning_goals_private.goal_student(auth.uid()) goal_student,
+   planning_goals_private.goal_contributor(auth.uid()) goal_contributor,
+   private.can_count() inventory,private.can_create_item(null) inventory_create,
+   private.can_create_assigned_lead_location() inventory_location,
+   fabrication_private.manager(auth.uid()) fabrication_manage,
+   finance_private.creator() finance_create,finance_private.can_manage_budget() budget_manage,
+   finance_private.cap('finance_approver') finance_approve,finance_private.cap('po_approver') po_approve,
+   finance_private.cap('school_submitter') school_submit,
+   pit_private.competition_manager() pit_manage,planning_private.manager() planning_manage`)).rows[0];
+  snapshots.push(flags);
+  await as(6);const finance=(await db.query<any>('select finance_context() c')).rows[0].c;
+  expect(finance.profile.role).toBe('student');expect(finance.can_create).toBe(true);
+  expect(finance.is_admin).toBe(false);expect(finance.capabilities).toEqual([]);
+ }
+ expect(snapshots[1]).toEqual(snapshots[0]);
+ expect(snapshots[1]).toEqual({attendance:true,attendance_manage:false,goal_student:true,goal_contributor:true,
+  inventory:true,inventory_create:true,inventory_location:false,fabrication_manage:false,
+  finance_create:true,budget_manage:false,finance_approve:false,po_approve:false,school_submit:false,
+  pit_manage:false,planning_manage:false});
+});
+test('readonly or inactive former Project Lead cannot edit retained owned tasks or checklists',async()=>{
+ await save('task',{...await current(),owner_ids:[id(6)]});
+ const owned=await current();const step=await save('step',{task_id:task,text:'Retained checklist'});
+ for(const change of ["role='readonly'","role='project_lead',active=false"]){
+  await db.exec(`reset role;update profiles set ${change} where id='${id(6)}'`);await as(6);
+  await denies(()=>save('task',{...owned,description:'Stale owner edit'}));
+  await denies(()=>save('step',{id:step,task_id:task,version:1,text:'Stale step',done:true}));
+  await denies(()=>save('comment',{task_id:task,text:'Stale comment'}));
+ }
+});

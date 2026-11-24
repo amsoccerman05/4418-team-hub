@@ -2,7 +2,7 @@ import {test,expect,type Page} from '@playwright/test';
 const user='00000000-0000-0000-0000-000000000001',board='10000000-0000-4000-8000-000000000010';
 async function fixture(page:Page){
  if(process.env.HANDOFF_LIVE)throw Error('Synthetic role fixture cannot run with HANDOFF_LIVE');
- const state={role:'admin_lead',projectLead:false,write:true as boolean|undefined,failRead:false,denySave:false,writes:[] as any[],unknown:[] as string[]};
+ const state={role:'admin_lead',projectLead:false,write:true as boolean|undefined,failRead:false,denySave:false,denyToStudent:false,owned:true,writes:[] as any[],unknown:[] as string[]};
  const context={user_id:user,can_manage:false,season_id:'season',seasons:[{id:'season',name:'Synthetic season',status:'active',version:1}],members:[{id:user,name:'Admin Lead fixture'}],areas:[],groups:[],items:[],boards:[{id:board,season_id:'season',name:'Synthetic project',kind:'project',active:true,version:1}],tasks:[{id:'task',board_id:board,title:'Owned synthetic task',description:'Original notes',status:'todo',priority:'normal',owner_ids:[user],owners:[{id:user,name:'Admin Lead fixture'}],version:1}]};
  await page.addInitScript(({user})=>localStorage.setItem('4418-team-hub-auth',JSON.stringify({access_token:'fixture-token',refresh_token:'fixture-refresh',expires_at:4000000000,token_type:'bearer',user:{id:user,aud:'authenticated',app_metadata:{},user_metadata:{}}})),{user});
  await page.routeWebSocket('**/*',ws=>ws.close());
@@ -15,11 +15,11 @@ async function fixture(page:Page){
    if(name==='user')return route.fulfill({json:{id:user,aud:'authenticated',app_metadata:{},user_metadata:{}}});
    if(name==='team_my_positions')return route.fulfill({json:[]});
    if(name==='notification_center')return route.fulfill({json:{items:[],unread:0,has_more:false}});
-   if(name==='planning_context'||name==='planning_my_work_context')return route.fulfill(state.failRead?{status:503,json:{message:'Synthetic access refresh unavailable'}}:{json:{...context,can_write:state.write,can_manage_tasks:state.projectLead}});
+   if(name==='planning_context'||name==='planning_my_work_context')return route.fulfill(state.failRead?{status:503,json:{message:'Synthetic access refresh unavailable'}}:{json:{...context,can_write:state.write,can_manage_tasks:state.projectLead,tasks:context.tasks.map(t=>({...t,owner_ids:state.owned?t.owner_ids:[],owners:state.owned?t.owners:[]}))}});
    if(name==='planning_task_detail')return route.fulfill({json:{steps:[],comments:[],history:[]}});
    if(name==='planning_save'){
     state.writes.push(route.request().postDataJSON());
-    if(state.denySave){state.role='readonly';state.write=false;return route.fulfill({status:403,json:{code:'42501',message:'Active Planning writer required'}});}
+    if(state.denySave){state.role=state.denyToStudent?'student':'readonly';state.write=state.denyToStudent;state.projectLead=false;return route.fulfill({status:403,json:{code:'42501',message:'Active Planning writer required'}});}
     return route.fulfill({json:'task'});
    }
    state.unknown.push(url.pathname);return route.fulfill({status:500,json:{message:'Unknown synthetic endpoint'}});
@@ -66,3 +66,28 @@ for(const width of [390,1440]){
   const state=await fixture(page);state.role='student';await page.setViewportSize({width,height:900});await page.goto('/#planning/boards/'+board);await expect(page.getByRole('button',{name:/New task|Add task/})).toHaveCount(0);await expect(page.getByLabel('Status for Owned synthetic task')).toBeEnabled();expect(state.writes).toEqual([]);
  });
 }
+
+for(const width of [390,1440])test(`Project Lead removal preserves unowned draft but removes assignment and checklist controls ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});const state=await fixture(page);
+ state.role='project_lead';state.projectLead=true;state.owned=false;
+ await page.goto('/#planning/boards/'+board);
+ await page.getByRole('button',{name:'Details for Owned synthetic task',exact:true}).click();
+ const dialog=page.getByRole('dialog',{name:'Edit task',exact:true});
+ await expect(dialog.getByRole('button',{name:'Owners',exact:true})).toBeVisible();
+ await expect(dialog.getByLabel('New checklist step')).toBeVisible();
+ await expect(dialog.getByRole('button',{name:'Add dependency',exact:true})).toHaveCount(0);
+ await dialog.getByLabel('Title',{exact:true}).fill('Preserve this unowned draft');
+ state.denySave=true;state.denyToStudent=true;
+ await dialog.getByRole('button',{name:'Save',exact:true}).click();
+ await expect(dialog.getByLabel('Title',{exact:true})).toBeDisabled();
+ await expect(dialog.getByLabel('Title',{exact:true})).toHaveValue('Preserve this unowned draft');
+ await expect(dialog.getByRole('button',{name:'Owners',exact:true})).toHaveCount(0);
+ await expect(dialog.getByRole('button',{name:'Save',exact:true})).toHaveCount(0);
+ await expect(dialog.getByLabel('New checklist step')).toHaveCount(0);
+ // A removed Project Lead remains a Student and can still comment.
+ await expect(dialog.getByLabel('Add a comment')).toBeEnabled();
+ expect(state.writes).toHaveLength(1);expect(state.unknown).toEqual([]);
+ await dialog.getByRole('button',{name:'Close',exact:true}).click();
+ await expect(page.getByRole('button',{name:/New task|Add task/})).toHaveCount(0);
+ await expect(page.getByLabel('Status for Owned synthetic task')).toBeDisabled();
+});

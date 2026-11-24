@@ -70,3 +70,21 @@ test('current ownership overrides retained draft owners without losing typed tex
  h.props.data.tasks=[{...task,owner_ids:[]}];submit(h.render());await settle();expect(calls).toHaveLength(0);
  expect(titleInput(h.render()).props.value).toBe('Old owner draft');
 });
+
+for(const owned of [false,true])test(`actual Project Lead editor after role removal preserves draft and ${owned?'owned Student editing':'blocks unowned editing'}`,async()=>{
+ const calls:any[]=[];let refreshes=0;
+ const h=harness(async(...args)=>{calls.push(args);throw Object.assign(Error('Role removed'),{code:'42501'});});
+ h.props.data={...h.props.data,can_manage:false,can_manage_tasks:true,tasks:[{...task,owner_ids:owned?['member']:[]}]};
+ h.props.onRefreshAccess=async()=>{refreshes++;h.props.data={...h.props.data,can_manage_tasks:false};return true;};
+ titleInput(h.render()).props.onChange({target:{value:'Project Lead draft'}});
+ expect(button(h.render(),'Add step')).toBeTruthy();
+ expect(nodes(h.render()).find(n=>n.type?.name==='TaskDependencies').props.editable).toBe(false);
+ submit(h.render());await settle();expect(refreshes).toBe(1);expect(calls).toHaveLength(1);
+ const tree=h.render();expect(titleInput(tree).props.value).toBe('Project Lead draft');
+ expect(nodes(tree).find(n=>n.type==='fieldset').props.disabled).toBe(!owned);
+ expect(!!button(tree,'Save')).toBe(owned);expect(!!button(tree,'Add step')).toBe(owned);
+ expect(nodes(tree).some(n=>n.type?.name==='OwnerPicker')).toBe(false);
+ expect(button(tree,'Post comment')).toBeTruthy();
+ if(!owned){submit(tree);await settle();expect(calls).toHaveLength(1);}
+ expect(h.counts()).toEqual({closed:0,saved:0});
+});
