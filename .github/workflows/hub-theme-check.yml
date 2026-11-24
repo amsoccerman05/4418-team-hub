@@ -7,6 +7,9 @@ on:
       - '*.html'
       - 'tests/theme*.spec.ts'
       - 'tests/hub-usability.spec.ts'
+      - 'tests/events-privacy.spec.ts'
+      - 'tests/privacy.spec.ts'
+      - 'tests/assembly-model.spec.ts'
       - '.github/workflows/hub-theme-check.yml'
 permissions:
   contents: read
@@ -23,7 +26,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npx playwright install --with-deps chromium
-      - run: npx playwright test tests/theme-preference.spec.ts tests/theme-ui.spec.ts tests/hub-usability.spec.ts --workers=1
+      - run: npx playwright test tests/theme-preference.spec.ts tests/theme-ui.spec.ts tests/hub-usability.spec.ts tests/events-privacy.spec.ts tests/privacy.spec.ts tests/assembly-model.spec.ts --workers=1
       - uses: actions/upload-artifact@v4
         if: always()
         with:

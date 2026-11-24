@@ -18,7 +18,11 @@ for (const width of [390, 1280]) {
   for (const paragraph of approved) expect(normalized).toContain(paragraph.replace(/\s+/g, ' '));
   expect(content).not.toContain('Draft for review');
   expect(content).not.toContain('Pending approval');
-  await expect(page.locator('form, input, iframe, script')).toHaveCount(0);
+  await expect(page.locator('form, input, select, iframe')).toHaveCount(0);
+  // The optional appearance script must not make the notice depend on JS.
+  await expect(page.locator('script')).toHaveCount(1);
+  await expect(page.locator('script')).toHaveAttribute('src', './theme.js');
+  await expect(page.locator('script')).toHaveText('');
   expect(requests.every(url => new URL(url).origin === 'http://127.0.0.1:4422')).toBeTruthy();
   const horizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
   expect(horizontalOverflow).toBeFalsy();

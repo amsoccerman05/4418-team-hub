@@ -30,12 +30,12 @@ async function observePrivacy(page: Page, expiresAt: number | null = null) {
       user: { id: 'private-fixture-member', aud: 'authenticated', user_metadata: {}, app_metadata: {} },
     });
     if (original !== null) localStorage.setItem(key, original);
-    const audit = { storage: [] as string[], channels: [] as string[], messages: [] as string[], original };
+    const audit = { storage: [] as { method: string; key: string | undefined }[], channels: [] as string[], messages: [] as string[], original };
     (window as any).__eventPrivacy = audit;
-    for (const method of ['getItem', 'setItem', 'removeItem'] as const) {
+    for (const method of ['getItem', 'setItem', 'removeItem', 'clear'] as const) {
       const originalMethod = Storage.prototype[method];
       (Storage.prototype as any)[method] = function (...args: string[]) {
-        if (args[0] === key) audit.storage.push(method);
+        audit.storage.push({ method, key: args[0] });
         return Reflect.apply(originalMethod, this, args);
       };
     }
@@ -57,9 +57,25 @@ async function assertIsolated(page: Page, observed: Awaited<ReturnType<typeof ob
   await expect(page.getByRole('heading', { name: 'Team sign in', exact: true })).toHaveCount(0);
   await expect(page.locator('.suite-header, .hub-nav, .notification-bell')).toHaveCount(0);
   const audit = await page.evaluate(() => (window as any).__eventPrivacy);
-  expect(audit.storage).toEqual([]);
+  // The public shell may persist appearance only, never read or mutate sessions.
+  expect(audit.storage.length).toBeGreaterThan(0);
+  for (const operation of audit.storage) {
+    expect(operation.key).toBe('4418-team-hub-theme');
+    expect(['getItem', 'setItem']).toContain(operation.method);
+  }
+  const afterUnrelatedStorage = await page.evaluate(() => {
+    for (const key of ['4418-team-hub-auth', '4418-suite-auth-v1', 'unrelated-key']) {
+      const event = new StorageEvent('storage', { key });
+      for (const field of ['newValue', 'oldValue']) Object.defineProperty(event, field, {
+        get() { throw new Error('Public theme listener accessed unrelated storage payload'); },
+      });
+      window.dispatchEvent(event);
+    }
+    return (window as any).__eventPrivacy.storage;
+  });
+  expect(afterUnrelatedStorage).toEqual(audit.storage);
   expect(audit.channels).toEqual([]);
-  expect(audit.messages).toEqual([]);
+  expect(audit.messages).toEqual(['storage']);
   expect(observed.requests.filter(url => /supabase|suite-auth|suite-broker|\/rest\/v1\/|\/auth\/v1\/|\/src\/(?:attendance|planning|notifications|HubAuth|HubNav|dashboard|team)\//i.test(url))).toEqual([]);
   expect(observed.errors).toEqual([]);
 }
@@ -191,7 +207,8 @@ for (const width of [390, 1440]) test(`retired KCMT guide is unavailable and con
   await page.goto('/event.html#kcmt-2026');
   await expect(page.getByRole('heading',{name:'Event information is unavailable',exact:true})).toBeVisible();
   await expect(page.locator('body')).not.toContainText(/KCMT|Coronado|October 10|720-525-3196|Aiden Morrison|Optional for Team 4418/);
-  await expect(page.locator('a[href^="tel:"],a[href*="#events/"],form,input,select,textarea,.event-hero')).toHaveCount(0);
+  await expect(page.locator('a[href^="tel:"],a[href*="#events/"],form,input,select:not(hub-theme-control > label > select),textarea,.event-hero')).toHaveCount(0);
+  await expect(page.getByRole('combobox', {name:'Theme',exact:true})).toHaveCount(1);
   await expect(page.getByRole('link',{name:'Team sign in →',exact:true})).toHaveAttribute('href',/index\.html$/);
   await expect(page.getByRole('link',{name:'Visit the team website'})).toHaveAttribute('href','https://www.frc4418.org');
   await expect(page.locator('.event-public-brand img')).toHaveAttribute('src',/branding\/4418-impulse-emblem\.png$/);
@@ -231,6 +248,13 @@ for (const state of [
     await page.goto('/event.html#unpublished-event');
     await expect(page.locator('body')).toContainText(/not published|isn[’\']t published|not available|unavailable/i);
     await expect(page.locator('body')).not.toContainText(/Coronado|KCMT|October 10|Oct 10|private-fixture/i);
+    const theme = page.getByRole('combobox', {name:'Theme', exact:true});
+    await expect(theme.locator('option')).toHaveText(['System', 'Light', 'Dark']);
+    await theme.selectOption('dark');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await assertIsolated(page, observed);
+    await page.reload();
+    await expect(theme).toHaveValue('dark');
     await assertIsolated(page, observed);
   });
 }
@@ -269,10 +293,14 @@ test('the built public entry cannot import or preload authenticated code or draf
   inspect(entry!.fileName);
   const html = outputs.find(output => output.type === 'asset' && output.fileName === 'event.html');
   expect(html?.type).toBe('asset');
+  // Vite copies this classic script from public/; it is deliberately outside
+  // the module graph so appearance is applied before the first paint.
+  const themeScript = readFileSync('public/theme.js', 'utf8');
+  expect(themeScript).not.toMatch(/\b(?:import|require|fetch|XMLHttpRequest|WebSocket|BroadcastChannel)\b|4418-team-hub-auth|4418-suite-auth-v1|postMessage/);
   if (html?.type === 'asset') {
     const text = typeof html.source === 'string' ? html.source : Buffer.from(html.source).toString();
     for (const match of text.matchAll(/(?:src|href)="\.\/([^\"]+\.js)"/g)) {
-      expect(visited.has(match[1]), `unexpected preload or script ${match[1]}`).toBe(true);
+      expect(match[1] === 'theme.js' || visited.has(match[1]), `unexpected preload or script ${match[1]}`).toBe(true);
     }
   }
 });
