@@ -1,0 +1,70 @@
+/* Shared by the Hub application, sign-in and standalone public documents. */
+:root { color-scheme: light; --suite-primary-fill: #006bb3; --suite-primary-fill-hover: #00568f; }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --suite-background: #111923;
+  --suite-surface: #1b2735;
+  --suite-secondary: #223143;
+  --suite-elevated: #26384b;
+  --suite-subtle: #2c3d50;
+  --suite-ink: #f0f5fa;
+  --suite-text: #e0e9f2;
+  --suite-muted: #b3c2d1;
+  --suite-border: #46596d;
+  --suite-input-border: #7b91a8;
+  --suite-primary: #8dcdff;
+  --suite-primary-hover: #bce1ff;
+  --suite-primary-fill: #165e97;
+  --suite-primary-fill-hover: #1c70ae;
+  --suite-info-bg: #17364e;
+  --suite-success: #a0ddb1;
+  --suite-success-bg: #19392b;
+  --suite-warning: #f2d08b;
+  --suite-warning-bg: #41341c;
+  --suite-warning-border: #9a7c42;
+  --suite-danger: #ffb2a8;
+  --suite-danger-bg: #492a2c;
+  --suite-shadow: 0 2px 8px #0003;
+  --color-backdrop: #000a;
+  --color-brand: #171717;
+  --surface: var(--suite-surface);
+  --surface-alt: var(--suite-secondary);
+  --border: var(--suite-border);
+  --ink: var(--suite-ink);
+  --text: var(--suite-text);
+  --blue: var(--suite-primary);
+  --muted: var(--suite-muted);
+}
+hub-theme-control { display: inline-block; flex-shrink: 0; font: 500 13px/1.4 Arial, sans-serif; }
+hub-theme-control label { display: flex !important; align-items: center; gap: 8px; margin: 0 !important; color: light-dark(#333, #e0e9f2); }
+hub-theme-control select { width: auto !important; min-width: 105px; min-height: 44px; padding: 8px 32px 8px 10px; border: 1px solid light-dark(#8c8c8c, #7b91a8); border-radius: 7px; background-color: light-dark(#fff, #1b2735); color: light-dark(#333, #e0e9f2); font: inherit; }
+hub-theme-control select:focus-visible { outline: 3px solid light-dark(#006bb3, #8dcdff); outline-offset: 3px; }
+.impulse-auth > hub-theme-control { margin-bottom: 16px; }
+:root[data-theme="dark"] :is(input, select, textarea) { color: var(--suite-text); }
+:root[data-theme="dark"] :is(input, textarea)::placeholder { color: var(--suite-muted); opacity: 1; }
+:root[data-theme="dark"] .brand { background: #171717; }
+:root[data-theme="dark"] .brand hub-theme-control label { color: #e0e9f2; }
+/* Give the control its own row rather than crowding account actions on phones. */
+@media (max-width: 760px) {
+  :root[data-theme] { --suite-header-height: 124px; }
+  .suite-header.suite-header { height: auto; min-height: 124px; flex-wrap: wrap; gap: 6px 10px; padding: 8px 12px; }
+  .suite-header > hub-theme-control { flex-basis: 100%; }
+  .suite-header > hub-theme-control label { justify-content: flex-end; }
+  .suite-header .suite-name { display: none; }
+  .suite-header .suite-picker nav { top: 64px; }
+  .event-public-header, header.brand { flex-wrap: wrap; }
+  .event-public-header > hub-theme-control, header.brand > hub-theme-control { flex-basis: 100%; }
+  hub-theme-control select { font-size: 16px; }
+}
+@media (min-width: 761px) and (max-width: 1200px) { .suite-header .suite-name { display: none; } }
+@media print { hub-theme-control { display: none; } }
+
+:root[data-theme="dark"] select:not([multiple]) { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23b3c2d1' stroke-width='2'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E"); }
+/* The public privacy header keeps its dark brand plate in either theme. */
+header.brand hub-theme-control label { color: #fff; }
+:root[data-theme="dark"] select:not([multiple]) { appearance: none; background-repeat: no-repeat; background-position: right 10px center; }
+:root[data-theme="dark"] dialog { background-color: var(--suite-surface); color: var(--suite-text); }
+:root[data-theme="dark"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), textarea) { background-color: var(--suite-secondary); }
+@media print {
+  :root[data-theme] { color-scheme: light !important; --ink: #171717; --text: #333; --blue: #006bb3; --muted: #606060; }
+}
