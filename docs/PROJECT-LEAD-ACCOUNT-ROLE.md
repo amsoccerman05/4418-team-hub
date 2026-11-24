@@ -69,3 +69,44 @@ run in normal CI. Local browser startup is unavailable in this executor.
 
 Privacy: no new data categories, recipients, providers or retention behavior.
 Existing role/task audit records remain governed by the current privacy notice.
+
+## Follow-up review of PR #43
+
+Reviewed from `f81e03c2f0f9db13a05a5acea34f4ceb12652587` in an isolated
+checkout, using synthetic profiles and disposable PGlite databases only. No
+application or migration change was necessary in the exercised paths. The main
+coverage gap was that several detailed boundary tests still exercised only the
+retired position baseline.
+
+New account-role regressions verify:
+- An active `mentor` (the canonical administrator in this schema) can assign and
+  remove Project Lead through `team_manage_v2`, with before/after role audit
+  records. Student, Lead, Admin Lead, Project Lead, Readonly and inactive mentor
+  actors cannot assign it. Stale member versions cannot overwrite an assignment.
+- Removal during a session denies stale unowned task/checklist writes and new
+  cards, while preserving owned Student edits, checklists and comments. Readonly
+  or inactive former Project Leads cannot write even to retained assignments.
+- Creation, editing, multiple owners and checklist updates work across two active
+  project boards and a persistent area board. Draft/archived project seasons and
+  inactive boards remain protected; area boards retain their existing persistence.
+- Student and Project Lead agree on tested Attendance, Goals, Inventory,
+  Fabrication, Finance and Pit predicates. No unassigned management/approval
+  capability is gained. The real Finance context maps Project Lead to `student`
+  for its legacy client without granting capabilities.
+- The actual React editor, bundled in the existing model harness, preserves drafts
+  and removes owner assignment after a denied save and refreshed role removal.
+  It retains editing only for owned Student work. Browser regressions cover the
+  unowned case at 390px and 1440px.
+
+Local verification: build/typecheck and focused database/editor/Attendance model
+checks passed. Browser assertions could not execute: the Playwright Chromium
+artifact returned HTTP 403; installed `/usr/bin/chromium` failed at startup with
+`socket() failed: Operation not permitted`. The model harness substitutes local
+editor execution but does not verify browser layout, focus or interaction.
+
+Integration limits: PGlite uses the repository's reviewed function fixtures and
+existing modeled shared helpers, not deployed Auth/PostgREST or every related app
+workflow. This review does not establish live schema compatibility, concurrency
+behavior, Inventory/Pit client deployment readiness, or production role changes.
+The original release prerequisites above still apply. The legacy `admin` label in
+frontend compatibility code is not a newly authorized database administrator.
